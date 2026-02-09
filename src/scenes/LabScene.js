@@ -52,7 +52,7 @@ function Particles({ active }) {
       ),
       speed: 1 + Math.random() * 2,
     }));
-  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const elapsed = useRef(0);
 
@@ -167,7 +167,7 @@ export default function LabScene({ height, mass, dropping, onLanded, energy, haz
         mass={mass}
         onLanded={handleLanded}
       />
-      <Particles active={showParticles} />
+      <Particles key={cycle} active={showParticles} />
       <EnergyDisplay energy={energy} hazardLevel={hazardLevel} />
       <OrbitControls enableZoom enablePan />
     </Canvas>

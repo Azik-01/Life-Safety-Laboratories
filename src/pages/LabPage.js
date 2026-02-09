@@ -17,6 +17,8 @@ import themesData from '../data/themes';
 import { useAppContext } from '../context/AppContext';
 import LabScene from '../scenes/LabScene';
 
+const GRAVITY = 9.81;
+
 function getHazardLevel(energy) {
   if (energy < 10) return 'Low';
   if (energy < 50) return 'Moderate';
@@ -83,7 +85,7 @@ export default function LabPage() {
   };
 
   const handleLanded = () => {
-    const ke = mass * 9.81 * height;
+    const ke = mass * GRAVITY * height;
     setEnergy(ke);
     setDropping(false);
   };
@@ -202,10 +204,10 @@ export default function LabPage() {
                   Results
                 </Typography>
                 <Typography variant="body2" gutterBottom>
-                  Potential Energy: {(mass * 9.81 * height).toFixed(1)} J
+                  Potential Energy: {(mass * GRAVITY * height).toFixed(1)} J
                 </Typography>
                 <Typography variant="body2" gutterBottom>
-                  Impact Velocity: {Math.sqrt(2 * 9.81 * height).toFixed(2)} m/s
+                  Impact Velocity: {Math.sqrt(2 * GRAVITY * height).toFixed(2)} m/s
                 </Typography>
                 <Typography variant="body2" gutterBottom>
                   Kinetic Energy at Impact:{' '}

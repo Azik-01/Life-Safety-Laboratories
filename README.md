@@ -1,43 +1,77 @@
-# Life-Safety-Laboratories
+# 🧪 Life Safety Laboratories / Виртуальная лаборатория БЖД
 
-Virtual Safety Lab — BJD theory, practice and interactive labs on the subject "Safety of Life Activity".
+Интерактивная виртуальная лаборатория по **Безопасности жизнедеятельности** с 3D-визуализацией и физическими расчётами.
 
-## Getting Started
+## 🎯 О проекте
 
-### Prerequisites
-- Node.js 16+ and npm
+Веб-приложение для изучения производственных факторов безопасности через интерактивные 3D-симуляции. Проект включает:
 
-### Installation
+- ✅ **5 полноценных лабораторных работ** с реальными формулами и расчётами
+- ✅ **17 интерактивных 3D-сцен** на базе Three.js
+- ✅ **Пошаговое обучение** с теорией, анимациями и тестами
+- ✅ **Русскоязычный интерфейс** и контент
+- ✅ **Темная тема Material-UI** для комфортной работы
+- ✅ **Адаптивный дизайн** для любых устройств
+
+## 📚 Лабораторные работы
+
+| № | Название | Формулы | Сцены |
+|---|----------|---------|-------|
+| 1 | Исследование освещённости | E = I/r², КЕО | 4 сцены |
+| 2 | Расчёт освещённости | N = (Eн×S×Kз×z)/(n×Фл×η) | 3 сцены |
+| 3 | Шум и вибрация | R = 20×lg(m×f)−47.5 | 4 сцены |
+| 5 | Защита от ЭМИ | δ = L/(8.69×√(πfμₐγ)) | 3 сцены |
+| 6 | Поле УВЧ-диапазона | E = √(30PG)/R | 3 сцены |
+
+## 🚀 Быстрый старт
 
 ```bash
+cd frontend
 npm install
+npm run dev
 ```
 
-### Running
+Приложение запустится на http://localhost:5173
 
-```bash
-npm start
+Подробная документация: [frontend/README.md](frontend/README.md)
+
+## 🛠️ Технологии
+
+- React 19 + TypeScript 5.9
+- Three.js + @react-three/fiber
+- Material-UI 7
+- Vite 7
+
+## 📁 Структура
+
+```
+Life-Safety-Laboratories/
+├── frontend/           # React-приложение
+│   ├── src/
+│   │   ├── components/ # UI-компоненты и 3D-сцены
+│   │   ├── pages/      # Страницы и лабораторные
+│   │   └── data/       # Контент (themes.ts)
+│   └── README.md       # Подробная документация
+└── labs doc/           # Исходные документы лабораторных работ
 ```
 
-Opens [http://localhost:3000](http://localhost:3000) in the browser.
+## 📖 Использование
 
-### Building for Production
+1. **Главное меню** → Начать
+2. **Выбор темы** → Одна из 5 лабораторий
+3. **Изучение теории** → Шаги с 3D-анимациями
+4. **Тест** → Набрать ≥70% для допуска
+5. **Лабораторная работа** → Интерактивные расчёты
 
-```bash
-npm run build
-```
+## 📄 Лицензия
 
-## Features
+MIT License — см. [LICENSE](LICENSE)
 
-- **Main Menu** — Landing page with navigation
-- **Theme Selection** — Choose from multiple safety topics (Light on a Sphere, Falling Object, Electrical Safety)
-- **Theme Content** — Step-through theory text and interactive 3D demonstrations with a progress stepper
-- **Test Page** — Multiple-choice quiz; requires ≥70% to unlock the lab
-- **Interactive Lab** — 3D physics simulation with adjustable parameters (height, mass), real-time energy calculations, and hazard level display
+## 🔗 Ссылки
 
-## Tech Stack
+- [Документация разработчика](frontend/README.md)
+- [Исходные материалы лабораторных](labs%20doc/)
 
-- React 18 with React Router v6
-- Three.js via React Three Fiber & Drei
-- Material-UI (MUI) for UI components
-- React Context for state management
+---
+
+**2026** • Виртуальная образовательная среда по БЖД

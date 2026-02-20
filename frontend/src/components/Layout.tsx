@@ -12,7 +12,7 @@ export default function Layout() {
         flexDirection: 'column',
       }}
     >
-      <Container maxWidth="lg" sx={{ flex: 1, py: 4, display: 'flex', flexDirection: 'column' }}>
+      <Container maxWidth="xl" sx={{ flex: 1, py: 3, display: 'flex', flexDirection: 'column' }}>
         <Outlet />
       </Container>
     </Box>

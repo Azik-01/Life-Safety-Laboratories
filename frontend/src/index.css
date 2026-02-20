@@ -13,9 +13,13 @@ body,
   width: 100%;
   height: 100%;
   overflow-x: hidden;
-  font-family: 'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+  font-family: 'IBM Plex Sans', 'Segoe UI', Tahoma, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(80, 167, 147, 0.14), transparent 33%),
+    radial-gradient(circle at 85% 0%, rgba(22, 95, 171, 0.16), transparent 26%),
+    #f4f6f2;
 }
 
 canvas {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   Box,
   Button,
+  Chip,
   Grid,
   List,
   ListItemButton,
@@ -14,11 +15,13 @@ import {
   Typography,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getLessonById } from '../data/lessons';
 import TheorySection from '../components/lesson/TheorySection';
 import LabSection from '../components/lesson/LabSection';
 import TestSection from '../components/lesson/TestSection';
+import type { LessonId } from '../types/theme';
 
 type Section = 'theory' | 'lab' | 'test';
 
@@ -136,9 +139,9 @@ export default function LessonPage() {
         </Grid>
 
         <Grid size={{ xs: 12, md: 9 }}>
-          {activeSection === 'theory' && <TheorySection modules={filteredModules} />}
+          {activeSection === 'theory' && <TheorySection modules={filteredModules} lessonId={lesson.id as LessonId} />}
           {activeSection === 'lab' && <LabSection key={`lab-${lesson.id}`} lesson={lesson} />}
-          {activeSection === 'test' && <TestSection questions={lesson.tests} />}
+          {activeSection === 'test' && <TestSection questions={lesson.tests} lessonId={lesson.id as LessonId} />}
         </Grid>
       </Grid>
     </Box>

@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
   Checkbox,
+  CircularProgress,
   Dialog,
   DialogContent,
   DialogTitle,
@@ -26,10 +27,12 @@ import {
 } from '@mui/material';
 import type { LessonTheme } from '../../types/theme';
 import { pickVariantByTicketDigits } from '../../data/variants';
-import LabScene3D from './LabScene3D';
 import { mean } from '../../formulas/illumination';
 import { sourceLevelAtObserver, sumLevelsEnergyDb } from '../../formulas/noise';
 import { classifyEmZone, powerFluxDensityWm2, wavelengthM } from '../../formulas/emi';
+import { useProgress } from '../../context/ProgressContext';
+
+const LabScene3D = lazy(() => import('./LabScene3D'));
 
 type LampType = 'incandescent' | 'fluorescent' | 'led';
 
@@ -44,12 +47,16 @@ interface ResultRow {
 }
 
 export default function LabSection({ lesson }: LabSectionProps) {
+  const progress = useProgress();
+  const persistedLabStep = progress.get(lesson.id).labStep;
   const initialValues = lesson.variants[0]?.values ?? {};
   const [ticketInput, setTicketInput] = useState('');
   const [variantNumber, setVariantNumber] = useState(0);
   const [trainingMode, setTrainingMode] = useState(false);
   const [manualTableOpen, setManualTableOpen] = useState(false);
-  const [stepIndex, setStepIndex] = useState(0);
+  const [stepIndex, setStepIndex] = useState(() =>
+    Math.max(0, Math.min(persistedLabStep, lesson.labWizard.steps.length))
+  );
   const [resultRows, setResultRows] = useState<ResultRow[]>([]);
 
   const variant = useMemo(
@@ -78,6 +85,15 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const [distanceM, setDistanceM] = useState(initialValues.distanceM ?? 1.2);
   const [eVpm, setEVpm] = useState(initialValues.electricFieldVpm ?? 14);
   const [hApm, setHApm] = useState(initialValues.magneticFieldApm ?? 0.45);
+
+  useEffect(() => {
+    const restored = Math.max(0, Math.min(progress.get(lesson.id).labStep, lesson.labWizard.steps.length));
+    setStepIndex((current) => (current === restored ? current : restored));
+  }, [lesson.id, lesson.labWizard.steps.length, progress]);
+
+  useEffect(() => {
+    progress.setLabStep(lesson.id, stepIndex);
+  }, [lesson.id, progress, stepIndex]);
 
   function applyVariantValues(values: Record<string, number>) {
     if (lesson.id === 1 || lesson.id === 2) {
@@ -169,7 +185,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
     ]);
   }
 
-  const progress = useMemo(
+  const progressPercent = useMemo(
     () => Math.round((stepIndex / (lesson.labWizard.steps.length + 1)) * 100),
     [lesson.labWizard.steps.length, stepIndex]
   );
@@ -254,10 +270,10 @@ export default function LabSection({ lesson }: LabSectionProps) {
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography variant="h6">Пошаговый wizard</Typography>
           <Typography variant="body2" color="text.secondary">
-            Прогресс: {progress}%
+            Прогресс: {progressPercent}%
           </Typography>
         </Stack>
-        <LinearProgress variant="determinate" value={progress} sx={{ mt: 1, mb: 1.5 }} />
+        <LinearProgress variant="determinate" value={progressPercent} sx={{ mt: 1, mb: 1.5 }} />
 
         <Stepper activeStep={stepIndex} alternativeLabel>
           <Step>
@@ -309,24 +325,32 @@ export default function LabSection({ lesson }: LabSectionProps) {
         </Stack>
       </Paper>
 
-      <LabScene3D
-        lessonId={lesson.id}
-        lightState={{ lampType, intensityCd, heightM, sensorOffsetM }}
-        noiseState={{
-          sourceA,
-          sourceB,
-          sourceC,
-          sourceAX,
-          sourceBX,
-          sourceCX,
-          observerX,
-          barrierMass,
-          sourceAOn,
-          sourceBOn,
-          sourceCOn,
-        }}
-        emiState={{ frequencyHz, distanceM, eVpm, hApm }}
-      />
+      <Suspense
+        fallback={
+          <Paper variant="outlined" sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
+            <CircularProgress size={28} />
+          </Paper>
+        }
+      >
+        <LabScene3D
+          lessonId={lesson.id}
+          lightState={{ lampType, intensityCd, heightM, sensorOffsetM }}
+          noiseState={{
+            sourceA,
+            sourceB,
+            sourceC,
+            sourceAX,
+            sourceBX,
+            sourceCX,
+            observerX,
+            barrierMass,
+            sourceAOn,
+            sourceBOn,
+            sourceCOn,
+          }}
+          emiState={{ frequencyHz, distanceM, eVpm, hApm }}
+        />
+      </Suspense>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
@@ -528,3 +552,4 @@ export default function LabSection({ lesson }: LabSectionProps) {
     </Stack>
   );
 }
+

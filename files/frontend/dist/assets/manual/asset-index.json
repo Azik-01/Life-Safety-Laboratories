@@ -1,0 +1,91 @@
+{
+  "sourcePdf": "d:/Downloads/БЖД_новая_практика_с_содержанием.pdf",
+  "textPath": "/assets/manual/manual_text.txt",
+  "notes": [
+    "Изображения извлечены автоматически из PDF.",
+    "TODO: manual confirmation - подписи и страницы сверяются с методичкой."
+  ],
+  "images": [
+    {
+      "id": "l1-spectrum",
+      "lessonId": 1,
+      "path": "/assets/manual/images/page-015-img-01.jpeg",
+      "pageHint": "стр. ~15",
+      "caption": "Классификация освещения и визуальные условия рабочей зоны",
+      "alt": "Схема производственного освещения из методички"
+    },
+    {
+      "id": "l1-pulsation",
+      "lessonId": 1,
+      "path": "/assets/manual/images/page-017-img-01.png",
+      "pageHint": "стр. ~17",
+      "caption": "Пульсация светового потока и стробоскопический эффект",
+      "alt": "Иллюстрация пульсации освещенности из методички"
+    },
+    {
+      "id": "l2-layout",
+      "lessonId": 2,
+      "path": "/assets/manual/images/page-034-img-01.jpeg",
+      "pageHint": "стр. ~34",
+      "caption": "Схема расчета освещения методом коэффициента использования",
+      "alt": "План помещения и размещение светильников"
+    },
+    {
+      "id": "l2-table",
+      "lessonId": 2,
+      "path": "/assets/manual/images/page-039-img-01.png",
+      "pageHint": "стр. ~39",
+      "caption": "Табличные данные для расчета освещения (варианты)",
+      "alt": "Таблица вариантов для расчета освещенности"
+    },
+    {
+      "id": "l3-noise",
+      "lessonId": 3,
+      "path": "/assets/manual/images/page-056-img-01.png",
+      "pageHint": "стр. ~56",
+      "caption": "Шкалы и источники производственного шума",
+      "alt": "Иллюстрация по шуму и уровням дБ"
+    },
+    {
+      "id": "l3-barrier",
+      "lessonId": 3,
+      "path": "/assets/manual/images/page-058-img-01.png",
+      "pageHint": "стр. ~58",
+      "caption": "Влияние ограждающих конструкций на уровень шума",
+      "alt": "Схема звукоизоляции преград"
+    },
+    {
+      "id": "l4-delta",
+      "lessonId": 4,
+      "path": "/assets/manual/images/page-066-img-01.jpeg",
+      "pageHint": "стр. ~66",
+      "caption": "Таблица поправок ΔL для суммирования источников",
+      "alt": "Таблица поправок для логарифмического суммирования уровней шума"
+    },
+    {
+      "id": "l4-cases",
+      "lessonId": 4,
+      "path": "/assets/manual/images/page-067-img-01.png",
+      "pageHint": "стр. ~67",
+      "caption": "Сценарные варианты расчета уровней в контрольной точке",
+      "alt": "Сценарные данные для расчета шума"
+    },
+    {
+      "id": "l5-spectrum",
+      "lessonId": 5,
+      "path": "/assets/manual/images/page-093-img-01.png",
+      "pageHint": "стр. ~93",
+      "caption": "Шкала электромагнитных излучений и примеры источников",
+      "alt": "Электромагнитный спектр из методички"
+    },
+    {
+      "id": "l5-zones",
+      "lessonId": 5,
+      "path": "/assets/manual/images/page-094-img-01.jpeg",
+      "pageHint": "стр. ~94",
+      "caption": "Зоны вокруг источника электромагнитного излучения",
+      "alt": "Ближняя, промежуточная и дальняя зоны вокруг источника"
+    }
+  ]
+}
+

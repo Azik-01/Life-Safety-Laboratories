@@ -1,0 +1,37 @@
+[
+  {
+    "id": "lab-1",
+    "sourceFile": "lab txt 1.txt",
+    "title": "1.5. Яркость (B). Кандела на квадратный метр (кд/м2) - яркость светящейся поверхности площадью 1м2 при силе света 1 кд.",
+    "blockCount": 30,
+    "outputPath": "src\\content\\labs\\parsed\\lab-1.parsed.json"
+  },
+  {
+    "id": "lab-2",
+    "sourceFile": "lab txt 2.txt",
+    "title": "2. Способ «Удельной мощности светильника»",
+    "blockCount": 27,
+    "outputPath": "src\\content\\labs\\parsed\\lab-2.parsed.json"
+  },
+  {
+    "id": "lab-3",
+    "sourceFile": "lab txt 3.txt",
+    "title": "1.4. Для ориентировочной оценки непостоянного шума можно определить средний уровень звука LА в ДБА, за исследуемый промежуток времени по формуле: ",
+    "blockCount": 25,
+    "outputPath": "src\\content\\labs\\parsed\\lab-3.parsed.json"
+  },
+  {
+    "id": "lab-4",
+    "sourceFile": "lab txt 4.txt",
+    "title": "4. Методика решения",
+    "blockCount": 20,
+    "outputPath": "src\\content\\labs\\parsed\\lab-4.parsed.json"
+  },
+  {
+    "id": "lab-5",
+    "sourceFile": "lab txt 5.txt",
+    "title": "5.3.2. Видимое (световое) излучение",
+    "blockCount": 28,
+    "outputPath": "src\\content\\labs\\parsed\\lab-5.parsed.json"
+  }
+]

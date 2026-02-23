@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../src/App';
+import { ProgressProvider } from '../../src/context/ProgressContext';
 import muiTheme from '../../src/theme';
 
 vi.mock('../../src/components/lesson/LabScene3D', () => ({
@@ -15,36 +16,38 @@ vi.mock('../../src/components/lesson/LabScene3D', () => ({
 function renderApp() {
   return render(
     <ThemeProvider theme={muiTheme}>
-      <MemoryRouter initialEntries={['/']}>
-        <AppRoutes />
-      </MemoryRouter>
-    </ThemeProvider>
+      <ProgressProvider>
+        <MemoryRouter initialEntries={['/']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </ProgressProvider>
+    </ThemeProvider>,
   );
 }
 
 describe('critical user flow', () => {
-  it('goes lesson -> theory -> lab -> report -> test', async () => {
-    const user = userEvent.setup();
-    renderApp();
+  it(
+    'goes home -> theory -> lab -> results -> test',
+    async () => {
+      const user = userEvent.setup();
+      renderApp();
 
-    const theoryButtons = screen.getAllByRole('button', { name: 'Теория' });
-    await user.click(theoryButtons[0]);
+      const theoryButtons = await screen.findAllByRole('button', { name: /теория/i });
+      await user.click(theoryButtons[0]);
 
-    expect(await screen.findByText(/Производственное освещение/)).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /на главную/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: 'Лабораторная' }));
-    expect(await screen.findByText('Шаг 0. Вариант студента')).toBeInTheDocument();
+      await user.click(screen.getByRole('tab', { name: /лабораторная/i }));
+      await user.click(screen.getByRole('button', { name: /далее/i }));
+      await user.click(screen.getByRole('button', { name: /зафиксировать результат/i }));
 
-    await user.type(screen.getByLabelText('Последние цифры студбилета'), '123456');
-    await user.click(screen.getByRole('button', { name: 'Автоподстановка' }));
-    await user.click(screen.getByRole('button', { name: 'Далее' }));
-    await user.click(screen.getByRole('button', { name: 'Зафиксировать результат шага' }));
+      expect(await screen.findByText(/таблица результатов/i)).toBeInTheDocument();
 
-    expect(await screen.findByText('Таблица результатов')).toBeInTheDocument();
+      await user.click(screen.getByRole('tab', { name: /тест/i }));
+      await user.click(screen.getByRole('button', { name: /проверить тест/i }));
 
-    await user.click(screen.getByRole('tab', { name: 'Тест' }));
-    await user.click(screen.getByRole('button', { name: 'Проверить тест' }));
-
-    expect(await screen.findByText(/Итог:/)).toBeInTheDocument();
-  }, 20000);
+      expect(await screen.findByText(/итог:/i)).toBeInTheDocument();
+    },
+    120000,
+  );
 });

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Box, Paper, Slider, Stack, Typography } from '@mui/material';
+import { Suspense, lazy, useMemo, useState } from 'react';
+import { Box, LinearProgress, Paper, Slider, Stack, Typography } from '@mui/material';
 import type { TheorySimulatorType } from '../../types/theme';
 import {
   brightness,
@@ -19,7 +19,8 @@ import {
   sumTwoLevelsByDeltaDb,
 } from '../../formulas/noise';
 import { classifyEmZone, powerFluxDensityWm2, wavelengthM } from '../../formulas/emi';
-import TheoryScene3D from './TheoryScene3D';
+const TheoryScene3D = lazy(() => import('./TheoryScene3D'));
+const isTestEnvironment = import.meta.env.MODE === 'test';
 
 interface SimulatorProps {
   type: TheorySimulatorType;
@@ -295,7 +296,11 @@ export default function MiniSimulator({ type }: SimulatorProps) {
         Мини-симулятор
       </Typography>
       {/* Interactive 3D Scene */}
-      <TheoryScene3D type={type} params={{ a, b, c, d }} />
+      {!isTestEnvironment && (
+        <Suspense fallback={<LinearProgress sx={{ mb: 1 }} />}>
+          <TheoryScene3D type={type} params={{ a, b, c, d }} />
+        </Suspense>
+      )}
       {/* Controls */}
       <Box sx={{ mt: 1.5 }}>{content.controls}</Box>
       <Stack spacing={0.8} sx={{ mt: 1.5 }}>

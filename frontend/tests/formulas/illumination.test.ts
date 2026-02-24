@@ -8,6 +8,7 @@ import {
   mean,
   pulsationCoefficientPercent,
   roomIndex,
+  realisticIlluminanceLux,
   specificPowerByWidth,
   suspensionHeight,
 } from '../../src/formulas/illumination';
@@ -66,6 +67,33 @@ describe('illumination formulas', () => {
     expect(mean([100, 200, 300])).toBeCloseTo(200, 6);
   });
 
+
+
+  it('calculates realistic illuminance with multipliers', () => {
+    const base = realisticIlluminanceLux({ intensityCd: 900, distanceM: 2 });
+    const boosted = realisticIlluminanceLux({
+      intensityCd: 900,
+      distanceM: 2,
+      luminaireCount: 3,
+      reflectance: 0.6,
+      utilizationFactor: 0.7,
+      maintenanceFactor: 0.9,
+    });
+    expect(boosted).toBeGreaterThan(base);
+    expect(boosted).toBeGreaterThan(0);
+  });
+
+  it('clamps invalid realistic illuminance multipliers', () => {
+    const v = realisticIlluminanceLux({
+      intensityCd: 1000,
+      distanceM: 2,
+      luminaireCount: -5,
+      reflectance: 4,
+      utilizationFactor: 8,
+      maintenanceFactor: 0,
+    });
+    expect(v).toBeGreaterThan(0);
+  });
   it('throws on invalid area', () => {
     expect(() => illuminanceFromFlux(100, 0)).toThrow();
   });

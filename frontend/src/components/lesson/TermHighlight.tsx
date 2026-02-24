@@ -13,7 +13,8 @@ interface TermHighlightProps {
 
 /**
  * Renders text with known terms highlighted as tooltips.
- * Case-insensitive matching, longest-match-first.
+ * Case-insensitive matching, longest-match-first, with word-boundary
+ * awareness for Cyrillic + Latin to prevent partial-word highlights.
  */
 function TermHighlight({ text, glossary }: TermHighlightProps) {
   const terms = Object.keys(glossary);
@@ -22,7 +23,10 @@ function TermHighlight({ text, glossary }: TermHighlightProps) {
   // Sort longest first to avoid partial matches
   const sorted = [...terms].sort((a, b) => b.length - a.length);
   const escaped = sorted.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+  // Unicode-aware word boundaries: do not match if preceded/followed by a letter or digit
+  const wb = '(?<![а-яёА-ЯЁa-zA-Z0-9])';
+  const wbEnd = '(?![а-яёА-ЯЁa-zA-Z0-9])';
+  const regex = new RegExp(`${wb}(${escaped.join('|')})${wbEnd}`, 'gi');
 
   const parts = text.split(regex);
 

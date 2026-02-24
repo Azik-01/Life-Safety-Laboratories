@@ -1,14 +1,31 @@
 import { useMemo, useRef, useState } from 'react';
-import { Box, IconButton, Paper, Slider, Stack, Tooltip, Typography } from '@mui/material';
-import { Environment, OrbitControls, Text } from '@react-three/drei';
+import { Alert, Box, Chip, IconButton, Paper, Slider, Stack, Tooltip, Typography } from '@mui/material';
+import { OrbitControls, Text as DreiText } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh } from 'three';
 import * as THREE from 'three';
 import SafeCanvas from '../SafeCanvas';
 import { levelAtDistanceDb, sourceLevelAtObserver, sumLevelsEnergyDb } from '../../formulas/noise';
 import { classifyEmZone, wavelengthM } from '../../formulas/emi';
+import { realisticIlluminanceLux } from '../../formulas/illumination';
 import FastForwardIcon from '@mui/icons-material/FastForward';
 import SlowMotionVideoIcon from '@mui/icons-material/SlowMotionVideo';
+import type { ComponentProps } from 'react';
+
+/** Wrap drei Text with bold weight + dark outline so every label is legible */
+function Text(props: ComponentProps<typeof DreiText>) {
+  const size = (props.fontSize as number | undefined) ?? 0.14;
+  return (
+    <DreiText
+      fontWeight={700}
+      outlineWidth={size * 0.14}
+      outlineColor="#111111"
+      anchorX="center"
+      anchorY="middle"
+      {...props}
+    />
+  );
+}
 
 type LampType = 'incandescent' | 'fluorescent' | 'led';
 
@@ -19,6 +36,8 @@ interface LabSceneProps {
     intensityCd: number;
     heightM: number;
     sensorOffsetM: number;
+    reflectance: number;
+    luminaireCount: number;
   };
   noiseState: {
     sourceA: number;
@@ -94,7 +113,7 @@ function LabChair({ position }: { position: [number, number, number] }) {
         <boxGeometry args={[0.4, 0.04, 0.4]} />
         <meshStandardMaterial color="#5c4033" />
       </mesh>
-      <mesh position={[0, 0.72, -0.18]} castShadow>
+      <mesh position={[0, 0.72, 0.18]} castShadow>
         <boxGeometry args={[0.4, 0.56, 0.04]} />
         <meshStandardMaterial color="#5c4033" />
       </mesh>
@@ -147,7 +166,14 @@ function LightInvestigationScene({ state, timeScale }: { state: LabSceneProps['l
   const pulsationDepth = state.lampType === 'fluorescent' ? 0.35 : state.lampType === 'incandescent' ? 0.12 : 0;
 
   const distance = Math.sqrt(state.heightM * state.heightM + state.sensorOffsetM * state.sensorOffsetM);
-  const illuminance = state.intensityCd / Math.max(0.2, distance * distance);
+  const illuminance = realisticIlluminanceLux({
+    intensityCd: state.intensityCd,
+    distanceM: Math.max(0.2, distance),
+    luminaireCount: state.luminaireCount,
+    reflectance: state.reflectance,
+    utilizationFactor: 0.62,
+    maintenanceFactor: 0.85,
+  });
 
   useFrame((_, delta) => {
     timeRef.current += delta * timeScale;
@@ -213,7 +239,10 @@ function LightInvestigationScene({ state, timeScale }: { state: LabSceneProps['l
         {`E = ${illuminance.toFixed(0)} лк`}
       </Text>
       <Text fontSize={0.1} color="#aaa" position={[state.sensorOffsetM, 0.95, 1]}>
-        {`r = ${distance.toFixed(2)} м`}
+        {`r = ${distance.toFixed(2)} м | ρ = ${state.reflectance.toFixed(2)}`}
+      </Text>
+      <Text fontSize={0.1} color="#9fe6ff" position={[state.sensorOffsetM, 0.8, 1]}>
+        {`n = ${state.luminaireCount} свет.`}
       </Text>
 
       {/* Additional ceiling luminaires (dimmer) */}
@@ -255,8 +284,9 @@ function LightCalculationScene({ state, timeScale }: { state: LabSceneProps['lig
   const idx = (roomL * roomB) / (hp * (roomL + roomB));
 
   // Calculate luminaire grid
-  const nRows = Math.max(1, Math.round(Math.sqrt(state.intensityCd / 200)));
-  const nCols = Math.max(1, Math.round(nRows * 1.4));
+  const rawCount = Math.max(1, state.luminaireCount);
+  const nRows = Math.max(1, Math.round(Math.sqrt(rawCount)));
+  const nCols = Math.max(1, Math.ceil(rawCount / nRows));
 
   return (
     <>
@@ -331,7 +361,7 @@ function NoiseWave({ x, z, color, speed = 0.6, timeScale = 1 }: { x: number; z: 
 
   return (
     <mesh ref={ref} position={[x, 1.8, z]} rotation={[0, Math.PI / 2, 0]}>
-      <torusGeometry args={[1, 0.018, 8, 32]} />
+      <torusGeometry args={[1, 0.018, 6, 16]} />
       <meshBasicMaterial color={color} transparent opacity={0.35} />
     </mesh>
   );
@@ -676,6 +706,8 @@ function EmiScene({ state, timeScale }: { state: LabSceneProps['emiState']; time
 
 export default function LabScene3D(props: LabSceneProps) {
   const [timeScale, setTimeScale] = useState(1);
+  const [showExplain, setShowExplain] = useState(false);
+  const [comparisonMode, setComparisonMode] = useState(false);
 
   const sceneInfo = useMemo(() => {
     if (props.lessonId === 1) {
@@ -683,9 +715,18 @@ export default function LabScene3D(props: LabSceneProps) {
         props.lightState.heightM * props.lightState.heightM
         + props.lightState.sensorOffsetM * props.lightState.sensorOffsetM
       );
-      const illuminance = props.lightState.intensityCd / Math.max(0.2, distance * distance);
+      const illuminance = realisticIlluminanceLux({
+        intensityCd: props.lightState.intensityCd,
+        distanceM: Math.max(0.2, distance),
+        luminaireCount: props.lightState.luminaireCount,
+        reflectance: props.lightState.reflectance,
+        utilizationFactor: 0.62,
+        maintenanceFactor: 0.85,
+      });
+      const baseline = props.lightState.intensityCd / Math.max(0.2, distance * distance);
       return {
         headline: `Исследование: E = ${illuminance.toFixed(1)} лк | Лампа: ${props.lightState.lampType === 'incandescent' ? 'накаливания' : props.lightState.lampType === 'fluorescent' ? 'люминесцентная' : 'LED'}`,
+        compareText: `Базовая модель E=I/r²: ${baseline.toFixed(1)} лк`,
       };
     }
     if (props.lessonId === 2) {
@@ -727,7 +768,9 @@ export default function LabScene3D(props: LabSceneProps) {
         <Typography variant="subtitle2">
           Лабораторная 3D-сцена
         </Typography>
-        <Stack direction="row" spacing={0.5} alignItems="center">
+        <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" justifyContent="flex-end">
+          <Chip size="small" label="Что происходит?" color={showExplain ? 'primary' : 'default'} onClick={() => setShowExplain((prev) => !prev)} />
+          <Chip size="small" label="Режим сравнения" color={comparisonMode ? 'secondary' : 'default'} onClick={() => setComparisonMode((prev) => !prev)} />
           <Tooltip title="Замедлить">
             <IconButton size="small" onClick={() => setTimeScale((s) => Math.max(0.1, s * 0.5))}>
               <SlowMotionVideoIcon fontSize="small" />
@@ -746,17 +789,31 @@ export default function LabScene3D(props: LabSceneProps) {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         {sceneInfo.headline}
       </Typography>
+      {comparisonMode && (sceneInfo as { compareText?: string }).compareText && (
+        <Alert severity="info" sx={{ mb: 1 }}>
+          {(sceneInfo as { compareText?: string }).compareText}
+        </Alert>
+      )}
+      {showExplain && (
+        <Alert severity="info" sx={{ mb: 1 }}>
+          {props.lessonId === 1 && 'Связь со светотехникой: сцена визуализирует E ≈ I/r² с поправками на число светильников, отражение поверхностей и эксплуатационный коэффициент.'}
+          {props.lessonId === 2 && 'Сцена показывает геометрию помещения и расчет индекса i = (L·B)/(Hp·(L+B)) для выбора схемы освещения.'}
+          {props.lessonId === 3 && 'Сцена демонстрирует вклад каждого источника шума, ослабление преградой и логарифмическое суммирование уровней в точке наблюдения.'}
+          {props.lessonId === 4 && 'Сцена иллюстрирует пошаговый расчет: уровень на расстоянии, поправка преграды, суммарный уровень LΣ.'}
+          {props.lessonId === 5 && 'Сцена показывает зоны ЭМИ по отношению r/λ и расчет ППЭ = E×H для оценки безопасной дистанции.'}
+        </Alert>
+      )}
       <Box sx={{ height: { xs: 320, md: 420 }, borderRadius: 1, overflow: 'hidden' }}>
         <SafeCanvas shadows camera={{ position: props.lessonId === 5 ? [8, 5, 10] : [8, 5, 8], fov: 46 }}>
           <ambientLight intensity={0.2} />
-          <directionalLight position={[5, 10, 3]} intensity={0.7} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
+          <directionalLight position={[5, 10, 3]} intensity={0.7} castShadow shadow-mapSize-width={512} shadow-mapSize-height={512} />
           {props.lessonId === 1 && <LightInvestigationScene state={props.lightState} timeScale={timeScale} />}
           {props.lessonId === 2 && <LightCalculationScene state={props.lightState} timeScale={timeScale} />}
           {props.lessonId === 3 && <NoiseInvestigationScene state={props.noiseState} timeScale={timeScale} />}
           {props.lessonId === 4 && <NoiseCalculationScene state={props.noiseState} timeScale={timeScale} />}
           {props.lessonId === 5 && <EmiScene state={props.emiState} timeScale={timeScale} />}
           <OrbitControls enablePan={false} />
-          <Environment preset="city" />
+          <hemisphereLight args={['#b1e1ff', '#b97a20', 0.25]} />
         </SafeCanvas>
       </Box>
     </Paper>

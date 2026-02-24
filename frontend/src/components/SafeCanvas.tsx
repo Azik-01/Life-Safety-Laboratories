@@ -43,7 +43,7 @@ export default function SafeCanvas({ children, onCreated, gl, ...rest }: CanvasP
 
   const mergedGl = {
     powerPreference: 'high-performance',
-    antialias: true,
+    antialias: false,
     ...(typeof gl === 'object' ? gl : {}),
   } as CanvasProps['gl'];
 
@@ -52,7 +52,7 @@ export default function SafeCanvas({ children, onCreated, gl, ...rest }: CanvasP
       <Canvas
         key={canvasKey}
         onCreated={handleCreated}
-        dpr={[1, 1.5]}
+        dpr={[1, 1.25]}
         gl={mergedGl}
         {...rest}
       >

@@ -63,6 +63,42 @@ Life-Safety-Laboratories/
 4. **Тест** → Набрать ≥70% для допуска
 5. **Лабораторная работа** → Интерактивные расчёты
 
+
+## ✅ Проверка и обновление вариантов лабораторных
+
+Варианты для `lesson.variants` в `frontend/src/data/variants.ts` сверяются с исходными таблицами из:
+
+- `files/labs doc/lab txt 1.txt`
+- `files/labs doc/lab txt 2.txt`
+- `files/labs doc/lab txt 3.txt`
+- `files/labs doc/lab txt 4.txt`
+- `files/labs doc/lab txt 5.txt`
+- при спорных местах — `files/labs doc/БЖД_новая_практика_с_содержанием.pdf`
+
+Рекомендуемый порядок:
+1. Обновить значения в `lessonVariants` по таблицам методички.
+2. Для сверенных строк ставить `validated: true` и актуализировать `sourceNote`.
+3. Если данные ещё не проверены, оставлять `validated: false`, чтобы интерфейс показывал предупреждение.
+
+
+## 🧩 Расширение платформы
+
+### Как добавить новую лабораторную
+1. Добавьте контент в `frontend/src/content/labs/lab-N.json` (цель, теория, формулы, рисунки, practice, quiz).
+2. Подключите слой в `frontend/src/data/knowledgeLayer.ts`.
+3. Добавьте тему и шаги wizard в `frontend/src/data/lessons.ts`.
+4. При необходимости добавьте варианты в `frontend/src/data/variants.ts`.
+
+### Как подключить новую формулу
+1. Добавьте функцию расчёта в один из файлов `frontend/src/formulas/*.ts` со строгой валидацией входов.
+2. Добавьте unit-тест в `frontend/tests/formulas/*.test.ts`.
+3. Опишите формулу в JSON-слое (`formulas[]`) с `imagePath`, расшифровкой переменных и примером решения.
+
+### Как добавить новую сцену
+1. Теоретическая сцена: расширьте `frontend/src/components/lesson/TheoryScene3D.tsx` и тип `TheorySimulatorType`.
+2. Лабораторная сцена: добавьте ветку в `frontend/src/components/lesson/LabScene3D.tsx`.
+3. Свяжите сцену с формулами и пояснениями через панель "Что происходит?" и headline в карточке сцены.
+
 ## 📄 Лицензия
 
 MIT License — см. [LICENSE](LICENSE)

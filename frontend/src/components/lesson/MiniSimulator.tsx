@@ -1,6 +1,23 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
 import { Box, LinearProgress, Paper, Slider, Stack, Typography } from '@mui/material';
 import type { TheorySimulatorType } from '../../types/theme';
+
+const sceneTitle: Record<string, string> = {
+  'light-flux': 'Распространение светового потока от источника',
+  'light-illuminance': 'Как освещённость зависит от площади поверхности',
+  'light-brightness': 'Яркость и слепящее действие источника',
+  'light-pulsation': 'Пульсация света и стробоскопический эффект',
+  'light-room-index': 'Индекс помещения — зависимость от размеров',
+  'light-specific-power': 'Расположение светильников в помещении',
+  'light-multi-source': 'Управление отдельными светильниками в помещении',
+  'noise-distance': 'Ослабление шума с расстоянием от источника',
+  'noise-barrier': 'Звукоизоляция: отражение звука преградой',
+  'noise-sum': 'Суммирование шума от нескольких источников',
+  'noise-reflection': 'Отражение звуковых волн от стены',
+  'emi-spectrum': 'Длина электромагнитной волны и частота',
+  'emi-wave': 'Плотность потока энергии (ППЭ) электромагнитного поля',
+  'emi-ppe-zones': 'Зоны вокруг источника ЭМИ (ближняя / промежуточная / дальняя)',
+};
 import {
   brightness,
   illuminanceFromFlux,
@@ -39,11 +56,27 @@ function ValueLine({ label, value }: { label: string; value: string }) {
   );
 }
 
+/* Default slider values per scene type */
+function getDefaults(type: TheorySimulatorType) {
+  switch (type) {
+    case 'light-multi-source':
+      return { a: 80, b: 80, c: 80, d: 80 };
+    default:
+      return { a: 500, b: 1.2, c: 2.5, d: 120 };
+  }
+}
+
 export default function MiniSimulator({ type }: SimulatorProps) {
-  const [a, setA] = useState(500);
-  const [b, setB] = useState(1.2);
-  const [c, setC] = useState(2.5);
-  const [d, setD] = useState(120);
+  const defs = getDefaults(type);
+  const [a, setA] = useState(defs.a);
+  const [b, setB] = useState(defs.b);
+  const [c, setC] = useState(defs.c);
+  const [d, setD] = useState(defs.d);
+  // Extra params for multi-light scene (directions 0-100%)
+  const [e, setE] = useState(80);
+  const [f, setF] = useState(80);
+  const [g, setG] = useState(80);
+  const [h, setH] = useState(80);
 
   const content = useMemo(() => {
     switch (type) {
@@ -164,6 +197,35 @@ export default function MiniSimulator({ type }: SimulatorProps) {
           values: [
             <ValueLine key="v1" label="N (удельная мощность)" value={`${countByPower}`} />,
             <ValueLine key="v2" label="N (η-метод, демо)" value={`${countByEta}`} />,
+          ],
+        };
+      }
+      case 'light-multi-source': {
+        const lights = [
+          { name: 'Светильник 1', int: a, setInt: setA, dir: e, setDir: setE, color: '#ff6644' },
+          { name: 'Светильник 2', int: b, setInt: setB, dir: f, setDir: setF, color: '#44aaff' },
+          { name: 'Светильник 3', int: c, setInt: setC, dir: g, setDir: setG, color: '#44cc44' },
+          { name: 'Светильник 4', int: d, setInt: setD, dir: h, setDir: setH, color: '#ffaa00' },
+        ];
+        return {
+          controls: (
+            <Stack spacing={1.2}>
+              {lights.map((l, i) => (
+                <Box key={i}>
+                  <Typography variant="caption" sx={{ color: l.color, fontWeight: 600 }}>
+                    {l.name}: {l.int > 0 ? `${l.int.toFixed(0)}%` : 'ВЫКЛ'}
+                  </Typography>
+                  <Slider value={l.int} min={0} max={100} step={5} onChange={(_, v) => l.setInt(v as number)}
+                    sx={{ '& .MuiSlider-thumb': { bgcolor: l.color }, '& .MuiSlider-track': { bgcolor: l.color } }} />
+                  <Typography variant="caption">Направление на рабочего: {l.dir.toFixed(0)}%</Typography>
+                  <Slider value={l.dir} min={0} max={100} step={5} onChange={(_, v) => l.setDir(v as number)}
+                    sx={{ '& .MuiSlider-thumb': { bgcolor: l.color }, '& .MuiSlider-track': { bgcolor: l.color } }} />
+                </Box>
+              ))}
+            </Stack>
+          ),
+          values: [
+            <ValueLine key="v1" label="Вкл. светильников" value={`${[a, b, c, d].filter((v) => v > 0).length} из 4`} />,
           ],
         };
       }
@@ -288,17 +350,20 @@ export default function MiniSimulator({ type }: SimulatorProps) {
           values: [],
         };
     }
-  }, [a, b, c, d, type]);
+  }, [a, b, c, d, e, f, g, h, type]);
 
   return (
     <Paper variant="outlined" sx={{ p: 2, mt: 1.5 }}>
-      <Typography variant="subtitle2" sx={{ mb: 1 }}>
-        Мини-симулятор
+      <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 700 }}>
+        {sceneTitle[type] || 'Симулятор'}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        Изменяйте параметры ползунками — результат отобразится в 3D-сцене и в расчётах ниже.
       </Typography>
       {/* Interactive 3D Scene */}
       {!isTestEnvironment && (
         <Suspense fallback={<LinearProgress sx={{ mb: 1 }} />}>
-          <TheoryScene3D type={type} params={{ a, b, c, d }} />
+          <TheoryScene3D type={type} params={{ a, b, c, d, e, f, g, h }} />
         </Suspense>
       )}
       {/* Controls */}

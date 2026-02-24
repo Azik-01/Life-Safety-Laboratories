@@ -162,3 +162,32 @@ export function mean(values: number[]): number {
   return total / values.length;
 }
 
+
+
+export interface RealisticIlluminanceInput {
+  intensityCd: number;
+  distanceM: number;
+  luminaireCount?: number;
+  reflectance?: number;
+  utilizationFactor?: number;
+  maintenanceFactor?: number;
+}
+
+/**
+ * Расширенная оценка освещенности рабочего места
+ * с учетом числа светильников, отражений, использования и запаса.
+ */
+export function realisticIlluminanceLux(input: RealisticIlluminanceInput): number {
+  assertFiniteNonNegative(input.intensityCd, 'intensityCd');
+  assertFinitePositive(input.distanceM, 'distanceM');
+
+  const luminaireCount = Math.max(1, input.luminaireCount ?? 1);
+  const reflectance = Math.min(0.95, Math.max(0, input.reflectance ?? 0.3));
+  const utilizationFactor = Math.min(1, Math.max(0.2, input.utilizationFactor ?? 0.6));
+  const maintenanceFactor = Math.min(1.2, Math.max(0.5, input.maintenanceFactor ?? 0.85));
+
+  const direct = input.intensityCd / (input.distanceM * input.distanceM);
+  const reflectedGain = 1 + reflectance * 0.35;
+  const value = direct * luminaireCount * utilizationFactor * maintenanceFactor * reflectedGain;
+  return Math.max(0, value);
+}

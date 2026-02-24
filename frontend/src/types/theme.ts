@@ -7,9 +7,11 @@ export type TheorySimulatorType =
   | 'light-pulsation'
   | 'light-room-index'
   | 'light-specific-power'
+  | 'light-multi-source'
   | 'noise-distance'
   | 'noise-barrier'
   | 'noise-sum'
+  | 'noise-reflection'
   | 'emi-spectrum'
   | 'emi-wave'
   | 'emi-ppe-zones';
@@ -62,6 +64,7 @@ export interface LabVariant {
   ticketLastDigits: number[];
   values: Record<string, number>;
   sourceNote: string;
+  validated: boolean;
 }
 
 export interface LabWizard {
@@ -113,4 +116,3 @@ export interface LessonTheme {
   variants: LabVariant[];
   tests: TestQuestion[];
 }
-

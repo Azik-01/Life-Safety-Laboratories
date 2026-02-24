@@ -92,6 +92,9 @@ export function buildGlossary(layer: KnowledgeLayer): Glossary {
     // Use first sentence of text as the definition for each keyword
     const firstSentence = block.text.split(/[.!?]/)[0]?.trim() ?? block.text;
     for (const kw of block.keywords) {
+      // Skip very short keywords (≤2 chars): formula symbols like E, H, f, G, λ
+      // match inside virtually every word and produce false highlights
+      if (kw.length <= 2) continue;
       if (!glossary[kw]) {
         glossary[kw] = `${block.heading}: ${firstSentence}.`;
       }
@@ -172,18 +175,28 @@ export function buildPracticeMethods(lessonId: LessonId): PracticeMethod[] {
         {
           id: 'specific-power',
           title: 'Метод удельной мощности',
-          description: 'Pуд·S / (Pлампы·n)',
+          description: 'Wp = αКЗ · αЗ · αЕ · Wт, затем N = (Wp · S) / (Pлампы · n)',
           params: [
             { key: 'S', label: 'Площадь', unit: 'м²', defaultValue: 72 },
-            { key: 'Pud', label: 'Pуд', unit: 'Вт/м²', defaultValue: 16 },
+            { key: 'Wt', label: 'Wт (табл.)', unit: 'Вт/м²', defaultValue: 16 },
+            { key: 'aKZ', label: 'αКЗ', unit: '', defaultValue: 1.3 },
+            { key: 'aZ', label: 'αЗ', unit: '', defaultValue: 1.15 },
+            { key: 'aE', label: 'αЕ = Eн/100', unit: '', defaultValue: 3 },
             { key: 'Pl', label: 'Pлампы', unit: 'Вт', defaultValue: 36 },
             { key: 'n', label: 'n (ламп/свет.)', unit: '', defaultValue: 2 },
           ],
           steps: [
             {
+              label: 'Удельная мощность Wp',
+              formula: 'Wp = αКЗ × αЗ × αЕ × Wт',
+              compute: (p) => p.aKZ * p.aZ * p.aE * p.Wt,
+              resultKey: 'Wp',
+              resultUnit: 'Вт/м²',
+            },
+            {
               label: 'Общая мощность',
-              formula: 'P = Pуд × S',
-              compute: (p) => p.Pud * p.S,
+              formula: 'P = Wp × S',
+              compute: (p) => p.Wp * p.S,
               resultKey: 'P',
               resultUnit: 'Вт',
             },
@@ -195,7 +208,49 @@ export function buildPracticeMethods(lessonId: LessonId): PracticeMethod[] {
               resultUnit: 'шт.',
             },
           ],
-          conclusionFn: (r) => `Необходимо ${r.N} светильников.`,
+          conclusionFn: (r) => `Необходимо ${r.N} светильников (удельная мощность Wp = ${r.Wp?.toFixed(1)} Вт/м²).`,
+        },
+        {
+          id: 'luminous-lines',
+          title: 'Метод светящихся линий',
+          description: 'Формулы 2.16–2.19: расчёт числа рядов и светильников в ряду.',
+          params: [
+            { key: 'L', label: 'Длина помещения', unit: 'м', defaultValue: 12 },
+            { key: 'B', label: 'Ширина помещения', unit: 'м', defaultValue: 6 },
+            { key: 'H', label: 'Высота подвеса Hp', unit: 'м', defaultValue: 2.7 },
+            { key: 'Lsv', label: 'Длина светильника', unit: 'м', defaultValue: 1.27 },
+          ],
+          steps: [
+            {
+              label: 'Длина ряда l',
+              formula: 'l = 0.5 × L\'  (L\' ≈ L)',
+              compute: (p) => 0.5 * p.L,
+              resultKey: 'rowLen',
+              resultUnit: 'м',
+            },
+            {
+              label: 'Светильников в ряду N1',
+              formula: 'N₁ = l / Lсв (округл. вверх)',
+              compute: (p) => Math.ceil(p.rowLen / p.Lsv),
+              resultKey: 'N1',
+              resultUnit: 'шт.',
+            },
+            {
+              label: 'Число рядов',
+              formula: 'Ряды = B / (Hp × 1.6) (округл.)',
+              compute: (p) => Math.max(1, Math.round(p.B / (p.H * 1.6))),
+              resultKey: 'rows',
+              resultUnit: '',
+            },
+            {
+              label: 'Общее число N',
+              formula: 'N = N₁ × Ряды',
+              compute: (p) => p.N1 * p.rows,
+              resultKey: 'N',
+              resultUnit: 'шт.',
+            },
+          ],
+          conclusionFn: (r) => `Необходимо ${r.N} светильников (${r.N1} в ряду × ${r.rows} рядов).`,
         },
       ];
 
@@ -209,10 +264,13 @@ export function buildPracticeMethods(lessonId: LessonId): PracticeMethod[] {
           params: [
             { key: 'L1', label: 'L₁ (источник 1)', unit: 'дБ', defaultValue: 100 },
             { key: 'R1', label: 'R₁', unit: 'м', defaultValue: 4 },
-            { key: 'G1', label: 'G₁ (масса преграды 1)', unit: 'кг', defaultValue: 250 },
+            { key: 'G1', label: 'G₁ (масса преграды 1)', unit: 'кг/м²', defaultValue: 250 },
             { key: 'L2', label: 'L₂ (источник 2)', unit: 'дБ', defaultValue: 90 },
             { key: 'R2', label: 'R₂', unit: 'м', defaultValue: 8 },
-            { key: 'G2', label: 'G₂ (масса преграды 2)', unit: 'кг', defaultValue: 300 },
+            { key: 'G2', label: 'G₂ (масса преграды 2)', unit: 'кг/м²', defaultValue: 300 },
+            { key: 'L3', label: 'L₃ (источник 3)', unit: 'дБ', defaultValue: 85 },
+            { key: 'R3', label: 'R₃', unit: 'м', defaultValue: 6 },
+            { key: 'G3', label: 'G₃ (масса преграды 3)', unit: 'кг/м²', defaultValue: 200 },
           ],
           steps: [
             {
@@ -258,13 +316,35 @@ export function buildPracticeMethods(lessonId: LessonId): PracticeMethod[] {
               resultUnit: 'дБ',
             },
             {
-              label: 'LΣ (суммарный)',
-              formula: 'LΣ = 10·lg(10^(L₁/10) + 10^(L₂/10))',
+              label: 'LR₃ на расстоянии R₃',
+              formula: 'LR = L₃ − 20·lg(R) − 8',
+              compute: (p) => p.L3 - 20 * Math.log10(Math.max(0.1, p.R3)) - 8,
+              resultKey: 'LR3',
+              resultUnit: 'дБ',
+            },
+            {
+              label: 'N₃ (снижение преградой 3)',
+              formula: 'N = 14,5·lg(G) + 15',
+              compute: (p) => 14.5 * Math.log10(Math.max(1, p.G3)) + 15,
+              resultKey: 'N3',
+              resultUnit: 'дБ',
+            },
+            {
+              label: 'L\'R₃ (после преграды)',
+              formula: 'L\'R = LR − N',
+              compute: (p) => p.LR3 - p.N3,
+              resultKey: 'LpR3',
+              resultUnit: 'дБ',
+            },
+            {
+              label: 'LΣ (суммарный от 3 источников)',
+              formula: 'LΣ = 10·lg(10^(L₁/10) + 10^(L₂/10) + 10^(L₃/10))',
               compute: (p) =>
                 10 *
                 Math.log10(
                   Math.pow(10, Math.max(-100, p.LpR1) / 10) +
-                    Math.pow(10, Math.max(-100, p.LpR2) / 10),
+                    Math.pow(10, Math.max(-100, p.LpR2) / 10) +
+                    Math.pow(10, Math.max(-100, p.LpR3) / 10),
                 ),
               resultKey: 'Lsum',
               resultUnit: 'дБ',

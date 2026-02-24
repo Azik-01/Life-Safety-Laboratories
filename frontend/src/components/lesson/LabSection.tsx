@@ -27,7 +27,9 @@ import {
 } from '@mui/material';
 import type { LessonTheme } from '../../types/theme';
 import { pickVariantByTicketDigits } from '../../data/variants';
-import { mean } from '../../formulas/illumination';
+import Lab4TablesPanel from './Lab4TablesPanel';
+import VariantTable from './VariantTable';
+import { mean, realisticIlluminanceLux } from '../../formulas/illumination';
 import { sourceLevelAtObserver, sumLevelsEnergyDb } from '../../formulas/noise';
 import { classifyEmZone, powerFluxDensityWm2, wavelengthM } from '../../formulas/emi';
 import { useProgress } from '../../context/ProgressContext';
@@ -68,6 +70,8 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const [intensityCd, setIntensityCd] = useState(initialValues.intensityCd ?? initialValues.lampFluxLm ?? 900);
   const [heightM, setHeightM] = useState(initialValues.heightM ?? 2.8);
   const [sensorOffsetM, setSensorOffsetM] = useState(initialValues.distanceM ?? 0.9);
+  const [reflectance, setReflectance] = useState(initialValues.reflectance ?? 0.4);
+  const [luminaireCount, setLuminaireCount] = useState(initialValues.luminaireCount ?? 2);
 
   const [sourceA, setSourceA] = useState(initialValues.sourceA1mDb ?? 98);
   const [sourceB, setSourceB] = useState(initialValues.sourceB1mDb ?? 92);
@@ -100,6 +104,8 @@ export default function LabSection({ lesson }: LabSectionProps) {
       setIntensityCd(values.intensityCd ?? values.lampFluxLm ?? 900);
       setHeightM(values.heightM ?? 2.8);
       setSensorOffsetM(values.distanceM ?? 0.9);
+      setReflectance(values.reflectance ?? 0.4);
+      setLuminaireCount(values.luminaireCount ?? 2);
     }
     if (lesson.id === 3 || lesson.id === 4) {
       setSourceA(values.sourceA1mDb ?? 98);
@@ -120,13 +126,21 @@ export default function LabSection({ lesson }: LabSectionProps) {
 
   const lightingMetrics = useMemo(() => {
     const distance = Math.sqrt(heightM * heightM + sensorOffsetM * sensorOffsetM);
-    const eLux = intensityCd / Math.max(0.1, distance * distance);
+    const eLux = realisticIlluminanceLux({
+      intensityCd,
+      distanceM: Math.max(0.1, distance),
+      luminaireCount,
+      reflectance,
+      utilizationFactor: 0.62,
+      maintenanceFactor: 0.85,
+    });
     const history = [eLux, eLux * 0.92, eLux * 1.05, eLux * 0.89, eLux * 1.02];
     return {
       eLux,
       eAvg: mean(history),
+      distance,
     };
-  }, [heightM, intensityCd, sensorOffsetM]);
+  }, [heightM, intensityCd, luminaireCount, reflectance, sensorOffsetM]);
 
   const noiseMetrics = useMemo(() => {
     const levels = [
@@ -199,7 +213,6 @@ export default function LabSection({ lesson }: LabSectionProps) {
       'Результаты:',
       rows || 'Нет сохраненных результатов.',
       `Вывод: ${lesson.labWizard.reportConclusionHint}`,
-      'TODO: manual confirmation: сверить табличные значения с PDF-методичкой.',
     ].join('\n');
   }, [lesson, resultRows, variant]);
 
@@ -261,9 +274,6 @@ export default function LabSection({ lesson }: LabSectionProps) {
           }
           label="Учебный режим: разрешить ручную правку значений"
         />
-        <Alert severity={lesson.labWizard.manualConfirmationRequired ? 'warning' : 'info'} sx={{ mt: 1 }}>
-          {variant.sourceNote}
-        </Alert>
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
@@ -334,7 +344,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
       >
         <LabScene3D
           lessonId={lesson.id}
-          lightState={{ lampType, intensityCd, heightM, sensorOffsetM }}
+          lightState={{ lampType, intensityCd, heightM, sensorOffsetM, reflectance, luminaireCount }}
           noiseState={{
             sourceA,
             sourceB,
@@ -383,6 +393,10 @@ export default function LabSection({ lesson }: LabSectionProps) {
             <Slider value={heightM} min={2.2} max={4.5} step={0.05} disabled={!trainingMode} onChange={(_, value) => setHeightM(value as number)} />
             <Typography variant="caption">Смещение датчика: {sensorOffsetM.toFixed(2)} м</Typography>
             <Slider value={sensorOffsetM} min={0} max={3} step={0.05} onChange={(_, value) => setSensorOffsetM(value as number)} />
+            <Typography variant="caption">Коэффициент отражения: {reflectance.toFixed(2)}</Typography>
+            <Slider value={reflectance} min={0} max={0.9} step={0.01} disabled={!trainingMode} onChange={(_, value) => setReflectance(value as number)} />
+            <Typography variant="caption">Количество светильников: {luminaireCount}</Typography>
+            <Slider value={luminaireCount} min={1} max={8} step={1} disabled={!trainingMode} onChange={(_, value) => setLuminaireCount(value as number)} />
             <Alert severity={lightingMetrics.eLux >= 300 ? 'success' : 'warning'}>
               Текущее E={lightingMetrics.eLux.toFixed(1)} лк, Eср={lightingMetrics.eAvg.toFixed(1)} лк
             </Alert>
@@ -523,30 +537,23 @@ export default function LabSection({ lesson }: LabSectionProps) {
         </Stack>
       </Paper>
 
-      <Dialog open={manualTableOpen} onClose={() => setManualTableOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>{lesson.labWizard.manualTableName}</DialogTitle>
+      <Dialog
+        open={manualTableOpen}
+        onClose={() => setManualTableOpen(false)}
+        maxWidth={lesson.id === 4 ? 'xl' : 'md'}
+        fullWidth
+      >
+        <DialogTitle>
+          {lesson.id === 4
+            ? 'Таблицы 4.1–4.4 — Исходные данные (Занятие №4)'
+            : lesson.labWizard.manualTableName}
+        </DialogTitle>
         <DialogContent>
-          <Alert severity="warning" sx={{ mb: 1 }}>
-            TODO: manual confirmation. Таблица сформирована автопереносом и требует ручной сверки с PDF.
-          </Alert>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Вариант</TableCell>
-                <TableCell>Последние цифры</TableCell>
-                <TableCell>Значения</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {lesson.variants.map((item) => (
-                <TableRow key={`variant-row-${item.variant}`}>
-                  <TableCell>{item.variant}</TableCell>
-                  <TableCell>{item.ticketLastDigits.join(', ')}</TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace' }}>{JSON.stringify(item.values)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          {lesson.id === 4 ? (
+            <Lab4TablesPanel />
+          ) : (
+            <VariantTable variants={lesson.variants} activeVariant={variantNumber} />
+          )}
         </DialogContent>
       </Dialog>
     </Stack>

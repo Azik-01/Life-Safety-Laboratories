@@ -120,6 +120,32 @@ export default function TheorySection({ modules, lessonId }: TheorySectionProps)
   const practiceMethods = useMemo(() => (lessonId ? buildPracticeMethods(lessonId) : []), [lessonId]);
   const [detailedMode, setDetailedMode] = useState(true);
 
+  // Build interleaved content: theory → formula → figure flow instead of separate sections
+  const interleavedContent = useMemo(() => {
+    if (!knowledgeLayer) return [];
+    const items: Array<{ type: 'theory' | 'formula' | 'figure'; data: unknown }> = [];
+    const formulas = [...knowledgeLayer.formulas];
+    const figures = [...knowledgeLayer.figures];
+    let fi = 0;
+    let gi = 0;
+
+    knowledgeLayer.theory.forEach((t, i) => {
+      items.push({ type: 'theory', data: t });
+      // Insert formula after every 2nd theory block (roughly distributes formulas among theory)
+      if ((i + 1) % 2 === 0 && fi < formulas.length) {
+        items.push({ type: 'formula', data: formulas[fi++] });
+      }
+      // Insert figure after every 3rd theory block
+      if ((i + 1) % 3 === 0 && gi < figures.length) {
+        items.push({ type: 'figure', data: figures[gi++] });
+      }
+    });
+    // Remaining formulas/figures at end
+    while (fi < formulas.length) items.push({ type: 'formula', data: formulas[fi++] });
+    while (gi < figures.length) items.push({ type: 'figure', data: figures[gi++] });
+    return items;
+  }, [knowledgeLayer]);
+
   useEffect(() => {
     if (!lessonId) return;
     modules.forEach((module) => progress.markTheoryRead(lessonId, module.id));
@@ -138,7 +164,7 @@ export default function TheorySection({ modules, lessonId }: TheorySectionProps)
         />
       </Stack>
 
-      {/* Knowledge layer theory blocks (from JSON) */}
+      {/* Knowledge layer: interleaved theory + formulas + figures */}
       {knowledgeLayer && detailedMode && (
         <Card>
           <CardContent>
@@ -146,36 +172,22 @@ export default function TheorySection({ modules, lessonId }: TheorySectionProps)
               📖 Теоретические сведения
             </Typography>
             <Stack spacing={1.5}>
-              {knowledgeLayer.theory.map((block) => (
-                <KnowledgeBlock key={block.id} block={block} glossary={glossary} />
-              ))}
+              {interleavedContent.map((item) => {
+                if (item.type === 'theory') {
+                  const block = item.data as { id: string; heading: string; text: string; keywords: string[] };
+                  return <KnowledgeBlock key={block.id} block={block} glossary={glossary} />;
+                }
+                if (item.type === 'formula') {
+                  const formula = item.data as { id: string; [key: string]: unknown };
+                  return <FormulaBlock key={formula.id} {...toFormulaBlockProps(formula as unknown as Parameters<typeof toFormulaBlockProps>[0])} />;
+                }
+                if (item.type === 'figure') {
+                  const fig = item.data as { id: string; path: string; caption: string };
+                  return <FigureZoom key={fig.id} src={fig.path} caption={fig.caption} />;
+                }
+                return null;
+              })}
             </Stack>
-
-            {/* Knowledge layer formulas */}
-            {knowledgeLayer.formulas.length > 0 && (
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="h6" sx={{ mb: 1 }}>
-                  Формулы
-                </Typography>
-                {knowledgeLayer.formulas.map((formula) => (
-                  <FormulaBlock key={formula.id} {...toFormulaBlockProps(formula)} />
-                ))}
-              </Box>
-            )}
-
-            {/* Knowledge layer figures */}
-            {knowledgeLayer.figures.length > 0 && (
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="h6" sx={{ mb: 1 }}>
-                  Иллюстрации
-                </Typography>
-                <Stack spacing={1.2}>
-                  {knowledgeLayer.figures.map((fig) => (
-                    <FigureZoom key={fig.id} src={fig.path} caption={fig.caption} />
-                  ))}
-                </Stack>
-              </Box>
-            )}
           </CardContent>
         </Card>
       )}

@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   Checkbox,
+  Chip,
   CircularProgress,
   Dialog,
   DialogContent,
@@ -26,7 +27,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { LessonTheme } from '../../types/theme';
-import { pickVariantByTicketDigits } from '../../data/variants';
+import { lesson2MergedValues, pickVariantByTicketDigits } from '../../data/variants';
 import Lab4TablesPanel from './Lab4TablesPanel';
 import VariantTable from './VariantTable';
 import { mean, realisticIlluminanceLux } from '../../formulas/illumination';
@@ -54,6 +55,11 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const initialValues = lesson.variants[0]?.values ?? {};
   const [ticketInput, setTicketInput] = useState('');
   const [variantNumber, setVariantNumber] = useState(0);
+  const [lesson2Penultimate, setLesson2Penultimate] = useState(0);
+  const [lesson2Full, setLesson2Full] = useState<Record<string, number>>(
+    () => lesson.id === 2 ? lesson2MergedValues(0, 0) : {}
+  );
+  const [lesson2SigmaE, setLesson2SigmaE] = useState<string>('');
   const [trainingMode, setTrainingMode] = useState(false);
   const [manualTableOpen, setManualTableOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(() =>
@@ -100,6 +106,9 @@ export default function LabSection({ lesson }: LabSectionProps) {
   }, [lesson.id, progress, stepIndex]);
 
   function applyVariantValues(values: Record<string, number>) {
+    if (lesson.id === 2) {
+      setLesson2Full(values);
+    }
     if (lesson.id === 1 || lesson.id === 2) {
       setIntensityCd(values.intensityCd ?? values.lampFluxLm ?? 900);
       setHeightM(values.heightM ?? 2.8);
@@ -171,6 +180,65 @@ export default function LabSection({ lesson }: LabSectionProps) {
     return { levels, total };
   }, [barrierMass, observerX, sourceA, sourceAOn, sourceAX, sourceB, sourceBOn, sourceBX, sourceC, sourceCOn, sourceCX]);
 
+  /** All intermediate and final calculations for Lesson 2, derived from both tables. */
+  const lesson2Calcs = useMemo(() => {
+    if (lesson.id !== 2) return null;
+    const v = lesson2Full;
+    const L   = v.lengthM         ?? 0;
+    const B   = v.widthM          ?? 0;
+    const H   = v.heightM         ?? 0;
+    const PhiL = v.lampFluxLm     ?? 0;
+    const En  = v.eNormLux        ?? 0;
+    const Kz  = v.reserveFactor   ?? 0;
+    const z   = v.nonUniformity   ?? 0;
+    const n   = v.lampsPerLuminaire ?? 0;
+    const Wt  = v.tabWt           ?? 0;
+    const Sp  = v.roomAreaM2      ?? 0;
+    const eta = v.etaPct          ?? 0;
+    const mu  = v.mu              ?? 0;
+    const hasT2 = Kz > 0 && Sp > 0 && eta > 0;
+
+    // ── Method 1: Utilisation factor ────────────────────────────────
+    const Hp     = +(H - 0.3).toFixed(3);  // Нр = H_room − hе(0.3м от потолка)
+    const i      = Hp > 0 && (L + B) > 0 ? +((L * B) / (Hp * (L + B))).toFixed(3) : 0;
+    const PhiSv  = +(n * PhiL).toFixed(1);
+    const etaUtil = eta / 100;
+    const N1     = hasT2 && PhiSv > 0 && etaUtil > 0
+      ? Math.ceil((En * Sp * Kz * z) / (PhiSv * etaUtil))
+      : null;
+
+    // ── Method 2: Specific power ─────────────────────────────────────
+    const alphaKz = hasT2 ? +(Kz / 1.5).toFixed(4) : null;
+    const alphaZ  = hasT2 ? +(z  / 1.1).toFixed(4) : null;
+    const alphaE  = hasT2 ? +(En / 100).toFixed(4)  : null;
+    const Wp      = hasT2 ? +(Wt * (Kz / 1.5) * (z / 1.1) * (En / 100)).toFixed(3) : null;
+    const PL = 40;
+    const N2 = Wp !== null && n > 0
+      ? Math.ceil((Wp * Sp) / (n * PL))
+      : null;
+
+    // ── Method 3: Light-line rows ─────────────────────────────────────
+    const nRows  = 3;
+    const Hprime = Hp;
+    const lLine  = +((B / (nRows + 1))).toFixed(3);
+    const Pprime = Hprime > 0 ? +(lLine / Hprime).toFixed(3) : 0;
+    const Lprime = Hprime > 0 ? +(L / Hprime).toFixed(3) : 0;
+    const sigmaE = parseFloat(lesson2SigmaE);
+    const sigmaEValid = isFinite(sigmaE) && sigmaE > 0 && mu > 0;
+    const PhiLprime = sigmaEValid
+      ? +((1000 * En * Kz * z) / (mu * sigmaE)).toFixed(1)
+      : null;
+    const N1row = PhiLprime !== null && PhiSv > 0
+      ? Math.ceil((PhiLprime * L) / PhiSv)
+      : null;
+    const Ntotal = N1row !== null ? N1row * nRows : null;
+
+    return { L, B, H, PhiL, En, Kz, z, n, Wt, Sp, eta, mu,
+      Hp, i, PhiSv, etaUtil, N1,
+      alphaKz, alphaZ, alphaE, Wp, N2,
+      Hprime, lLine, Pprime, Lprime, PhiLprime, N1row, Ntotal, hasT2 };
+  }, [lesson.id, lesson2Full, lesson2SigmaE]);
+
   const emiMetrics = useMemo(() => {
     const lambda = wavelengthM(Math.max(1e3, frequencyHz));
     const ppe = powerFluxDensityWm2(Math.max(0, eVpm), Math.max(0, hApm));
@@ -182,7 +250,10 @@ export default function LabSection({ lesson }: LabSectionProps) {
     if (stepIndex === 0) return;
     const currentStep = lesson.labWizard.steps[stepIndex - 1];
     let value = '—';
-    if (lesson.id === 1 || lesson.id === 2) {
+    if (lesson.id === 2 && lesson2Calcs) {
+      const { N1, N2, Ntotal } = lesson2Calcs;
+      value = `N₁(η)=${N1 ?? 'н/д'} св.; N₂(Wт)=${N2 ?? 'н/д'} св.; NΣ(линии)=${Ntotal ?? 'н/д'} св.`;
+    } else if (lesson.id === 1) {
       value = `E=${lightingMetrics.eLux.toFixed(1)} лк; Eср=${lightingMetrics.eAvg.toFixed(1)} лк`;
     } else if (lesson.id === 3 || lesson.id === 4) {
       value = `LΣ=${noiseMetrics.total.toFixed(1)} дБ; G=${barrierMass.toFixed(0)} кг/м²`;
@@ -240,6 +311,11 @@ export default function LabSection({ lesson }: LabSectionProps) {
             onClick={() => {
               const resolved = pickVariantByTicketDigits(lesson.id, ticketInput);
               setVariantNumber(resolved.variant);
+              if (lesson.id === 2) {
+                const digits = ticketInput.replace(/\D/g, '');
+                const pen = digits.length > 1 ? Number(digits[digits.length - 2]) : 0;
+                setLesson2Penultimate(pen);
+              }
               applyVariantValues(resolved.values);
             }}
           >
@@ -251,7 +327,12 @@ export default function LabSection({ lesson }: LabSectionProps) {
             onChange={(event) => {
               const nextVariant = lesson.variants.find((item) => item.variant === Number(event.target.value));
               setVariantNumber(Number(event.target.value));
-              if (nextVariant) applyVariantValues(nextVariant.values);
+              if (lesson.id === 2) {
+                const merged = lesson2MergedValues(Number(event.target.value), lesson2Penultimate);
+                applyVariantValues(merged);
+              } else if (nextVariant) {
+                applyVariantValues(nextVariant.values);
+              }
             }}
           >
             {lesson.variants.map((item) => (
@@ -260,6 +341,23 @@ export default function LabSection({ lesson }: LabSectionProps) {
               </MenuItem>
             ))}
           </Select>
+          {lesson.id === 2 && (
+            <Select
+              size="small"
+              value={lesson2Penultimate}
+              onChange={(event) => {
+                const pen = Number(event.target.value);
+                setLesson2Penultimate(pen);
+                const merged = lesson2MergedValues(variantNumber, pen);
+                applyVariantValues(merged);
+              }}
+              sx={{ minWidth: 220 }}
+            >
+              {[0,1,2,3,4,5,6,7,8,9].map((d) => (
+                <MenuItem key={d} value={d}>Предпоследняя цифра: {d} (Табл. 2.2)</MenuItem>
+              ))}
+            </Select>
+          )}
           <Button variant="outlined" onClick={() => setManualTableOpen(true)}>
             Показать таблицу методички
           </Button>
@@ -403,23 +501,93 @@ export default function LabSection({ lesson }: LabSectionProps) {
           </Stack>
         )}
 
-        {lesson.id === 2 && (
-          <Stack spacing={1.2}>
-            <Typography variant="caption" fontWeight={600}>Расчёт освещённости (метод коэффициента использования)</Typography>
-            <Select size="small" value={lampType} onChange={(event) => setLampType(event.target.value as LampType)} disabled={!trainingMode}>
-              <MenuItem value="incandescent">Лампа накаливания</MenuItem>
-              <MenuItem value="fluorescent">Люминесцентная лампа</MenuItem>
-              <MenuItem value="led">LED</MenuItem>
-            </Select>
-            <Typography variant="caption">Световой поток лампы Фл: {intensityCd.toFixed(0)} лм</Typography>
-            <Slider value={intensityCd} min={200} max={5000} step={10} disabled={!trainingMode} onChange={(_, value) => setIntensityCd(value as number)} />
-            <Typography variant="caption">Высота подвеса H: {heightM.toFixed(2)} м</Typography>
-            <Slider value={heightM} min={2.2} max={5} step={0.05} disabled={!trainingMode} onChange={(_, value) => setHeightM(value as number)} />
-            <Typography variant="caption">Высота рабочей поверхности hp: {sensorOffsetM.toFixed(2)} м</Typography>
-            <Slider value={sensorOffsetM} min={0} max={1.5} step={0.05} disabled={!trainingMode} onChange={(_, value) => setSensorOffsetM(value as number)} />
-            <Alert severity={lightingMetrics.eLux >= 300 ? 'success' : 'warning'}>
-              Расчётное E={lightingMetrics.eLux.toFixed(1)} лк
-            </Alert>
+        {lesson.id === 2 && lesson2Calcs && (
+          <Stack spacing={1.5}>
+            <Typography variant="caption" fontWeight={600}>Исходные данные варианта</Typography>
+            <Table size="small">
+              <TableBody>
+                <TableRow><TableCell>L (м)</TableCell><TableCell>{lesson2Calcs.L}</TableCell><TableCell>B (м)</TableCell><TableCell>{lesson2Calcs.B}</TableCell><TableCell>H (м)</TableCell><TableCell>{lesson2Calcs.H}</TableCell></TableRow>
+                <TableRow><TableCell>Φл (лм)</TableCell><TableCell>{lesson2Calcs.PhiL}</TableCell><TableCell>Eн (лк)</TableCell><TableCell>{lesson2Calcs.En}</TableCell><TableCell>n (шт)</TableCell><TableCell>{lesson2Calcs.n}</TableCell></TableRow>
+                {lesson2Calcs.hasT2 && (
+                  <TableRow><TableCell>Kз</TableCell><TableCell>{lesson2Calcs.Kz}</TableCell><TableCell>z</TableCell><TableCell>{lesson2Calcs.z}</TableCell><TableCell>Wт (Вт/м²)</TableCell><TableCell>{lesson2Calcs.Wt}</TableCell></TableRow>
+                )}
+                {lesson2Calcs.hasT2 && (
+                  <TableRow><TableCell>Sп (м²)</TableCell><TableCell>{lesson2Calcs.Sp}</TableCell><TableCell>η (%)</TableCell><TableCell>{lesson2Calcs.eta}</TableCell><TableCell>μ</TableCell><TableCell>{lesson2Calcs.mu}</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+
+            {!lesson2Calcs.hasT2 && (
+              <Alert severity="warning">
+                Выберите предпоследнюю цифру студбилета (Таблица 2.2) для расчёта N.
+              </Alert>
+            )}
+
+            <Typography variant="caption" fontWeight={600}>Метод 1 — Коэффициент использования (формулы 1.12, 1.11, 1.10, 1.9)</Typography>
+            <Table size="small">
+              <TableBody>
+                <TableRow><TableCell>Hp = H − 0,3 (hе=0,3м от потолка)</TableCell><TableCell>{lesson2Calcs.Hp.toFixed(2)} м</TableCell></TableRow>
+                <TableRow><TableCell>i = (L×B) / (Hp×(L+B))</TableCell><TableCell>{lesson2Calcs.i.toFixed(3)}</TableCell></TableRow>
+                <TableRow><TableCell>Φсв = n × Φл</TableCell><TableCell>{lesson2Calcs.PhiSv.toFixed(0)} лм</TableCell></TableRow>
+                <TableRow><TableCell>η (из табл. 2.2)</TableCell><TableCell>{lesson2Calcs.hasT2 ? `${lesson2Calcs.eta} % = ${lesson2Calcs.etaUtil.toFixed(2)}` : '—'}</TableCell></TableRow>
+                <TableRow sx={{ fontWeight: 700 }}>
+                  <TableCell><strong>N₁ = ⌈Eн×Sп×Kз×z / (Φсв×η)⌉</strong></TableCell>
+                  <TableCell><strong>{lesson2Calcs.N1 !== null ? `${lesson2Calcs.N1} св.` : '—'}</strong></TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+
+            <Typography variant="caption" fontWeight={600}>Метод 2 — Удельная мощность (формула 1.14)</Typography>
+            <Table size="small">
+              <TableBody>
+                <TableRow><TableCell>αKз = Kз / 1,5</TableCell><TableCell>{lesson2Calcs.alphaKz?.toFixed(4) ?? '—'}</TableCell></TableRow>
+                <TableRow><TableCell>αZ = z / 1,1</TableCell><TableCell>{lesson2Calcs.alphaZ?.toFixed(4) ?? '—'}</TableCell></TableRow>
+                <TableRow><TableCell>αE = Eн / 100</TableCell><TableCell>{lesson2Calcs.alphaE?.toFixed(2) ?? '—'}</TableCell></TableRow>
+                <TableRow><TableCell>Wp = Wт × αKз × αZ × αE</TableCell><TableCell>{lesson2Calcs.Wp !== null ? `${lesson2Calcs.Wp.toFixed(3)} Вт/м²` : '—'}</TableCell></TableRow>
+                <TableRow sx={{ fontWeight: 700 }}>
+                  <TableCell><strong>N₂ = ⌈Wp×Sп / (n×Pл)⌉, Pл=40 Вт</strong></TableCell>
+                  <TableCell><strong>{lesson2Calcs.N2 !== null ? `${lesson2Calcs.N2} св.` : '—'}</strong></TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+
+            <Typography variant="caption" fontWeight={600}>Метод 3 — Светящиеся линии (3 ряда)</Typography>
+            <Table size="small">
+              <TableBody>
+                <TableRow><TableCell>H′ = Hp</TableCell><TableCell>{lesson2Calcs.Hprime.toFixed(2)} м</TableCell></TableRow>
+                <TableRow><TableCell>l = B/(N_рядов+1)</TableCell><TableCell>{lesson2Calcs.lLine.toFixed(3)} м</TableCell></TableRow>
+                <TableRow><TableCell>P′ = l / H′</TableCell><TableCell>{lesson2Calcs.Pprime.toFixed(3)}</TableCell></TableRow>
+                <TableRow><TableCell>L′ = L / H′</TableCell><TableCell>{lesson2Calcs.Lprime.toFixed(3)}</TableCell></TableRow>
+                <TableRow>
+                  <TableCell>Σe (из таблицы по P′, L′)</TableCell>
+                  <TableCell>
+                    <TextField
+                      size="small"
+                      value={lesson2SigmaE}
+                      onChange={(e) => setLesson2SigmaE(e.target.value)}
+                      placeholder="введите Σe"
+                      sx={{ width: 130 }}
+                    />
+                  </TableCell>
+                </TableRow>
+                <TableRow><TableCell>Φл′ = 1000×Eн×Kз×z / (μ×Σe)</TableCell>
+                  <TableCell>{lesson2Calcs.PhiLprime !== null ? `${lesson2Calcs.PhiLprime.toFixed(1)} лм` : '—'}</TableCell>
+                </TableRow>
+                <TableRow><TableCell>N₁ (в ряду) = ⌈Φл′×L/Φсв⌉</TableCell><TableCell>{lesson2Calcs.N1row !== null ? `${lesson2Calcs.N1row} св.` : '—'}</TableCell></TableRow>
+                <TableRow sx={{ fontWeight: 700 }}>
+                  <TableCell><strong>NΣ = N₁×3</strong></TableCell>
+                  <TableCell><strong>{lesson2Calcs.Ntotal !== null ? `${lesson2Calcs.Ntotal} св.` : '—'}</strong></TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+
+            {lesson2Calcs.hasT2 && (
+              <Alert severity={lesson2Calcs.N1 !== null ? 'success' : 'info'}>
+                Метод 1: N₁ = {lesson2Calcs.N1 ?? '?'} св. &nbsp;|&nbsp;
+                Метод 2: N₂ = {lesson2Calcs.N2 ?? '?'} св. &nbsp;|&nbsp;
+                Метод 3: NΣ = {lesson2Calcs.Ntotal ?? '(нужен Σe)'} св.
+              </Alert>
+            )}
           </Stack>
         )}
 
@@ -551,6 +719,51 @@ export default function LabSection({ lesson }: LabSectionProps) {
         <DialogContent>
           {lesson.id === 4 ? (
             <Lab4TablesPanel />
+          ) : lesson.id === 2 ? (
+            <Stack spacing={3}>
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 2.1 — по последней цифре студбилета
+              </Typography>
+              <VariantTable variants={lesson.variants} activeVariant={variantNumber} />
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2 }}>
+                Таблица 2.2 — по предпоследней цифре студбилета
+                {' '}(ваша: <strong>{lesson2Penultimate}</strong>)
+              </Typography>
+              <Table size="small" component={Paper} variant="outlined">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700, bgcolor: 'primary.main', color: 'primary.contrastText' }}>Параметр</TableCell>
+                    {[0,1,2,3,4,5,6,7,8,9].map((d) => (
+                      <TableCell key={d} align="center" sx={{ fontWeight: d === lesson2Penultimate ? 700 : 400, bgcolor: d === lesson2Penultimate ? 'primary.light' : 'primary.main', color: 'primary.contrastText' }}>{d}</TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {([
+                    ['Kз',        [0.5,0.6,0.7,0.8,0.9,1.0,1.1,1.2,1.3,1.4],  ''],
+                    ['z',         [1.00,1.02,1.04,1.06,1.07,1.08,1.09,1.10,1.12,1.13], ''],
+                    ['Wт (Вт/м²)',[5.0,5.2,5.4,5.6,5.8,6.0,6.2,6.4,6.6,6.8],  ''],
+                    ['Sп (м²)',   [200,210,220,230,240,250,260,270,280,280],     ''],
+                    ['n (шт)',    [1,2,3,4,5,6,7,8,9,10],                        ''],
+                    ['η (%)',     [45,45,45,45,45,45,45,45,45,45],               ''],
+                    ['μ',        [1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0],   ''],
+                  ] as [string, number[], string][]).map(([label, vals]) => (
+                    <TableRow key={label} sx={{ '&:nth-of-type(odd)': { bgcolor: 'action.hover' } }}>
+                      <TableCell sx={{ fontWeight: 600 }}>{label}</TableCell>
+                      {vals.map((val, d) => (
+                        <TableCell key={d} align="center"
+                          sx={{ bgcolor: d === lesson2Penultimate ? 'action.selected' : undefined, fontWeight: d === lesson2Penultimate ? 700 : 400 }}
+                        >
+                          {d === lesson2Penultimate
+                            ? <Chip size="small" label={String(val)} color="primary" variant="filled" />
+                            : String(val)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Stack>
           ) : (
             <VariantTable variants={lesson.variants} activeVariant={variantNumber} />
           )}

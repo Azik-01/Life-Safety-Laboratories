@@ -1,16 +1,56 @@
 import type { LabVariant, LessonId } from '../types/theme';
 
-function lesson2Values(base: number): Record<string, number> {
+/* ─── Таблица 2.1 — по последней цифре студбилета ─── */
+const T2_1_L =    [11,   12,   13,   14,   15,   16,   17,   18,   19,   20  ] as const;
+const T2_1_B =    [ 5,    6,    7,    8,    9,   10,   11,   12,   13,   14  ] as const;
+const T2_1_H =    [ 3.4,  3.6,  3.8,  4.0,  4.2,  4.4,  4.6,  4.8,  5.0,  5.2] as const;
+const T2_1_FL =   [2300, 2310, 2280, 2290, 2320, 2330, 2340, 2285, 2295, 2305] as const;
+const T2_1_EN =   [ 450,  180,  100,  120,  150,  200,  250,  300,  350,  400] as const;
+
+/* ─── Таблица 2.2 — по предпоследней цифре студбилета ─── */
+const T2_2_KZ  = [0.5,  0.6,  0.7,  0.8,  0.9,  1.0,  1.1,  1.2,  1.3,  1.4 ] as const;
+const T2_2_Z   = [1.00, 1.02, 1.04, 1.06, 1.07, 1.08, 1.09, 1.10, 1.12, 1.13] as const;
+const T2_2_WT  = [5.0,  5.2,  5.4,  5.6,  5.8,  6.0,  6.2,  6.4,  6.6,  6.8 ] as const;
+const T2_2_SN  = [200,  210,  220,  230,  240,  250,  260,  270,  280,  280 ] as const; // Sп,м²
+const T2_2_N   = [1,    2,    3,    4,    5,    6,    7,    8,    9,    10  ] as const;
+const T2_2_ETA = [45,   45,   45,   45,   45,   45,   45,   45,   45,   45  ] as const; // η, %
+const T2_2_MU  = [1.1,  1.2,  1.3,  1.4,  1.5,  1.6,  1.7,  1.8,  1.9,  2.0 ] as const;
+
+function lesson2Table1Values(d: number): Record<string, number> {
   return {
-    lengthM: 12 + base,
-    widthM: 6 + (base % 4),
-    heightM: 3 + (base % 3) * 0.5,
-    lampFluxLm: 3000 + base * 220,
-    eNormLux: 200 + (base % 5) * 50,
-    reserveFactor: 1.4 + (base % 3) * 0.1,
-    nonUniformity: 1.1,
-    lampsPerLuminaire: 2,
-    lampPowerW: 40 + (base % 4) * 20,
+    lengthM:    T2_1_L[d],
+    widthM:     T2_1_B[d],
+    heightM:    T2_1_H[d],
+    lampFluxLm: T2_1_FL[d],
+    eNormLux:   T2_1_EN[d],
+    // Table 2.2 placeholders — require entry of student ticket
+    reserveFactor:    0,
+    nonUniformity:    0,
+    tabWt:            0,
+    roomAreaM2:       0,
+    lampsPerLuminaire:0,
+    etaPct:           0,
+    mu:               0,
+  };
+}
+
+/** Build the full merged values for lesson 2 from both digits. */
+export function lesson2MergedValues(lastDigit: number, penultimateDigit: number): Record<string, number> {
+  return {
+    // Table 2.1
+    lengthM:     T2_1_L[lastDigit],
+    widthM:      T2_1_B[lastDigit],
+    heightM:     T2_1_H[lastDigit],
+    lampFluxLm:  T2_1_FL[lastDigit],
+    eNormLux:    T2_1_EN[lastDigit],
+    // Table 2.2
+    reserveFactor:     T2_2_KZ[penultimateDigit],
+    nonUniformity:     T2_2_Z[penultimateDigit],
+    tabWt:             T2_2_WT[penultimateDigit],
+    roomAreaM2:        T2_2_SN[penultimateDigit],
+    lampsPerLuminaire: T2_2_N[penultimateDigit],
+    etaPct:            T2_2_ETA[penultimateDigit],
+    mu:                T2_2_MU[penultimateDigit],
   };
 }
 
@@ -108,9 +148,23 @@ const sourceNote4 =
   'Данные верифицированы по Таблицам 4.1 и 4.2 методички (labs doc/lab txt 4.txt). ' +
   'Масса преграды (G) подставляется автоматически по номеру из Таблицы 4.2.';
 
+const sourceNote2 =
+  'Таблица 2.1 (последняя цифра) + Таблица 2.2 (предпоследняя цифра). ' +
+  'Введите номер студенческого билета для автоматического заполнения обеих таблиц.';
+
+/* Lesson 2: 10 variants contain only Table 2.1 data (last digit).              */
+/* Full merged values are built by pickVariantByTicketDigits using both digits. */
+const lesson2Variants: LabVariant[] = Array.from({ length: 10 }, (_, d) => ({
+  variant: d,
+  ticketLastDigits: [d],
+  values: lesson2Table1Values(d),
+  sourceNote: sourceNote2,
+  validated: true,
+}));
+
 export const lessonVariants: Record<LessonId, LabVariant[]> = {
   1: makeVariants(sourceNote, lesson1Values),
-  2: makeVariants(sourceNote, lesson2Values),
+  2: lesson2Variants,
   3: makeVariants(sourceNote, lesson3Values),
   4: makeVariants(sourceNote4, lesson4Values, true),
   5: makeVariants(sourceNote, lesson5Values),
@@ -122,6 +176,17 @@ export function pickVariantByTicketDigits(
 ): LabVariant {
   const digits = ticketInput.replace(/\D/g, '');
   const lastDigit = digits.length > 0 ? Number(digits[digits.length - 1]) : 0;
+
+  if (lessonId === 2) {
+    const penultimateDigit = digits.length > 1 ? Number(digits[digits.length - 2]) : 0;
+    const base = lessonVariants[2].find((row) => row.ticketLastDigits.includes(lastDigit))
+      ?? lessonVariants[2][0];
+    return {
+      ...base,
+      values: lesson2MergedValues(lastDigit, penultimateDigit),
+    };
+  }
+
   return lessonVariants[lessonId].find((row) => row.ticketLastDigits.includes(lastDigit))
     ?? lessonVariants[lessonId][0];
 }

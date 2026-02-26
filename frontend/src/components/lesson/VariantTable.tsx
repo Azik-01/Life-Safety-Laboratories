@@ -23,13 +23,18 @@ const LABELS: Record<string, [string, string]> = {
   // Lesson 2
   lengthM:          ['Длина помещения (L)',  'м'],
   widthM:           ['Ширина помещения (B)', 'м'],
-  heightM:          ['Высота подвеса (H)',   'м'],
+  heightM:          ['Высота помещения (H)',  'м'],
   lampFluxLm:       ['Поток лампы (Φл)',     'лм'],
   eNormLux:         ['Норма освещённости (Eн)', 'лк'],
   reserveFactor:    ['Коэф. запаса (Kз)',    ''],
   nonUniformity:    ['Коэф. неравн. (z)',    ''],
   lampsPerLuminaire:['Ламп в светильнике (n)', 'шт'],
   lampPowerW:       ['Мощность лампы (Pл)',  'Вт'],
+  // Lesson 2 — Table 2.2 keys (penultimate digit)
+  tabWt:            ['Удельная мощность (Wт)', 'Вт/м²'],
+  roomAreaM2:       ['Площадь помещения (Sп)', 'м²'],
+  etaPct:           ['КПД установки (η)',      '%'],
+  mu:               ['Коэффициент μ',          ''],
   // Lesson 3 / 4 — noise
   sourceA1mDb:      ['Источник A — L₁',     'дБ'],
   sourceB1mDb:      ['Источник B — L₁',     'дБ'],

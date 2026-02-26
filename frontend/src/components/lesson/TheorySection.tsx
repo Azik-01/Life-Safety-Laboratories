@@ -126,22 +126,38 @@ export default function TheorySection({ modules, lessonId }: TheorySectionProps)
     const items: Array<{ type: 'theory' | 'formula' | 'figure'; data: unknown }> = [];
     const formulas = [...knowledgeLayer.formulas];
     const figures = [...knowledgeLayer.figures];
-    let fi = 0;
     let gi = 0;
+    const usedFormulaIds = new Set<string>();
+    const formulaByNumber = new Map<string, (typeof formulas)[number]>();
+
+    formulas.forEach((formula) => {
+      const match = formula.label?.match(/\(?\s*(\d+\.\d+)\s*\)?/);
+      if (match) formulaByNumber.set(match[1], formula);
+    });
 
     knowledgeLayer.theory.forEach((t, i) => {
       items.push({ type: 'theory', data: t });
-      // Insert formula after every 2nd theory block (roughly distributes formulas among theory)
-      if ((i + 1) % 2 === 0 && fi < formulas.length) {
-        items.push({ type: 'formula', data: formulas[fi++] });
-      }
+
+      // Insert formulas in the exact order they are referenced in this theory block.
+      const referencedNumbers = [...t.text.matchAll(/формул[аы]\s*(\d+\.\d+)/gi)].map((m) => m[1]);
+      referencedNumbers.forEach((num) => {
+        const formula = formulaByNumber.get(num);
+        if (!formula || usedFormulaIds.has(formula.id)) return;
+        items.push({ type: 'formula', data: formula });
+        usedFormulaIds.add(formula.id);
+      });
+
       // Insert figure after every 3rd theory block
       if ((i + 1) % 3 === 0 && gi < figures.length) {
         items.push({ type: 'figure', data: figures[gi++] });
       }
     });
     // Remaining formulas/figures at end
-    while (fi < formulas.length) items.push({ type: 'formula', data: formulas[fi++] });
+    formulas.forEach((formula) => {
+      if (!usedFormulaIds.has(formula.id)) {
+        items.push({ type: 'formula', data: formula });
+      }
+    });
     while (gi < figures.length) items.push({ type: 'figure', data: figures[gi++] });
     return items;
   }, [knowledgeLayer]);

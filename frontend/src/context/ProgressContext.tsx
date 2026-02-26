@@ -81,6 +81,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     (lessonId: LessonId, step: number) => {
       update((prev) => {
         const lp = prev[lessonId] ?? { ...defaultProgress };
+        if (lp.labStep === step) return prev;
         return { ...prev, [lessonId]: { ...lp, labStep: step } };
       });
     },

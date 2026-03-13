@@ -22,6 +22,21 @@ export const sceneTitle: Record<TheorySimulatorType, string> = {
   'emi-spectrum': 'Длина электромагнитной волны и частота',
   'emi-wave': 'Плотность потока энергии (ППЭ) электромагнитного поля',
   'emi-ppe-zones': 'Зоны вокруг источника ЭМИ (ближняя / промежуточная / дальняя)',
+  'emi-shield-thickness': 'Экранирование: толщина поглощающего слоя',
+  'emi-waveguide': 'Затухание ЭМИ в волноводе',
+  'emi-field-attenuation': 'Ослабление поля экраном (дБ)',
+  'hf-field-strength': 'Напряжённость ВЧ-поля по Шулейкину',
+  'hf-wave-propagation': 'Распространение радиоволн вдоль земли',
+  'hf-soil-attenuation': 'Влияние проводимости почвы на затухание',
+  'uhf-field-strength': 'Поле УВЧ-передатчика телецентра',
+  'uhf-antenna-pattern': 'Диаграмма направленности антенны',
+  'radiation-dose': 'ПДУ облучения — зависимость от частоты',
+  'electric-current-body': 'Путь тока через тело человека',
+  'electric-resistance': 'Эквивалентная схема сопротивления тела',
+  'electric-frequency-effect': 'Влияние частоты на импеданс тела',
+  'ground-current-spread': 'Растекание тока в грунте от заземлителя',
+  'step-voltage': 'Шаговое напряжение между точками грунта',
+  'equipotential-zones': 'Эквипотенциальные линии вокруг заземлителя',
 };
 
 /* ─── Bold label helper ─── */
@@ -62,7 +77,7 @@ function Room({ width = 10, depth = 8, height = 3.2, wallColor = '#d9d0c4' }: {
       {/* Floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
         <planeGeometry args={[width, depth]} />
-        <meshStandardMaterial color="#6e6259" roughness={0.8} />
+        <meshStandardMaterial color="#c4b8a8" roughness={0.8} />
       </mesh>
       {/* Ceiling */}
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, height, 0]}>
@@ -1092,6 +1107,114 @@ function EmiZonesScene({ frequency, distance }: { frequency: number; distance: n
   );
 }
 
+/* ─────────────── EMI Wave Comparison Scene (E vs H) ─────────────── */
+
+function EmiWaveScene({ eField, hField }: { eField: number; hField: number }) {
+  const waveRef = useRef<THREE.Group>(null);
+  const timeRef = useRef(0);
+  const ppe = eField * hField;
+  const samples = 80;
+  const waveLength = 16;
+
+  useFrame((_, delta) => {
+    timeRef.current += delta;
+    if (waveRef.current) {
+      waveRef.current.position.x = -((timeRef.current * 2) % waveLength);
+    }
+  });
+
+  const eAmplitude = Math.min(2.0, eField / 20);
+  const hAmplitude = Math.min(2.0, hField / 0.1);
+
+  const ePoints = useMemo(() => {
+    const pts: [number, number, number][] = [];
+    for (let i = 0; i < samples; i++) {
+      const x = (i / samples) * waveLength * 2;
+      const y = Math.sin((i / samples) * Math.PI * 8) * eAmplitude;
+      pts.push([x, y + 2.0, 0]);
+    }
+    return pts;
+  }, [eAmplitude]);
+
+  const hPoints = useMemo(() => {
+    const pts: [number, number, number][] = [];
+    for (let i = 0; i < samples; i++) {
+      const x = (i / samples) * waveLength * 2;
+      const z = Math.sin((i / samples) * Math.PI * 8) * hAmplitude;
+      pts.push([x, 2.0, z]);
+    }
+    return pts;
+  }, [hAmplitude]);
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[20, 12]} />
+        <meshStandardMaterial color="#0c1a30" />
+      </mesh>
+      {/* Propagation axis */}
+      <mesh position={[0, 2.0, 0]}>
+        <boxGeometry args={[18, 0.02, 0.02]} />
+        <meshBasicMaterial color="#555555" />
+      </mesh>
+      <Label position={[9.5, 2.0, 0]} color="#888" size={0.12}>{'Направление →'}</Label>
+      {/* Animated wave group */}
+      <group ref={waveRef}>
+        {/* E-field wave — vertical (Y-axis), red/orange */}
+        {ePoints.map((p, i) => (
+          <mesh key={`e-${i}`} position={p}>
+            <sphereGeometry args={[0.04, 6, 6]} />
+            <meshBasicMaterial color="#ff4422" />
+          </mesh>
+        ))}
+        {/* E-field line segments */}
+        {ePoints.slice(0, -1).map((p, i) => {
+          const next = ePoints[i + 1];
+          const mid: [number, number, number] = [(p[0] + next[0]) / 2, (p[1] + next[1]) / 2, 0];
+          const dx = next[0] - p[0];
+          const dy = next[1] - p[1];
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const angle = Math.atan2(dy, dx);
+          return (
+            <mesh key={`el-${i}`} position={mid} rotation={[0, 0, angle]}>
+              <boxGeometry args={[len, 0.025, 0.025]} />
+              <meshBasicMaterial color="#ff4422" />
+            </mesh>
+          );
+        })}
+        {/* H-field wave — horizontal (Z-axis), cyan/blue */}
+        {hPoints.map((p, i) => (
+          <mesh key={`h-${i}`} position={p}>
+            <sphereGeometry args={[0.04, 6, 6]} />
+            <meshBasicMaterial color="#22aaff" />
+          </mesh>
+        ))}
+        {/* H-field line segments */}
+        {hPoints.slice(0, -1).map((p, i) => {
+          const next = hPoints[i + 1];
+          const mid: [number, number, number] = [(p[0] + next[0]) / 2, 2.0, (p[2] + next[2]) / 2];
+          const dx = next[0] - p[0];
+          const dz = next[2] - p[2];
+          const len = Math.sqrt(dx * dx + dz * dz);
+          const angle = Math.atan2(dz, dx);
+          return (
+            <mesh key={`hl-${i}`} position={mid} rotation={[0, -angle, 0]}>
+              <boxGeometry args={[len, 0.025, 0.025]} />
+              <meshBasicMaterial color="#22aaff" />
+            </mesh>
+          );
+        })}
+      </group>
+      {/* Labels */}
+      <Label position={[-7, 3.8, 0]} color="#ff4422" size={0.18}>{'E — электрическое поле'}</Label>
+      <Label position={[-7, 0.3, 0]} color="#22aaff" size={0.18}>{'H — магнитное поле'}</Label>
+      <Label position={[4, 4.2, 0]} color="#ffffff" size={0.14}>{`E = ${eField.toFixed(1)} В/м   H = ${hField.toFixed(2)} А/м`}</Label>
+      <Label position={[4, 3.8, 0]} color="#ffcc44" size={0.14}>{`ППЭ = E·H = ${ppe.toFixed(2)} Вт/м²`}</Label>
+      <Label position={[4, 0.3, 0]} color="#aaa" size={0.1}>{'E ⊥ H — волны перпендикулярны'}</Label>
+    </>
+  );
+}
+
 /* ─────────────── Brightness Scene ─────────────── */
 
 function BrightnessScene({ intensity, area }: { intensity: number; area: number }) {
@@ -1126,6 +1249,577 @@ function BrightnessScene({ intensity, area }: { intensity: number; area: number 
       </Label>
       <Label position={[0, 0.3, 2.2]} color="#000066" size={0.16}>{`B = I/S = ${B.toFixed(0)} кд/м²`}</Label>
       <Label position={[0, 0.05, 2.2]} color="#555" size={0.1}>{`I = ${intensity} кд, S = ${area.toFixed(1)} м²`}</Label>
+    </>
+  );
+}
+
+/* ─────────────── Shield Thickness Scene (Lab 6) ─────────────── */
+
+function ShieldThicknessScene({ thickness, attenuation }: { thickness: number; attenuation: number }) {
+  const t = Math.max(0.01, thickness);
+  const opac = Math.min(0.95, attenuation / 60);
+  return (
+    <>
+      <ambientLight intensity={0.4} />
+      {/* EMI source */}
+      <mesh position={[-3, 1.5, 0]}>
+        <sphereGeometry args={[0.4, 16, 16]} />
+        <meshStandardMaterial color="#ff4444" emissive="#ff2200" emissiveIntensity={0.8} />
+      </mesh>
+      <Label position={[-3, 2.2, 0]} color="#cc0000" size={0.16}>{'Источник ЭМИ'}</Label>
+      {/* Waves before shield */}
+      {[0, 0.4, 0.8, 1.2].map((x, i) => (
+        <mesh key={i} position={[-2 + x, 1.5, 0]} rotation={[0, 0, Math.PI / 2]}>
+          <torusGeometry args={[0.3 + i * 0.1, 0.02, 8, 32, Math.PI]} />
+          <meshBasicMaterial color="#ff6622" transparent opacity={0.7 - i * 0.1} />
+        </mesh>
+      ))}
+      {/* Shield plate */}
+      <mesh position={[0, 1.5, 0]}>
+        <boxGeometry args={[t * 10, 3, 2.5]} />
+        <meshStandardMaterial color="#888" metalness={0.8} roughness={0.3} transparent opacity={0.85} />
+      </mesh>
+      <Label position={[0, 3.2, 0]} color="#333" size={0.15}>{`Экран: ${(t * 1000).toFixed(1)} мм`}</Label>
+      {/* Weakened waves after shield */}
+      {[0.5, 0.9].map((x, i) => (
+        <mesh key={`a-${i}`} position={[1 + x, 1.5, 0]} rotation={[0, 0, Math.PI / 2]}>
+          <torusGeometry args={[0.25, 0.015, 8, 32, Math.PI]} />
+          <meshBasicMaterial color="#ff6622" transparent opacity={Math.max(0.05, 0.5 - opac)} />
+        </mesh>
+      ))}
+      <Label position={[2.5, 2.2, 0]} color="#006600" size={0.15}>{`Ослабление: ${attenuation.toFixed(1)} дБ`}</Label>
+      {/* Floor */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+        <planeGeometry args={[10, 6]} />
+        <meshStandardMaterial color="#c4b8a8" />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── Waveguide Scene (Lab 6) ─────────────── */
+
+function WaveguideScene({ diameter, length }: { diameter: number; length: number }) {
+  const d = Math.max(0.005, diameter);
+  const l = Math.max(0.01, length);
+  return (
+    <>
+      {/* Waveguide tube */}
+      <mesh position={[0, 1.5, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[d * 40, d * 40, l * 15, 32, 1, true]} />
+        <meshStandardMaterial color="#aaa" metalness={0.7} roughness={0.3} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Entry arrow */}
+      <mesh position={[-l * 8, 1.5, 0]}>
+        <coneGeometry args={[0.2, 0.5, 8]} />
+        <meshStandardMaterial color="#ff4444" emissive="#ff2200" emissiveIntensity={0.5} />
+      </mesh>
+      <Label position={[-l * 8, 2.3, 0]} color="#cc0000" size={0.14}>{'ЭМИ вход'}</Label>
+      {/* Exit indicator */}
+      <mesh position={[l * 8, 1.5, 0]}>
+        <sphereGeometry args={[0.12, 12, 12]} />
+        <meshStandardMaterial color="#44cc44" emissive="#22aa22" emissiveIntensity={0.3} />
+      </mesh>
+      <Label position={[l * 8, 2.3, 0]} color="#006600" size={0.14}>{'Выход (ослаблен)'}</Label>
+      <Label position={[0, 3, 0]} color="#333" size={0.16}>{`D = ${(d * 1000).toFixed(1)} мм, l = ${(l * 1000).toFixed(1)} мм`}</Label>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[10, 6]} />
+        <meshStandardMaterial color="#c4b8a8" />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── EMI Field Attenuation Scene (Lab 6) ─────────────── */
+
+function EmiFieldAttenuationScene({ fieldBefore, fieldAfter }: { fieldBefore: number; fieldAfter: number }) {
+  const ratio = fieldBefore > 0 ? fieldAfter / fieldBefore : 1;
+  return (
+    <>
+      <Room width={8} depth={6} height={3} />
+      {/* Source side */}
+      <pointLight position={[-2, 2, 0]} color="#ff6644" intensity={Math.min(8, fieldBefore / 10)} distance={6} />
+      <mesh position={[-2, 1.5, 0]}>
+        <sphereGeometry args={[0.3, 16, 16]} />
+        <meshStandardMaterial emissive="#ff4422" emissiveIntensity={1} color="#ff6644" />
+      </mesh>
+      <Label position={[-2, 2.5, 0]} color="#cc0000" size={0.15}>{`E₀ = ${fieldBefore.toFixed(0)} В/м`}</Label>
+      {/* Shield wall */}
+      <mesh position={[0, 1.5, 0]}>
+        <boxGeometry args={[0.15, 3, 4]} />
+        <meshStandardMaterial color="#777" metalness={0.8} roughness={0.2} />
+      </mesh>
+      {/* Protected side */}
+      <pointLight position={[2, 2, 0]} color="#4466ff" intensity={Math.min(3, (fieldAfter / 10))} distance={5} />
+      <Label position={[2, 2.5, 0]} color="#0044aa" size={0.15}>{`E = ${fieldAfter.toFixed(1)} В/м`}</Label>
+      <Label position={[0, 0.3, 2.5]} color="#006600" size={0.14}>{`Коэфф. ослабления: ${(1 / Math.max(0.001, ratio)).toFixed(1)}`}</Label>
+    </>
+  );
+}
+
+/* ─────────────── HF Field Strength Scene (Lab 7) ─────────────── */
+
+function HfFieldStrengthScene({ power, distance }: { power: number; distance: number }) {
+  const d = Math.max(1, distance / 200);
+  const rings = 5;
+  return (
+    <>
+      {/* Antenna tower */}
+      <mesh position={[0, 1.5, 0]}>
+        <cylinderGeometry args={[0.06, 0.12, 3, 8]} />
+        <meshStandardMaterial color="#888" metalness={0.6} />
+      </mesh>
+      <mesh position={[0, 3.1, 0]}>
+        <coneGeometry args={[0.25, 0.5, 6]} />
+        <meshStandardMaterial color="#cc0000" emissive="#ff0000" emissiveIntensity={0.5} />
+      </mesh>
+      <Label position={[0, 3.8, 0]} color="#cc0000" size={0.16}>{`P = ${power.toFixed(0)} кВт`}</Label>
+      {/* Wave rings expanding outward */}
+      {Array.from({ length: rings }, (_, i) => (
+        <mesh key={i} position={[0, 1.5, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[d * (i + 1), 0.02, 8, 64]} />
+          <meshBasicMaterial color="#ff8844" transparent opacity={0.6 / (i + 1)} />
+        </mesh>
+      ))}
+      {/* Measurement point */}
+      <mesh position={[d * 3, 0.5, 0]}>
+        <boxGeometry args={[0.3, 1, 0.3]} />
+        <meshStandardMaterial color="#2244cc" />
+      </mesh>
+      <Label position={[d * 3, 1.3, 0]} color="#0022aa" size={0.14}>{`d = ${distance.toFixed(0)} м`}</Label>
+      {/* Ground */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[12, 8]} />
+        <meshStandardMaterial color="#5a7a3a" roughness={0.9} />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── HF Wave Propagation Scene (Lab 7) ─────────────── */
+
+function HfWavePropagationScene({ wavelength, distance }: { wavelength: number; distance: number }) {
+  const waveLen = Math.max(10, wavelength);
+  const waveCount = Math.min(8, Math.max(2, Math.round(distance / waveLen)));
+  return (
+    <>
+      {/* Ground surface */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[14, 6]} />
+        <meshStandardMaterial color="#5a7a3a" roughness={0.9} />
+      </mesh>
+      {/* Surface wave visualization */}
+      {Array.from({ length: waveCount * 2 }, (_, i) => {
+        const x = -5 + i * (10 / (waveCount * 2));
+        const y = 0.5 + Math.sin(i * Math.PI / 2) * 0.3;
+        return (
+          <mesh key={i} position={[x, y, 0]}>
+            <sphereGeometry args={[0.1, 8, 8]} />
+            <meshBasicMaterial color="#ff6622" transparent opacity={0.8 - i * 0.05} />
+          </mesh>
+        );
+      })}
+      {/* Antenna */}
+      <mesh position={[-5, 1, 0]}>
+        <cylinderGeometry args={[0.04, 0.08, 2, 8]} />
+        <meshStandardMaterial color="#888" metalness={0.6} />
+      </mesh>
+      <Label position={[-5, 2.3, 0]} color="#cc0000" size={0.14}>{'Передатчик'}</Label>
+      <Label position={[3, 2, 0]} color="#333" size={0.14}>{`λ = ${waveLen.toFixed(0)} м`}</Label>
+      <Label position={[0, 2.5, 0]} color="#0044aa" size={0.14}>{'Поверхностная волна'}</Label>
+    </>
+  );
+}
+
+/* ─────────────── HF Soil Attenuation Scene (Lab 7) ─────────────── */
+
+function HfSoilAttenuationScene({ conductivity }: { conductivity: number }) {
+  const sigma = Math.max(0.001, conductivity);
+  const colorR = Math.round(90 + (1 - Math.min(1, sigma / 0.05)) * 100);
+  const soilColor = `rgb(${colorR}, ${Math.round(colorR * 0.7)}, ${Math.round(colorR * 0.3)})`;
+  return (
+    <>
+      {/* Soil block */}
+      <mesh position={[0, -0.5, 0]}>
+        <boxGeometry args={[10, 1, 6]} />
+        <meshStandardMaterial color={soilColor} roughness={1} />
+      </mesh>
+      {/* Surface */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+        <planeGeometry args={[10, 6]} />
+        <meshStandardMaterial color="#6a8a4a" roughness={0.9} />
+      </mesh>
+      {/* Wave arrows showing decay */}
+      {[0, 1, 2, 3, 4].map((i) => (
+        <mesh key={i} position={[-4 + i * 2, 0.5 + Math.max(0, 0.3 - i * sigma * 2), 0]} rotation={[0, 0, Math.PI / 2]}>
+          <coneGeometry args={[0.12, 0.3, 6]} />
+          <meshBasicMaterial color="#ff6622" transparent opacity={Math.max(0.1, 1 - i * sigma * 3)} />
+        </mesh>
+      ))}
+      <Label position={[0, 1.5, 0]} color="#333" size={0.16}>{`σ = ${sigma.toFixed(4)} См/м`}</Label>
+      <Label position={[0, 1.2, 0]} color="#666" size={0.12}>{sigma > 0.01 ? 'Хорошая проводимость' : 'Плохая проводимость'}</Label>
+    </>
+  );
+}
+
+/* ─────────────── UHF Field Strength Scene (Lab 8) ─────────────── */
+
+function UhfFieldStrengthScene({ power, height, radius }: { power: number; height: number; radius: number }) {
+  const h = Math.max(1, height / 50);
+  const r = Math.max(0.5, radius / 100);
+  return (
+    <>
+      {/* Tower */}
+      <mesh position={[0, h / 2, 0]}>
+        <cylinderGeometry args={[0.08, 0.15, h, 8]} />
+        <meshStandardMaterial color="#777" metalness={0.6} />
+      </mesh>
+      {/* Antenna array */}
+      <mesh position={[0, h, 0]}>
+        <boxGeometry args={[0.5, 0.3, 0.1]} />
+        <meshStandardMaterial color="#cc3333" emissive="#ff2200" emissiveIntensity={0.4} />
+      </mesh>
+      <Label position={[0, h + 0.5, 0]} color="#cc0000" size={0.14}>{`P = ${power.toFixed(0)} Вт`}</Label>
+      {/* beam cone */}
+      <mesh position={[r, h * 0.3, 0]} rotation={[0, 0, -Math.PI / 6]}>
+        <coneGeometry args={[0.8, 2, 16, 1, true]} />
+        <meshBasicMaterial color="#ff8844" transparent opacity={0.15} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Measurement point */}
+      <mesh position={[r * 2, 0.4, 0]}>
+        <boxGeometry args={[0.2, 0.8, 0.2]} />
+        <meshStandardMaterial color="#2244cc" />
+      </mesh>
+      <Label position={[r * 2, 1.2, 0]} color="#0022aa" size={0.12}>{`r = ${radius.toFixed(0)} м`}</Label>
+      <Label position={[0.5, h * 0.7, 0]} color="#ff6622" size={0.10}>{'Луч'}</Label>
+      {/* Ground */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[12, 8]} />
+        <meshStandardMaterial color="#5a7a3a" roughness={0.9} />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── UHF Antenna Pattern Scene (Lab 8) ─────────────── */
+
+function UhfAntennaPatternScene({ gain }: { gain: number }) {
+  const g = Math.max(1, gain);
+  const lobeLen = Math.min(4, g * 0.3);
+  const ref = useRef<THREE.Group>(null);
+  useFrame((_, delta) => { if (ref.current) ref.current.rotation.y += delta * 0.3; });
+  return (
+    <>
+      <group ref={ref} position={[0, 2, 0]}>
+        {/* Main lobe */}
+        <mesh position={[0, 0, lobeLen / 2]}>
+          <sphereGeometry args={[0.3, 16, 16]} />
+          <meshStandardMaterial color="#ff4422" transparent opacity={0.4} />
+        </mesh>
+        <mesh scale={[0.4, 0.4, lobeLen]} position={[0, 0, lobeLen / 2]}>
+          <sphereGeometry args={[0.5, 16, 16]} />
+          <meshStandardMaterial color="#ff6644" transparent opacity={0.25} />
+        </mesh>
+        {/* Back lobe small */}
+        <mesh position={[0, 0, -0.4]}>
+          <sphereGeometry args={[0.2, 12, 12]} />
+          <meshStandardMaterial color="#4466ff" transparent opacity={0.25} />
+        </mesh>
+        {/* antenna element */}
+        <mesh>
+          <sphereGeometry args={[0.08, 8, 8]} />
+          <meshStandardMaterial color="#333" metalness={0.8} />
+        </mesh>
+      </group>
+      <Label position={[0, 3.5, 0]} color="#333" size={0.16}>{`G = ${g.toFixed(1)}`}</Label>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[10, 10]} />
+        <meshStandardMaterial color="#c4b8a8" />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── Radiation Dose Scene (Lab 8) ─────────────── */
+
+function RadiationDoseScene({ frequency, pdu }: { frequency: number; pdu: number }) {
+  const barH = Math.min(3, pdu / 5);
+  return (
+    <>
+      {/* frequency bar visualization */}
+      <mesh position={[0, barH / 2, 0]}>
+        <boxGeometry args={[1, barH, 1]} />
+        <meshStandardMaterial color={pdu > 10 ? '#cc0000' : '#22aa44'} />
+      </mesh>
+      <Label position={[0, barH + 0.4, 0]} color="#333" size={0.16}>{`ПДУ = ${pdu.toFixed(1)} В/м`}</Label>
+      <Label position={[0, barH + 0.1, 0]} color="#666" size={0.12}>{`f = ${(frequency / 1e6).toFixed(1)} МГц`}</Label>
+      {/* Scale */}
+      {[2, 5, 10, 15, 25].map((v, i) => (
+        <group key={i}>
+          <mesh position={[-1.5, Math.min(3, v / 5) / 2, 0]}>
+            <boxGeometry args={[0.02, Math.min(3, v / 5), 0.02]} />
+            <meshBasicMaterial color="#aaa" />
+          </mesh>
+          <Label position={[-2, Math.min(3, v / 5), 0]} color="#888" size={0.08}>{`${v}`}</Label>
+        </group>
+      ))}
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[8, 6]} />
+        <meshStandardMaterial color="#c4b8a8" />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── Electric Current Body Scene (Lab 9) ─────────────── */
+
+function ElectricCurrentBodyScene({ current }: { current: number }) {
+  const mA = Math.max(0, current);
+  const dangerColor = mA < 1 ? '#22aa44' : mA < 10 ? '#ddaa00' : mA < 100 ? '#ff6600' : '#cc0000';
+  return (
+    <>
+      {/* Simplified human figure */}
+      {/* Head */}
+      <mesh position={[0, 2.9, 0]}>
+        <sphereGeometry args={[0.25, 16, 16]} />
+        <meshStandardMaterial color="#e0c8a0" />
+      </mesh>
+      {/* Body */}
+      <mesh position={[0, 2.1, 0]}>
+        <cylinderGeometry args={[0.2, 0.25, 1.2, 12]} />
+        <meshStandardMaterial color="#4466aa" />
+      </mesh>
+      {/* Arms (left/right) */}
+      <mesh position={[-0.5, 2.2, 0]} rotation={[0, 0, Math.PI / 6]}>
+        <cylinderGeometry args={[0.07, 0.07, 0.8, 8]} />
+        <meshStandardMaterial color="#e0c8a0" />
+      </mesh>
+      <mesh position={[0.5, 2.2, 0]} rotation={[0, 0, -Math.PI / 6]}>
+        <cylinderGeometry args={[0.07, 0.07, 0.8, 8]} />
+        <meshStandardMaterial color="#e0c8a0" />
+      </mesh>
+      {/* Current path glow */}
+      <mesh position={[0, 2.1, 0]}>
+        <cylinderGeometry args={[0.12, 0.12, 1.5, 12]} />
+        <meshBasicMaterial color={dangerColor} transparent opacity={Math.min(0.5, mA / 50)} />
+      </mesh>
+      {/* Labels */}
+      <Label position={[0, 3.5, 0]} color={dangerColor} size={0.18}>{`I = ${mA.toFixed(1)} мА`}</Label>
+      <Label position={[0, 0.8, 0]} color="#333" size={0.12}>
+        {mA < 1 ? 'Безопасно' : mA < 10 ? 'Ощутимый ток' : mA < 100 ? 'Неотпускающий!' : 'Фибрилляция!'}
+      </Label>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[6, 4]} />
+        <meshStandardMaterial color="#c4b8a8" />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── Electric Resistance Scene (Lab 9) ─────────────── */
+
+function ElectricResistanceScene({ resistance }: { resistance: number }) {
+  const r = Math.max(100, resistance);
+  const boxW = Math.min(2, r / 2000);
+  return (
+    <>
+      {/* RC circuit visualization */}
+      {/* Rн left */}
+      <mesh position={[-2, 2, 0]}>
+        <boxGeometry args={[boxW, 0.4, 0.3]} />
+        <meshStandardMaterial color="#cc8844" />
+      </mesh>
+      <Label position={[-2, 2.5, 0]} color="#884400" size={0.14}>{'Rн (кожа)'}</Label>
+      {/* Cн left — capacitor plates */}
+      <mesh position={[-2, 1.2, -0.1]}>
+        <boxGeometry args={[0.6, 0.02, 0.3]} />
+        <meshStandardMaterial color="#4488cc" />
+      </mesh>
+      <mesh position={[-2, 1.0, -0.1]}>
+        <boxGeometry args={[0.6, 0.02, 0.3]} />
+        <meshStandardMaterial color="#4488cc" />
+      </mesh>
+      <Label position={[-2, 0.7, 0]} color="#2266aa" size={0.12}>{'Cн'}</Label>
+      {/* Rв center */}
+      <mesh position={[0, 1.6, 0]}>
+        <boxGeometry args={[0.8, 0.3, 0.3]} />
+        <meshStandardMaterial color="#44aa44" />
+      </mesh>
+      <Label position={[0, 2.1, 0]} color="#226622" size={0.14}>{'Rв (внутр)'}</Label>
+      {/* Rн right */}
+      <mesh position={[2, 2, 0]}>
+        <boxGeometry args={[boxW, 0.4, 0.3]} />
+        <meshStandardMaterial color="#cc8844" />
+      </mesh>
+      <Label position={[2, 2.5, 0]} color="#884400" size={0.14}>{'Rн (кожа)'}</Label>
+      {/* Connecting wires */}
+      {[[-3, 2, 0], [-1, 2, 0], [1, 1.6, 0], [3, 2, 0]].map((pos, i) => (
+        <mesh key={i} position={[pos[0] as number, pos[1] as number, pos[2] as number]}>
+          <boxGeometry args={[1, 0.03, 0.03]} />
+          <meshBasicMaterial color="#333" />
+        </mesh>
+      ))}
+      <Label position={[0, 3, 0]} color="#333" size={0.16}>{`Z = ${r.toFixed(0)} Ом`}</Label>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[10, 6]} />
+        <meshStandardMaterial color="#c4b8a8" />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── Electric Frequency Effect Scene (Lab 9) ─────────────── */
+
+function ElectricFrequencyEffectScene({ frequency }: { frequency: number }) {
+  const f = Math.max(1, frequency);
+  const barCount = 6;
+  const freqs = [10, 50, 100, 500, 1000, 10000];
+  const impedances = freqs.map((fr) => 1000 / (1 + fr / 200));
+  return (
+    <>
+      {freqs.map((fr, i) => {
+        const h = Math.max(0.2, impedances[i] / 400);
+        const isCurrent = Math.abs(fr - f) < fr * 0.5;
+        return (
+          <group key={i}>
+            <mesh position={[-3 + i * 1.2, h / 2, 0]}>
+              <boxGeometry args={[0.6, h, 0.6]} />
+              <meshStandardMaterial color={isCurrent ? '#ff4422' : '#4488cc'} />
+            </mesh>
+            <Label position={[-3 + i * 1.2, h + 0.3, 0]} color="#333" size={0.08}>{`${fr}`}</Label>
+          </group>
+        );
+      })}
+      <Label position={[0, 3.5, 0]} color="#333" size={0.16}>{'Z(f), Ом — импеданс vs частота'}</Label>
+      <Label position={[0, -0.3, 2]} color="#666" size={0.11}>{'Частота, Гц →'}</Label>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[10, 6]} />
+        <meshStandardMaterial color="#c4b8a8" />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── Ground Current Spread Scene (Lab 10) ─────────────── */
+
+function GroundCurrentSpreadScene({ current, resistivity }: { current: number; resistivity: number }) {
+  const ringCount = 6;
+  return (
+    <>
+      {/* Ground electrode */}
+      <mesh position={[0, -0.3, 0]}>
+        <cylinderGeometry args={[0.1, 0.1, 1.5, 8]} />
+        <meshStandardMaterial color="#666" metalness={0.8} />
+      </mesh>
+      <mesh position={[0, 0.5, 0]}>
+        <sphereGeometry args={[0.12, 12, 12]} />
+        <meshStandardMaterial color="#cc0000" emissive="#ff0000" emissiveIntensity={0.5} />
+      </mesh>
+      <Label position={[0, 1, 0]} color="#cc0000" size={0.14}>{`Iз = ${current.toFixed(0)} А`}</Label>
+      {/* Equipotential rings on ground */}
+      {Array.from({ length: ringCount }, (_, i) => {
+        const r = (i + 1) * 0.6;
+        const opac = 0.5 / (i + 1);
+        return (
+          <mesh key={i} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[r, 0.03, 8, 64]} />
+            <meshBasicMaterial color="#ff8844" transparent opacity={opac} />
+          </mesh>
+        );
+      })}
+      <Label position={[3, 0.5, 0]} color="#333" size={0.12}>{`ρ = ${resistivity.toFixed(0)} Ом·м`}</Label>
+      {/* Ground */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[10, 10]} />
+        <meshStandardMaterial color="#6a7a3a" roughness={1} />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── Step Voltage Scene (Lab 10) ─────────────── */
+
+function StepVoltageScene({ distance, stepV }: { distance: number; stepV: number }) {
+  const d = Math.max(1, distance);
+  const danger = stepV > 36;
+  return (
+    <>
+      {/* Ground electrode */}
+      <mesh position={[0, -0.3, 0]}>
+        <cylinderGeometry args={[0.08, 0.08, 1.2, 8]} />
+        <meshStandardMaterial color="#666" metalness={0.8} />
+      </mesh>
+      {/* Equipotential lines */}
+      {[1, 2, 3, 4, 5].map((i) => (
+        <mesh key={i} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[i * 0.5, 0.02, 8, 64]} />
+          <meshBasicMaterial color="#ffaa44" transparent opacity={0.4 / i} />
+        </mesh>
+      ))}
+      {/* Person at distance */}
+      <group position={[Math.min(4, d * 0.5), 0, 0]}>
+        <mesh position={[0, 1.5, 0]}>
+          <sphereGeometry args={[0.15, 12, 12]} />
+          <meshStandardMaterial color="#e0c8a0" />
+        </mesh>
+        <mesh position={[0, 0.9, 0]}>
+          <cylinderGeometry args={[0.12, 0.15, 0.8, 8]} />
+          <meshStandardMaterial color={danger ? '#cc0000' : '#4466aa'} />
+        </mesh>
+        {/* Feet showing step */}
+        <mesh position={[-0.15, 0.15, 0]}>
+          <boxGeometry args={[0.1, 0.3, 0.1]} />
+          <meshStandardMaterial color={danger ? '#cc0000' : '#4466aa'} />
+        </mesh>
+        <mesh position={[0.15, 0.15, 0]}>
+          <boxGeometry args={[0.1, 0.3, 0.1]} />
+          <meshStandardMaterial color={danger ? '#cc0000' : '#4466aa'} />
+        </mesh>
+      </group>
+      <Label position={[Math.min(4, d * 0.5), 2, 0]} color={danger ? '#cc0000' : '#006600'} size={0.14}>
+        {`Uш = ${stepV.toFixed(1)} В`}
+      </Label>
+      <Label position={[0, 0.7, 0]} color="#cc0000" size={0.10}>{'Заземлитель'}</Label>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[10, 10]} />
+        <meshStandardMaterial color="#6a7a3a" roughness={1} />
+      </mesh>
+    </>
+  );
+}
+
+/* ─────────────── Equipotential Zones Scene (Lab 10) ─────────────── */
+
+function EquipotentialZonesScene({ current, resistivity }: { current: number; resistivity: number }) {
+  const zones = 8;
+  return (
+    <>
+      {/* Electrode */}
+      <mesh position={[0, -0.2, 0]}>
+        <cylinderGeometry args={[0.08, 0.08, 1, 8]} />
+        <meshStandardMaterial color="#555" metalness={0.8} />
+      </mesh>
+      {/* Colored zones — red→yellow→green */}
+      {Array.from({ length: zones }, (_, i) => {
+        const r = (i + 1) * 0.4;
+        const t = i / (zones - 1);
+        const red = Math.round(255 * (1 - t));
+        const green = Math.round(200 * t);
+        const col = `rgb(${red},${green},40)`;
+        return (
+          <mesh key={i} position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[r - 0.35, r, 64]} />
+            <meshBasicMaterial color={col} transparent opacity={0.35} side={THREE.DoubleSide} />
+          </mesh>
+        );
+      })}
+      <Label position={[0, 0.8, 0]} color="#cc0000" size={0.14}>{`Iз = ${current.toFixed(0)} А`}</Label>
+      <Label position={[3, 0.4, 0]} color="#006600" size={0.12}>{'Зона нулевого потенциала'}</Label>
+      <Label position={[0.8, 0.4, 0]} color="#cc4400" size={0.10}>{'φ → 0'}</Label>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
+        <planeGeometry args={[10, 10]} />
+        <meshStandardMaterial color="#6a7a3a" roughness={1} />
+      </mesh>
     </>
   );
 }
@@ -1179,7 +1873,37 @@ export default function TheoryScene3D({ type, params }: TheoryScene3DProps) {
       case 'emi-ppe-zones':
         return <EmiZonesScene frequency={Math.max(1e3, (params.a ?? 100) * 1e3)} distance={Math.max(0.01, params.b ?? 2)} />;
       case 'emi-wave':
-        return <EmiSpectrumScene frequency={Math.max(1e5, 3e8 / Math.max(0.01, params.a ?? 1))} />;
+        return <EmiWaveScene eField={Math.max(0.1, params.a ?? 20)} hField={Math.max(0.001, params.b ?? 0.05)} />;
+      case 'emi-shield-thickness':
+        return <ShieldThicknessScene thickness={Math.max(0.001, (params.a ?? 1) / 1000)} attenuation={params.b ?? 20} />;
+      case 'emi-waveguide':
+        return <WaveguideScene diameter={Math.max(0.005, (params.a ?? 10) / 1000)} length={Math.max(0.01, (params.b ?? 50) / 1000)} />;
+      case 'emi-field-attenuation':
+        return <EmiFieldAttenuationScene fieldBefore={Math.max(1, params.a ?? 100)} fieldAfter={Math.max(0, params.b ?? 5)} />;
+      case 'hf-field-strength':
+        return <HfFieldStrengthScene power={Math.max(1, params.a ?? 300)} distance={Math.max(100, params.b ?? 1000)} />;
+      case 'hf-wave-propagation':
+        return <HfWavePropagationScene wavelength={Math.max(10, params.a ?? 500)} distance={Math.max(100, params.b ?? 3000)} />;
+      case 'hf-soil-attenuation':
+        return <HfSoilAttenuationScene conductivity={Math.max(0.001, params.a ?? 0.005)} />;
+      case 'uhf-field-strength':
+        return <UhfFieldStrengthScene power={Math.max(1, params.a ?? 50000)} height={Math.max(10, params.b ?? 300)} radius={Math.max(10, params.c ?? 400)} />;
+      case 'uhf-antenna-pattern':
+        return <UhfAntennaPatternScene gain={Math.max(1, params.a ?? 10)} />;
+      case 'radiation-dose':
+        return <RadiationDoseScene frequency={Math.max(1e3, (params.a ?? 100) * 1e6)} pdu={Math.max(0.1, params.b ?? 5)} />;
+      case 'electric-current-body':
+        return <ElectricCurrentBodyScene current={Math.max(0, params.a ?? 10)} />;
+      case 'electric-resistance':
+        return <ElectricResistanceScene resistance={Math.max(100, params.a ?? 3000)} />;
+      case 'electric-frequency-effect':
+        return <ElectricFrequencyEffectScene frequency={Math.max(1, params.a ?? 50)} />;
+      case 'ground-current-spread':
+        return <GroundCurrentSpreadScene current={Math.max(0.1, params.a ?? 10)} resistivity={Math.max(1, params.b ?? 100)} />;
+      case 'step-voltage':
+        return <StepVoltageScene distance={Math.max(1, params.a ?? 5)} stepV={Math.max(0, params.b ?? 50)} />;
+      case 'equipotential-zones':
+        return <EquipotentialZonesScene current={Math.max(0.1, params.a ?? 10)} resistivity={Math.max(1, params.b ?? 100)} />;
       default:
         return <Room />;
     }
@@ -1192,10 +1916,10 @@ export default function TheoryScene3D({ type, params }: TheoryScene3DProps) {
       </Typography>
       <Box sx={{ height: { xs: 260, md: 340 }, borderRadius: 1, overflow: 'hidden' }}>
         <SafeCanvas shadows camera={{ position: [6, 4, 6], fov: 50 }}>
-          <ambientLight intensity={0.5} />
+          <ambientLight intensity={0.55} />
           <directionalLight
             position={[5, 8, 3]}
-            intensity={0.8}
+            intensity={1.3}
             castShadow
             shadow-mapSize-width={512}
             shadow-mapSize-height={512}

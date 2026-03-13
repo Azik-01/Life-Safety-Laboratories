@@ -1,4 +1,4 @@
-const REFERENCE_PRESSURE_PA = 2e-5;
+﻿const REFERENCE_PRESSURE_PA = 2e-5;
 const DISTANCE_LOSS_CONSTANT_DB = 8;
 
 function assertFinitePositive(value: number, label: string): void {
@@ -14,7 +14,7 @@ function assertFinite(value: number, label: string): void {
 }
 
 /**
- * Уровень звукового давления, дБ.
+ * Ð£Ñ€Ð¾Ð²ÐµÐ½ÑŒ Ð·Ð²ÑƒÐºÐ¾Ð²Ð¾Ð³Ð¾ Ð´Ð°Ð²Ð»ÐµÐ½Ð¸Ñ, Ð´Ð‘.
  * L = 20 * lg(p / p0)
  */
 export function soundPressureLevelDb(
@@ -27,8 +27,8 @@ export function soundPressureLevelDb(
 }
 
 /**
- * Уровень на расстоянии R от источника.
- * Якорь методички: LR = L1 - 20 * lg(R) - 8
+ * Ð£Ñ€Ð¾Ð²ÐµÐ½ÑŒ Ð½Ð° Ñ€Ð°ÑÑÑ‚Ð¾ÑÐ½Ð¸Ð¸ R Ð¾Ñ‚ Ð¸ÑÑ‚Ð¾Ñ‡Ð½Ð¸ÐºÐ°.
+ * Ð¯ÐºÐ¾Ñ€ÑŒ Ð¼ÐµÑ‚Ð¾Ð´Ð¸Ñ‡ÐºÐ¸: LR = L1 - 20 * lg(R) - 8
  */
 export function levelAtDistanceDb(levelAt1mDb: number, distanceM: number): number {
   assertFinite(levelAt1mDb, 'levelAt1mDb');
@@ -37,17 +37,17 @@ export function levelAtDistanceDb(levelAt1mDb: number, distanceM: number): numbe
 }
 
 /**
- * Снижение уровней преградой (через массу 1м² G, кг/м²).
- * Формула из методички (занятие №4, формула 4.2):
- * N = 14.5 + 15·lg(G) дБ
+ * Ð¡Ð½Ð¸Ð¶ÐµÐ½Ð¸Ðµ ÑƒÑ€Ð¾Ð²Ð½ÐµÐ¹ Ð¿Ñ€ÐµÐ³Ñ€Ð°Ð´Ð¾Ð¹ (Ñ‡ÐµÑ€ÐµÐ· Ð¼Ð°ÑÑÑƒ 1Ð¼Â² G, ÐºÐ³/Ð¼Â²).
+ * Ð¤Ð¾Ñ€Ð¼ÑƒÐ»Ð° Ð¸Ð· Ð¼ÐµÑ‚Ð¾Ð´Ð¸Ñ‡ÐºÐ¸ (Ð·Ð°Ð½ÑÑ‚Ð¸Ðµ â„–4, Ñ„Ð¾Ñ€Ð¼ÑƒÐ»Ð° 4.2):
+ * N = 14.5·lg(G) + 15 дБ
  */
 export function barrierReductionDbFromMass(massPerM2: number): number {
   assertFinitePositive(massPerM2, 'massPerM2');
-  return 14.5 + 15 * Math.log10(massPerM2);
+  return 14.5 * Math.log10(massPerM2) + 15;
 }
 
 /**
- * Уровень после преграды.
+ * Ð£Ñ€Ð¾Ð²ÐµÐ½ÑŒ Ð¿Ð¾ÑÐ»Ðµ Ð¿Ñ€ÐµÐ³Ñ€Ð°Ð´Ñ‹.
  * L'R = LR - N
  */
 export function levelAfterBarrierDb(levelBeforeBarrierDb: number, reductionDb: number): number {
@@ -57,8 +57,8 @@ export function levelAfterBarrierDb(levelBeforeBarrierDb: number, reductionDb: n
 }
 
 /**
- * Коррекция ΔL из таблицы по разности двух уровней.
- * При diff >= 10 дБ вклад слабого источника пренебрежим.
+ * ÐšÐ¾Ñ€Ñ€ÐµÐºÑ†Ð¸Ñ Î”L Ð¸Ð· Ñ‚Ð°Ð±Ð»Ð¸Ñ†Ñ‹ Ð¿Ð¾ Ñ€Ð°Ð·Ð½Ð¾ÑÑ‚Ð¸ Ð´Ð²ÑƒÑ… ÑƒÑ€Ð¾Ð²Ð½ÐµÐ¹.
+ * ÐŸÑ€Ð¸ diff >= 10 Ð´Ð‘ Ð²ÐºÐ»Ð°Ð´ ÑÐ»Ð°Ð±Ð¾Ð³Ð¾ Ð¸ÑÑ‚Ð¾Ñ‡Ð½Ð¸ÐºÐ° Ð¿Ñ€ÐµÐ½ÐµÐ±Ñ€ÐµÐ¶Ð¸Ð¼.
  */
 export function deltaByDifferenceDb(diffDb: number): number {
   assertFinite(diffDb, 'diffDb');
@@ -66,7 +66,7 @@ export function deltaByDifferenceDb(diffDb: number): number {
 
   if (diff < 0.5) return 3.0;
   if (diff < 1.5) return 2.5;
-  if (diff < 2.5) return 2.1;
+  if (diff < 2.5) return 2.0;
   if (diff < 3.5) return 1.8;
   if (diff < 4.5) return 1.5;
   if (diff < 5.5) return 1.2;
@@ -74,11 +74,13 @@ export function deltaByDifferenceDb(diffDb: number): number {
   if (diff < 7.5) return 0.8;
   if (diff < 8.5) return 0.6;
   if (diff < 9.5) return 0.5;
+  if (diff < 12.5) return 0.4;
+  if (diff < 17.5) return 0.2;
   return 0;
 }
 
 /**
- * Суммирование двух уровней по правилу LA + ΔL.
+ * Ð¡ÑƒÐ¼Ð¼Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð¸Ðµ Ð´Ð²ÑƒÑ… ÑƒÑ€Ð¾Ð²Ð½ÐµÐ¹ Ð¿Ð¾ Ð¿Ñ€Ð°Ð²Ð¸Ð»Ñƒ LA + Î”L.
  */
 export function sumTwoLevelsByDeltaDb(levelA: number, levelB: number): number {
   assertFinite(levelA, 'levelA');
@@ -90,8 +92,8 @@ export function sumTwoLevelsByDeltaDb(levelA: number, levelB: number): number {
 }
 
 /**
- * Строгое энергетическое суммирование для 1..n источников.
- * LΣ = 10 * lg(Σ(10^(Li/10)))
+ * Ð¡Ñ‚Ñ€Ð¾Ð³Ð¾Ðµ ÑÐ½ÐµÑ€Ð³ÐµÑ‚Ð¸Ñ‡ÐµÑÐºÐ¾Ðµ ÑÑƒÐ¼Ð¼Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð¸Ðµ Ð´Ð»Ñ 1..n Ð¸ÑÑ‚Ð¾Ñ‡Ð½Ð¸ÐºÐ¾Ð².
+ * LÎ£ = 10 * lg(Î£(10^(Li/10)))
  */
 export function sumLevelsEnergyDb(levelsDb: number[]): number {
   if (levelsDb.length === 0) {
@@ -112,7 +114,7 @@ export interface NoiseSourceInput {
 }
 
 /**
- * Расчет уровня каждого источника в точке наблюдения.
+ * Ð Ð°ÑÑ‡ÐµÑ‚ ÑƒÑ€Ð¾Ð²Ð½Ñ ÐºÐ°Ð¶Ð´Ð¾Ð³Ð¾ Ð¸ÑÑ‚Ð¾Ñ‡Ð½Ð¸ÐºÐ° Ð² Ñ‚Ð¾Ñ‡ÐºÐµ Ð½Ð°Ð±Ð»ÑŽÐ´ÐµÐ½Ð¸Ñ.
  */
 export function sourceLevelAtObserver(input: NoiseSourceInput): number {
   if (input.enabled === false) {
@@ -125,4 +127,5 @@ export function sourceLevelAtObserver(input: NoiseSourceInput): number {
   const reduction = barrierReductionDbFromMass(input.barrierMassPerM2);
   return levelAfterBarrierDb(atDistance, reduction);
 }
+
 

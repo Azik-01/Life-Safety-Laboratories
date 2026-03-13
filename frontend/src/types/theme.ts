@@ -1,4 +1,4 @@
-export type LessonId = 1 | 2 | 3 | 4 | 5;
+export type LessonId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 export type TheorySimulatorType =
   | 'light-flux'
@@ -14,7 +14,22 @@ export type TheorySimulatorType =
   | 'noise-reflection'
   | 'emi-spectrum'
   | 'emi-wave'
-  | 'emi-ppe-zones';
+  | 'emi-ppe-zones'
+  | 'emi-shield-thickness'
+  | 'emi-waveguide'
+  | 'emi-field-attenuation'
+  | 'hf-field-strength'
+  | 'hf-wave-propagation'
+  | 'hf-soil-attenuation'
+  | 'uhf-field-strength'
+  | 'uhf-antenna-pattern'
+  | 'radiation-dose'
+  | 'electric-current-body'
+  | 'electric-resistance'
+  | 'electric-frequency-effect'
+  | 'ground-current-spread'
+  | 'step-voltage'
+  | 'equipotential-zones';
 
 export interface TheoryMiniQuestion {
   question: string;

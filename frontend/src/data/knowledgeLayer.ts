@@ -19,6 +19,7 @@ export interface KnowledgeFormula {
   imagePath?: string;
   variables: { symbol: string; description: string; unit: string }[];
   example?: { given: Record<string, number>; steps: string[]; result: string };
+  explanation?: string;
 }
 
 export interface KnowledgeFigure {
@@ -58,6 +59,11 @@ import lab2 from '../content/labs/lab-2.json';
 import lab3 from '../content/labs/lab-3.json';
 import lab4 from '../content/labs/lab-4.json';
 import lab5 from '../content/labs/lab-5.json';
+import lab6 from '../content/labs/lab-6.json';
+import lab7 from '../content/labs/lab-7.json';
+import lab8 from '../content/labs/lab-8.json';
+import lab9 from '../content/labs/lab-9.json';
+import lab10 from '../content/labs/lab-10.json';
 
 const layers: Record<number, KnowledgeLayer> = {
   1: lab1 as unknown as KnowledgeLayer,
@@ -65,6 +71,11 @@ const layers: Record<number, KnowledgeLayer> = {
   3: lab3 as unknown as KnowledgeLayer,
   4: lab4 as unknown as KnowledgeLayer,
   5: lab5 as unknown as KnowledgeLayer,
+  6: lab6 as unknown as KnowledgeLayer,
+  7: lab7 as unknown as KnowledgeLayer,
+  8: lab8 as unknown as KnowledgeLayer,
+  9: lab9 as unknown as KnowledgeLayer,
+  10: lab10 as unknown as KnowledgeLayer,
 };
 
 /* ---- Public API ---- */
@@ -82,6 +93,7 @@ export function toFormulaBlockProps(formula: KnowledgeFormula): FormulaBlockProp
     imagePath: formula.imagePath,
     variables: formula.variables,
     example: formula.example,
+    explanation: formula.explanation,
   };
 }
 
@@ -388,6 +400,146 @@ export function buildPracticeMethods(lessonId: LessonId): PracticeMethod[] {
             r.PPE <= 10
               ? `ППЭ = ${r.PPE.toFixed(3)} Вт/м² — ниже теплового порога`
               : `ППЭ = ${r.PPE.toFixed(3)} Вт/м² — превышает тепловой порог 10 мВт/см²!`,
+        },
+      ];
+
+    case 6:
+      return [
+        {
+          id: 'shield-calc',
+          title: 'Расчёт толщины экрана и длины волновода',
+          description: 'H → E → ППЭ → L → α → M → A₁ → l',
+          params: [
+            { key: 'W', label: 'Витки W', unit: '', defaultValue: 12 },
+            { key: 'I', label: 'Ток I', unit: 'А', defaultValue: 350 },
+            { key: 'f', label: 'Частота f', unit: 'Гц', defaultValue: 3e8 },
+            { key: 'T', label: 'Время T', unit: 'ч', defaultValue: 4 },
+            { key: 'R', label: 'Расстояние R', unit: 'м', defaultValue: 3 },
+            { key: 'muA', label: 'μa', unit: 'Гн/м', defaultValue: 2.5e-4 },
+            { key: 'gamma', label: 'γ', unit: '1/(Ом·м)', defaultValue: 1e7 },
+            { key: 'D', label: 'Диаметр D', unit: 'м', defaultValue: 0.01 },
+            { key: 'eps', label: 'ε', unit: '', defaultValue: 7 },
+          ],
+          steps: [
+            { label: 'H', formula: 'H = W·I/R', compute: (p) => p.W * p.I / p.R, resultKey: 'H', resultUnit: 'А/м' },
+            { label: 'E', formula: 'E = H·377', compute: (p) => p.H * 377, resultKey: 'E', resultUnit: 'В/м' },
+            { label: 'ППЭ', formula: 'ППЭ = E·H', compute: (p) => p.E * p.H, resultKey: 'PPE', resultUnit: 'Вт/м²' },
+            { label: 'ППЭ_доп', formula: '2/T', compute: (p) => 2 / p.T, resultKey: 'PPEmax', resultUnit: 'Вт/м²' },
+            { label: 'L', formula: '10·lg(ППЭ/ППЭ_доп)', compute: (p) => 10 * Math.log10(Math.max(1, p.PPE / p.PPEmax)), resultKey: 'L', resultUnit: 'дБ' },
+            { label: 'α', formula: '√(π·f·μa·γ)', compute: (p) => Math.sqrt(Math.PI * p.f * p.muA * p.gamma), resultKey: 'alpha', resultUnit: '1/м' },
+            { label: 'M (толщина)', formula: 'L/(8,68·α)', compute: (p) => p.L / (8.68 * p.alpha), resultKey: 'M', resultUnit: 'м' },
+            { label: 'A₁ (волновод)', formula: '(32/D)·√ε', compute: (p) => (32 / p.D) * Math.sqrt(p.eps), resultKey: 'A1', resultUnit: 'дБ/м' },
+            { label: 'l (длина)', formula: 'L/A₁', compute: (p) => p.L / p.A1, resultKey: 'len', resultUnit: 'м' },
+          ],
+          conclusionFn: (r) =>
+            `Толщина экрана M = ${(r.M * 1000).toFixed(3)} мм; длина волновода l = ${(r.len * 1000).toFixed(1)} мм.`,
+        },
+      ];
+
+    case 7:
+      return [
+        {
+          id: 'hf-field-calc',
+          title: 'Расчёт E по Шулейкину–Ван-дер-Полю',
+          description: 'x → F → E для заданного расстояния',
+          params: [
+            { key: 'lambda', label: 'λ', unit: 'м', defaultValue: 1650 },
+            { key: 'P', label: 'P', unit: 'кВт', defaultValue: 300 },
+            { key: 'Ga', label: 'Ga', unit: '', defaultValue: 1.1 },
+            { key: 'theta', label: 'θ', unit: '', defaultValue: 7 },
+            { key: 'sigma', label: 'δ', unit: 'См/м', defaultValue: 0.003 },
+            { key: 'd', label: 'd', unit: 'м', defaultValue: 1000 },
+          ],
+          steps: [
+            { label: 'f (частота)', formula: 'f = c/λ', compute: (p) => 299792458 / p.lambda, resultKey: 'freq', resultUnit: 'Гц' },
+            {
+              label: 'x', formula: 'π·d / (λ·√(θ²+(18000δ/f)²))',
+              compute: (p) => {
+                const f = 299792458 / p.lambda;
+                const term = Math.sqrt(p.theta ** 2 + (18000 * p.sigma / f) ** 2);
+                return (Math.PI * p.d) / (p.lambda * term);
+              },
+              resultKey: 'x', resultUnit: '',
+            },
+            { label: 'F', formula: '(2+0.3x)/(2+x+0.6x²)', compute: (p) => p.x === 0 ? 1 : (2 + 0.3 * p.x) / (2 + p.x + 0.6 * p.x ** 2), resultKey: 'F', resultUnit: '' },
+            { label: 'E', formula: '245·√(P·Ga)·F/d', compute: (p) => 245 * Math.sqrt(p.P * p.Ga) * p.F / p.d, resultKey: 'E', resultUnit: 'В/м' },
+          ],
+          conclusionFn: (r) => `E = ${r.E.toFixed(4)} В/м на расстоянии d.`,
+        },
+      ];
+
+    case 8:
+      return [
+        {
+          id: 'uhf-field-calc',
+          title: 'Расчёт E УВЧ-передатчика',
+          description: 'R, Δ, F(Δ) → E для передатчика телецентра',
+          params: [
+            { key: 'P', label: 'P (Вт)', unit: 'Вт', defaultValue: 80000 },
+            { key: 'G', label: 'G', unit: '', defaultValue: 12 },
+            { key: 'Hant', label: 'H (высота)', unit: 'м', defaultValue: 300 },
+            { key: 'r', label: 'r (земля)', unit: 'м', defaultValue: 400 },
+            { key: 'K', label: 'K', unit: '', defaultValue: 1.41 },
+          ],
+          steps: [
+            { label: 'R', formula: '√(H²+r²)', compute: (p) => Math.sqrt(p.Hant ** 2 + p.r ** 2), resultKey: 'R', resultUnit: 'м' },
+            { label: 'Δ', formula: 'arctan(H/r)', compute: (p) => Math.atan(p.Hant / p.r), resultKey: 'delta', resultUnit: 'рад' },
+            { label: 'F(Δ)', formula: 'cos(Δ)', compute: (p) => Math.cos(p.delta), resultKey: 'Fd', resultUnit: '' },
+            { label: 'E', formula: 'K·√(30PG)·F(Δ)/R', compute: (p) => p.K * Math.sqrt(30 * p.P * p.G) * p.Fd / p.R, resultKey: 'E', resultUnit: 'В/м' },
+          ],
+          conclusionFn: (r) => `E = ${r.E.toFixed(3)} В/м.`,
+        },
+      ];
+
+    case 9:
+      return [
+        {
+          id: 'body-impedance-calc',
+          title: 'Расчёт импеданса тела',
+          description: 'Rн → Zн → Z → I',
+          params: [
+            { key: 'Rv', label: 'Rв', unit: 'Ом', defaultValue: 500 },
+            { key: 'Rn', label: 'Rн', unit: 'Ом', defaultValue: 5000 },
+            { key: 'C', label: 'C', unit: 'нФ', defaultValue: 20 },
+            { key: 'f', label: 'f', unit: 'Гц', defaultValue: 50 },
+            { key: 'U', label: 'U_пр', unit: 'В', defaultValue: 220 },
+          ],
+          steps: [
+            { label: 'Xc', formula: '1/(2πfC)', compute: (p) => 1 / (2 * Math.PI * p.f * p.C * 1e-9), resultKey: 'Xc', resultUnit: 'Ом' },
+            { label: 'Zн', formula: '√(Rн²+Xc²)', compute: (p) => Math.sqrt(p.Rn ** 2 + p.Xc ** 2), resultKey: 'Zn', resultUnit: 'Ом' },
+            { label: 'Z', formula: '2Zн+Rв', compute: (p) => 2 * p.Zn + p.Rv, resultKey: 'Z', resultUnit: 'Ом' },
+            { label: 'I (мА)', formula: 'U/Z·1000', compute: (p) => (p.U / p.Z) * 1000, resultKey: 'ImA', resultUnit: 'мА' },
+          ],
+          conclusionFn: (r) => {
+            if (r.ImA < 0.5) return `I = ${r.ImA.toFixed(2)} мА — безопасный уровень.`;
+            if (r.ImA < 10) return `I = ${r.ImA.toFixed(2)} мА — ощутимый ток.`;
+            if (r.ImA < 100) return `I = ${r.ImA.toFixed(2)} мА — неотпускающий! Опасно!`;
+            return `I = ${r.ImA.toFixed(2)} мА — фибрилляционный! Смертельно опасен!`;
+          },
+        },
+      ];
+
+    case 10:
+      return [
+        {
+          id: 'step-voltage-calc',
+          title: 'Расчёт шагового напряжения',
+          description: 'j → UA → Uш для разных x',
+          params: [
+            { key: 'Iz', label: 'Iз', unit: 'А', defaultValue: 10 },
+            { key: 'rho', label: 'ρ', unit: 'Ом·м', defaultValue: 100 },
+            { key: 'x', label: 'x', unit: 'м', defaultValue: 5 },
+            { key: 'a', label: 'a (шаг)', unit: 'м', defaultValue: 0.8 },
+          ],
+          steps: [
+            { label: 'j', formula: 'Iз/(2π·x²)', compute: (p) => p.Iz / (2 * Math.PI * p.x ** 2), resultKey: 'j', resultUnit: 'А/м²' },
+            { label: 'UA', formula: 'Iз·ρ/(2π·x)', compute: (p) => p.Iz * p.rho / (2 * Math.PI * p.x), resultKey: 'UA', resultUnit: 'В' },
+            { label: 'Uш', formula: 'Iз·ρ·a/(2π·x·(x+a))', compute: (p) => p.Iz * p.rho * p.a / (2 * Math.PI * p.x * (p.x + p.a)), resultKey: 'Ush', resultUnit: 'В' },
+          ],
+          conclusionFn: (r) =>
+            r.Ush < 36
+              ? `Uш = ${r.Ush.toFixed(2)} В — ниже безопасного порога 36 В.`
+              : `Uш = ${r.Ush.toFixed(2)} В — опасное шаговое напряжение!`,
         },
       ];
 

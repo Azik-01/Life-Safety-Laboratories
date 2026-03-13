@@ -1,6 +1,6 @@
 export interface ManualAsset {
   id: string;
-  lessonId: 1 | 2 | 3 | 4 | 5;
+  lessonId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   path: string;
   caption: string;
   alt: string;
@@ -88,9 +88,89 @@ export const manualAssets: ManualAsset[] = [
     alt: 'Ближняя, промежуточная и дальняя зоны вокруг источника',
     pageHint: 'стр. ~94',
   },
+  {
+    id: 'l6-waveguide',
+    lessonId: 6,
+    path: '/assets/manual-imported/Рисунок 6.1. Волновод.png',
+    caption: 'Волновод — основной элемент экранирования ЭМИ',
+    alt: 'Схема волновода',
+    pageHint: 'стр. ~102',
+  },
+  {
+    id: 'l6-circuit',
+    lessonId: 6,
+    path: '/assets/manual-imported/Рисунок 6.3. Схема выходного контура.png',
+    caption: 'Схема выходного контура экранирующего устройства',
+    alt: 'Схема выходного контура',
+    pageHint: 'стр. ~104',
+  },
+  {
+    id: 'l7-spectrum',
+    lessonId: 7,
+    path: '/assets/manual-imported/Рисунок 7.1. Диапазон ЭМП.png',
+    caption: 'Диапазон электромагнитных полей ВЧ-излучений',
+    alt: 'Диапазон ЭМП',
+    pageHint: 'стр. ~110',
+  },
+  {
+    id: 'l7-5g',
+    lessonId: 7,
+    path: '/assets/manual-imported/Рисунок 7.2. 5G и электромагнитный спектр.png',
+    caption: '5G и электромагнитный спектр',
+    alt: '5G технологии и электромагнитный спектр',
+    pageHint: 'стр. ~112',
+  },
+  {
+    id: 'l8-table',
+    lessonId: 8,
+    path: '/assets/manual-imported/table 8.1.png',
+    caption: 'Таблица нормативов УВЧ-излучений',
+    alt: 'Таблица 8.1',
+    pageHint: 'стр. ~120',
+  },
+  {
+    id: 'l8-table2',
+    lessonId: 8,
+    path: '/assets/manual-imported/table 8.2.png',
+    caption: 'Исходные данные для расчёта УВЧ-передатчиков',
+    alt: 'Таблица 8.2 — варианты',
+    pageHint: 'стр. ~122',
+  },
+  {
+    id: 'l9-burns',
+    lessonId: 9,
+    path: '/assets/manual-imported/Рисунок 9.1. Электрические ожоги.png',
+    caption: 'Электрические ожоги — последствия поражения током',
+    alt: 'Электрические ожоги',
+    pageHint: 'стр. ~130',
+  },
+  {
+    id: 'l9-circuit',
+    lessonId: 9,
+    path: '/assets/manual-imported/Рисунок 9.6. Эквивалентная схема сопротивления человека .png',
+    caption: 'Эквивалентная схема сопротивления тела человека',
+    alt: 'Электрическая схема замещения тела',
+    pageHint: 'стр. ~134',
+  },
+  {
+    id: 'l10-spread',
+    lessonId: 10,
+    path: '/assets/manual-imported/Рисунок 10.1. Зона распространения электрического тока.png',
+    caption: 'Зона растекания тока в грунте',
+    alt: 'Зона распространения тока',
+    pageHint: 'стр. ~140',
+  },
+  {
+    id: 'l10-stepv',
+    lessonId: 10,
+    path: '/assets/manual-imported/Рисунок 10.3. Шаговое напряжение - правила перемещения и радиус поражения.png',
+    caption: 'Шаговое напряжение — правила перемещения и радиус поражения',
+    alt: 'Шаговое напряжение',
+    pageHint: 'стр. ~143',
+  },
 ];
 
-export function assetsByLesson(lessonId: 1 | 2 | 3 | 4 | 5): ManualAsset[] {
+export function assetsByLesson(lessonId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10): ManualAsset[] {
   return manualAssets.filter((asset) => asset.lessonId === lessonId);
 }
 

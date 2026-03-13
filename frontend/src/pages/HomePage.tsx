@@ -1,10 +1,11 @@
-import { Box, Button, Card, CardActions, CardContent, Chip, Grid, Stack, Typography } from '@mui/material';
+﻿import { Box, Button, Card, CardActions, CardContent, Chip, Grid, Stack, Typography } from '@mui/material';
 import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import ScienceIcon from '@mui/icons-material/Science';
 import QuizIcon from '@mui/icons-material/Quiz';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { useNavigate } from 'react-router-dom';
 import { lessons } from '../data/lessons';
+import { getKnowledgeLayer } from '../data/knowledgeLayer';
 import { useProgress } from '../context/ProgressContext';
 import type { LessonId } from '../types/theme';
 
@@ -18,14 +19,15 @@ export default function HomePage() {
         Life-Safety Laboratories
       </Typography>
       <Typography variant="h6" color="text.secondary" sx={{ mb: 3, maxWidth: 900 }}>
-        Полный интерактивный практикум по БЖД: теория, лабораторные и тесты по 5 занятиям в формате методички.
+        Полный интерактивный практикум по БЖД: теория, лабораторные и тесты по 10 занятиям в формате методички.
       </Typography>
 
       <Grid container spacing={2.5}>
         {lessons.map((lesson) => {
           const lp = progress.get(lesson.id as LessonId);
-          const theoryPct = lesson.theoryModules.length > 0
-            ? Math.round((lp.theoryRead.length / lesson.theoryModules.length) * 100)
+          const theoryCount = getKnowledgeLayer(lesson.id as LessonId)?.theory.length ?? lesson.theoryModules.length;
+          const theoryPct = theoryCount > 0
+            ? Math.min(100, Math.round((lp.theoryRead.length / theoryCount) * 100))
             : 0;
 
           return (
@@ -34,7 +36,7 @@ export default function HomePage() {
                 <CardContent sx={{ flex: 1 }}>
                   <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap' }}>
                     <Chip label={`Занятие ${lesson.id}`} color="primary" />
-                    <Chip label={`${lesson.theoryModules.length} модулей`} variant="outlined" />
+                    <Chip label={`${theoryCount} блоков теории`} variant="outlined" />
                     <Chip label={`${lesson.labWizard.steps.length + 1} шагов лаб.`} variant="outlined" />
                     {lp.testScore !== null && (
                       <Chip

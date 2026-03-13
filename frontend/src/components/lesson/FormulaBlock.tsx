@@ -1,4 +1,4 @@
-import { useMemo, useState, memo } from 'react';
+﻿import { useMemo, useState, memo } from 'react';
 import {
   Alert,
   Box,
@@ -20,6 +20,41 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { resolveAssetPath } from '../../data/assetResolver';
 
+/**
+ * Render formula expression with proper subscripts/superscripts.
+ * Patterns handled:
+ *  - explicit subscript markers: _{…}  e.g. E_{н} → E<sub>н</sub>
+ *  - explicit superscript markers: ^{…}  e.g. r^{2} → r<sup>2</sup>
+ *  - Unicode subscript suffix attached to a letter: Eн, Фл, Sп, Hр, Kз, αкз etc.
+ *    A capital letter or Greek followed by 1-2 lowercase Cyrillic → treat tail as subscript
+ *  - Σe style (Greek + single latin lowercase)
+ */
+function renderFormulaExpression(expr: string): string {
+  let html = expr;
+  // 1) Explicit LaTeX-like markers: _{…} and ^{…}
+  html = html.replace(/_\{([^}]+)\}/g, '<sub>$1</sub>');
+  html = html.replace(/\^\{([^}]+)\}/g, '<sup>$1</sup>');
+  // 2) Shorthand: _X (single char subscript without braces)
+  html = html.replace(/_([A-Za-zА-Яа-яёЁ0-9])/g, '<sub>$1</sub>');
+  // 3) ^X (single char superscript without braces) — only digits/letters
+  html = html.replace(/\^([A-Za-zА-Яа-яёЁ0-9])/g, '<sup>$1</sup>');
+  // 4) Auto subscript: Capital or Greek letter followed by 1-3 lowercase Cyrillic
+  //    e.g. Фсв → Ф<sub>св</sub>, Eн → E<sub>н</sub>, Hр → H<sub>р</sub>
+  html = html.replace(
+    /([A-ZА-ЯΦΣΩαβγδεηκμνωЁ])([а-яё]{1,3})(?=[^а-яё\w]|$)/g,
+    (match, head: string, tail: string) => {
+      // Skip real words (e.g. "Где", "лампы") — only process when head is uppercase/Greek
+      // and tail is short subscript-like
+      const skipWords = ['Где', 'Чем', 'Для', 'Вт/', 'все', 'тип', 'шаг', 'при', 'или', 'Это', 'Она', 'Они', 'Его', 'Все', 'Тип', 'Шаг', 'При', 'Или', 'Вт', 'Гц', 'Па', 'лм', 'лк', 'кд', 'ед', 'дБ', 'ср', 'Тл'];
+      if (skipWords.includes(match)) return match;
+      // Skip if tail is longer than 2 and doesn't look like a subscript
+      if (tail.length === 3 && !/^[а-яё]{1,3}$/.test(tail)) return match;
+      return `${head}<sub>${tail}</sub>`;
+    },
+  );
+  return html;
+}
+
 export interface FormulaVariable {
   symbol: string;
   description: string;
@@ -34,17 +69,11 @@ export interface FormulaExample {
 
 export interface FormulaBlockProps {
   id?: string;
-  /** Label like "(4.1)" */
   label?: string;
-  /** Symbolic expression like "LR = L₁ − 20·lg(R) − 8" */
   expression: string;
-  /** Path to formula image */
   imagePath?: string;
-  /** Variable legend */
   variables: FormulaVariable[];
-  /** Worked example */
   example?: FormulaExample;
-  /** Extra "explain" text (shown on button click) */
   explanation?: string;
 }
 
@@ -60,6 +89,9 @@ function FormulaBlock({
   const [showExample, setShowExample] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
   const resolvedImagePath = useMemo(() => resolveAssetPath(imagePath), [imagePath]);
+  const hasExtraContent = Boolean(example || explanation);
+
+  const formulaHtml = useMemo(() => renderFormulaExpression(expression), [expression]);
 
   return (
     <Paper
@@ -73,7 +105,6 @@ function FormulaBlock({
         background: 'linear-gradient(135deg, rgba(19,83,162,0.03) 0%, transparent 100%)',
       }}
     >
-      {/* Header */}
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
         <FunctionsIcon color="primary" fontSize="small" />
         <Typography variant="subtitle2" color="primary.main">
@@ -81,20 +112,20 @@ function FormulaBlock({
         </Typography>
       </Stack>
 
-      {/* Formula expression */}
       <Typography
-        variant="h6"
+        component="div"
         sx={{
           fontFamily: '"Cambria Math", "Latin Modern Math", serif',
           fontWeight: 500,
+          fontSize: '1.15rem',
           letterSpacing: 0.5,
           my: 1,
+          '& sub': { fontSize: '0.65em', verticalAlign: 'sub', lineHeight: 0 },
+          '& sup': { fontSize: '0.65em', verticalAlign: 'super', lineHeight: 0 },
         }}
-      >
-        {expression}
-      </Typography>
+        dangerouslySetInnerHTML={{ __html: formulaHtml }}
+      />
 
-      {/* Formula image (if available) */}
       {resolvedImagePath && (
         <Box
           component="img"
@@ -115,44 +146,54 @@ function FormulaBlock({
         />
       )}
 
-      {/* Variable legend */}
-      <Typography variant="caption" fontWeight={600} sx={{ mt: 1 }}>
-        Обозначения:
-      </Typography>
-      <Table size="small" sx={{ mt: 0.5, '& td': { py: 0.3, borderBottom: 'none' } }}>
-        <TableBody>
-          {variables.map((v) => (
-            <TableRow key={v.symbol}>
-              <TableCell sx={{ pl: 0, width: 60 }}>
-                <Tooltip title={v.description} arrow placement="right">
-                  <Chip
-                    label={v.symbol}
-                    size="small"
-                    variant="outlined"
-                    color="primary"
-                    sx={{ fontFamily: 'serif', fontWeight: 600 }}
-                  />
-                </Tooltip>
-              </TableCell>
-              <TableCell>
-                <Typography variant="body2">
-                  {v.description}
-                  {v.unit && (
-                    <Typography component="span" variant="caption" color="text.secondary">
-                      {' '}
-                      [{v.unit}]
+      {variables.length > 0 && (
+        <>
+          <Typography variant="caption" fontWeight={600} sx={{ mt: 1 }}>
+            Обозначения:
+          </Typography>
+          <Table size="small" sx={{ mt: 0.5, '& td': { py: 0.3, borderBottom: 'none' } }}>
+            <TableBody>
+              {variables.map((v) => (
+                <TableRow key={v.symbol}>
+                  <TableCell sx={{ pl: 0, width: 60 }}>
+                    <Tooltip title={v.description} arrow placement="right">
+                      <Chip
+                        label={
+                          <span
+                            dangerouslySetInnerHTML={{ __html: renderFormulaExpression(v.symbol) }}
+                            style={{ fontFamily: 'serif', fontWeight: 600 }}
+                          />
+                        }
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                        sx={{
+                          '& sub': { fontSize: '0.65em', verticalAlign: 'sub', lineHeight: 0 },
+                          '& sup': { fontSize: '0.65em', verticalAlign: 'super', lineHeight: 0 },
+                        }}
+                      />
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2">
+                      {v.description}
+                      {v.unit && (
+                        <Typography component="span" variant="caption" color="text.secondary">
+                          {' '}
+                          [{v.unit}]
+                        </Typography>
+                      )}
                     </Typography>
-                  )}
-                </Typography>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </>
+      )}
 
-      <Divider sx={{ my: 1 }} />
+      {hasExtraContent && <Divider sx={{ my: 1 }} />}
 
-      {/* Action buttons */}
       <Stack direction="row" spacing={1} flexWrap="wrap">
         {example && (
           <Button
@@ -176,7 +217,6 @@ function FormulaBlock({
         )}
       </Stack>
 
-      {/* Collapsible worked example */}
       <Collapse in={showExample}>
         {example && (
           <Paper variant="outlined" sx={{ p: 1.5, mt: 1, bgcolor: 'action.hover' }}>
@@ -185,7 +225,20 @@ function FormulaBlock({
             </Typography>
             <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
               {Object.entries(example.given).map(([key, val]) => (
-                <Chip key={key} label={`${key} = ${val}`} size="small" variant="outlined" />
+                <Chip
+                  key={key}
+                  label={
+                    <span
+                      dangerouslySetInnerHTML={{ __html: renderFormulaExpression(`${key} = ${val}`) }}
+                    />
+                  }
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    '& sub': { fontSize: '0.65em', verticalAlign: 'sub', lineHeight: 0 },
+                    '& sup': { fontSize: '0.65em', verticalAlign: 'super', lineHeight: 0 },
+                  }}
+                />
               ))}
             </Stack>
             <Typography variant="caption" fontWeight={600} sx={{ mt: 1, display: 'block' }}>
@@ -205,7 +258,6 @@ function FormulaBlock({
         )}
       </Collapse>
 
-      {/* Collapsible explanation */}
       <Collapse in={showExplanation}>
         {explanation && (
           <Alert severity="info" sx={{ mt: 1 }}>

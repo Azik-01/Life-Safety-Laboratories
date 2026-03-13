@@ -5,9 +5,32 @@ import { useFrame } from '@react-three/fiber';
 import type { Mesh } from 'three';
 import * as THREE from 'three';
 import SafeCanvas from '../SafeCanvas';
-import { levelAtDistanceDb, sourceLevelAtObserver, sumLevelsEnergyDb } from '../../formulas/noise';
+import {
+  barrierReductionDbFromMass,
+  levelAfterBarrierDb,
+  levelAtDistanceDb,
+  sourceLevelAtObserver,
+  sumLevelsEnergyDb,
+  sumTwoLevelsByDeltaDb,
+} from '../../formulas/noise';
 import { classifyEmZone, wavelengthM } from '../../formulas/emi';
 import { realisticIlluminanceLux } from '../../formulas/illumination';
+import {
+  attenuationCoefficient, shieldThicknessM, requiredAttenuationDb, allowablePPE,
+  powerFluxDensity, magneticFieldStrengthH, electricFieldFromH,
+  waveguideAttenuationPerM, waveguideLengthM,
+} from '../../formulas/shielding';
+import {
+  fieldStrengthShuleikin, attenuationFactorF, xParameter,
+} from '../../formulas/hfField';
+import {
+  fieldStrengthUHF, distanceFromPhaseCenter, elevationAngleRad,
+  normalizedPatternFactor,
+} from '../../formulas/uhfField';
+import {
+  bodyCurrentMA, totalBodyImpedance, skinImpedance, classifyCurrentDanger,
+  stepVoltage, groundPotential, safeDistance,
+} from '../../formulas/electricSafety';
 import FastForwardIcon from '@mui/icons-material/FastForward';
 import SlowMotionVideoIcon from '@mui/icons-material/SlowMotionVideo';
 import type { ComponentProps } from 'react';
@@ -30,7 +53,7 @@ function Text(props: ComponentProps<typeof DreiText>) {
 type LampType = 'incandescent' | 'fluorescent' | 'led';
 
 interface LabSceneProps {
-  lessonId: 1 | 2 | 3 | 4 | 5;
+  lessonId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   lightState: {
     lampType: LampType;
     intensityCd: number;
@@ -38,6 +61,11 @@ interface LabSceneProps {
     sensorOffsetM: number;
     reflectance: number;
     luminaireCount: number;
+    roomLengthM?: number;
+    roomWidthM?: number;
+    chosenLampPowerW?: number;
+    lineOffsetM?: number;
+    lineRows?: number;
   };
   noiseState: {
     sourceA: number;
@@ -47,7 +75,9 @@ interface LabSceneProps {
     sourceBX: number;
     sourceCX: number;
     observerX: number;
-    barrierMass: number;
+    barrierMassA: number;
+    barrierMassB: number;
+    barrierMassC: number;
     sourceAOn: boolean;
     sourceBOn: boolean;
     sourceCOn: boolean;
@@ -57,6 +87,46 @@ interface LabSceneProps {
     distanceM: number;
     eVpm: number;
     hApm: number;
+  };
+  shieldState: {
+    frequencyHz: number;
+    turns: number;
+    currentA: number;
+    distanceM: number;
+    coilRadiusM: number;
+    conductivitySpm: number;
+    muRelative: number;
+    exposureTimeH: number;
+    waveguideDiameterM: number;
+    waveguideEpsilon: number;
+  };
+  hfState: {
+    powerKW: number;
+    gainAntenna: number;
+    wavelengthM: number;
+    theta: number;
+    sigma: number;
+    distances: number[];
+  };
+  uhfState: {
+    powerW: number;
+    gain: number;
+    heightM: number;
+    distances: number[];
+    frequencyMHz: number;
+  };
+  bodyElecState: {
+    voltageV: number;
+    frequencyHz: number;
+    skinResistanceOhm: number;
+    capacitanceNF: number;
+    internalResistanceOhm: number;
+  };
+  groundState: {
+    faultCurrentA: number;
+    soilResistivityOhmM: number;
+    distanceM: number;
+    stepLengthM: number;
   };
 }
 
@@ -262,82 +332,113 @@ function LightInvestigationScene({ state, timeScale }: { state: LabSceneProps['l
 /* ─────────────── Lesson 2: Lighting Calculation ─────────────── */
 
 function LightCalculationScene({ state, timeScale }: { state: LabSceneProps['lightState']; timeScale: number }) {
-  const lightRef = useRef<THREE.PointLight>(null);
   const timeRef = useRef(0);
-
   const color = state.lampType === 'incandescent'
     ? '#ffd39b'
     : state.lampType === 'fluorescent'
-      ? '#f0fff8'
-      : '#d8ecff';
+      ? '#f6fff4'
+      : '#d7efff';
+  const roomL = state.roomLengthM ?? 14;
+  const roomB = state.roomWidthM ?? 10;
+  const hp = Math.max(0.5, state.heightM - 0.3);
+  const idx = (roomL * roomB) / (hp * (roomL + roomB));
+  const rows = Math.max(2, state.lineRows ?? 2);
+  const fixturesPerRow = Math.max(2, Math.ceil(Math.max(4, state.luminaireCount) / rows));
+  const lineOffset = Math.min(roomB / 2 - 0.9, Math.max(0.8, state.lineOffsetM ?? roomB / 4));
+  const lPrime = roomL / hp;
 
   useFrame((_, delta) => {
     timeRef.current += delta * timeScale;
-    if (!lightRef.current) return;
-    lightRef.current.intensity = state.intensityCd / 100;
   });
-
-  // Show room index visualization
-  const roomL = 14;
-  const roomB = 10;
-  const hp = Math.max(0.5, state.heightM - 0.3);
-  const idx = (roomL * roomB) / (hp * (roomL + roomB));
-
-  // Calculate luminaire grid
-  const rawCount = Math.max(1, state.luminaireCount);
-  const nRows = Math.max(1, Math.round(Math.sqrt(rawCount)));
-  const nCols = Math.max(1, Math.ceil(rawCount / nRows));
 
   return (
     <>
-      <LabRoom width={roomL} depth={roomB} height={state.heightM + 0.5} />
-      {/* Luminaire grid */}
-      {Array.from({ length: nRows }).map((_, row) =>
-        Array.from({ length: nCols }).map((_, col) => {
-          const x = -roomL / 2 + (roomL / (nCols + 1)) * (col + 1);
-          const z = -roomB / 2 + (roomB / (nRows + 1)) * (row + 1);
-          return (
-            <group key={`lum-${row}-${col}`}>
-              <mesh position={[x, state.heightM + 0.45, z]}>
-                <boxGeometry args={[0.6, 0.03, 0.12]} />
-                <meshStandardMaterial emissive={color} emissiveIntensity={0.5} color="#eee" />
-              </mesh>
-              <pointLight position={[x, state.heightM + 0.4, z]} color={color} intensity={state.intensityCd / 300} distance={state.heightM + 2} decay={2} />
-            </group>
-          );
-        }),
-      )}
-      {/* Dimension lines */}
-      <mesh position={[0, 0.03, roomB / 2 + 0.2]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[roomL, 0.04]} />
-        <meshBasicMaterial color="#e74c3c" />
+      <LabRoom width={roomL} depth={roomB} height={Math.max(3.6, state.heightM + 0.5)} />
+
+      {[...Array(rows)].map((_, row) => {
+        const z = rows === 1 ? 0 : row === 0 ? -lineOffset : lineOffset;
+        return (
+          <group key={`line-${row}`}>
+            <mesh position={[0, state.heightM + 0.36, z]}>
+              <boxGeometry args={[roomL - 1, 0.05, 0.18]} />
+              <meshStandardMaterial color="#111111" emissive={color} emissiveIntensity={0.7} />
+            </mesh>
+            {Array.from({ length: fixturesPerRow }).map((__, col) => {
+              const x = -roomL / 2 + 1 + ((roomL - 2) / (fixturesPerRow - 1)) * col;
+              const phase = timeRef.current * 1.8 + col * 0.35 + row * 0.8;
+              const pulse = 0.4 + 0.15 * Math.sin(phase);
+              return (
+                <group key={`fixture-${row}-${col}`}>
+                  <mesh position={[x, state.heightM + 0.38, z]}>
+                    <boxGeometry args={[0.6, 0.04, 0.12]} />
+                    <meshStandardMaterial color="#f1f1f1" emissive={color} emissiveIntensity={0.4 + pulse} />
+                  </mesh>
+                  <pointLight
+                    position={[x, state.heightM + 0.34, z]}
+                    color={color}
+                    intensity={(state.intensityCd / 320) * (1 + pulse)}
+                    distance={state.heightM + 3.5}
+                    decay={2}
+                  />
+                </group>
+              );
+            })}
+          </group>
+        );
+      })}
+
+      {[[-roomL / 2 + 1.8, 0, 1.8], [0, 0, 1.8], [roomL / 2 - 1.8, 0, 1.8], [-roomL / 2 + 1.8, 0, -1.5], [0, 0, -1.5], [roomL / 2 - 1.8, 0, -1.5]].map((pos, i) => (
+        <LabDesk key={`calc-desk-${i}`} position={pos as [number, number, number]} />
+      ))}
+
+      <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.08, 0.12, 32]} />
+        <meshBasicMaterial color="#111111" />
       </mesh>
-      <Text fontSize={0.2} color="#e74c3c" position={[0, 0.2, roomB / 2 + 0.5]}>
-        {`L = ${roomL} м`}
-      </Text>
-      <mesh position={[roomL / 2 + 0.2, 0.03, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}>
-        <planeGeometry args={[roomB, 0.04]} />
-        <meshBasicMaterial color="#3498db" />
+      <mesh position={[0, 0.03, roomB / 2 - 0.5]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[roomL - 0.8, 0.035]} />
+        <meshBasicMaterial color="#111111" />
       </mesh>
-      <Text fontSize={0.2} color="#3498db" position={[roomL / 2 + 0.5, 0.2, 0]}>
-        {`B = ${roomB} м`}
+      <Text fontSize={0.18} color="#111111" position={[0, 0.2, roomB / 2 - 0.05]}>
+        {`L = ${roomL.toFixed(1)} м`}
       </Text>
-      {/* Height marker */}
-      <mesh position={[-roomL / 2 + 0.3, state.heightM / 2 + 0.25, -roomB / 2 + 0.2]}>
-        <boxGeometry args={[0.02, state.heightM, 0.02]} />
+      <mesh position={[-roomL / 2 + 0.45, 0.03, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}>
+        <planeGeometry args={[roomB - 0.8, 0.035]} />
+        <meshBasicMaterial color="#111111" />
+      </mesh>
+      <Text fontSize={0.18} color="#111111" position={[-roomL / 2 + 0.05, 0.2, 0]}>
+        {`B = ${roomB.toFixed(1)} м`}
+      </Text>
+
+      <mesh position={[-roomL / 4, 0.03, -lineOffset]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[roomL / 2, 0.03]} />
+        <meshBasicMaterial color="#2b2b2b" />
+      </mesh>
+      <Text fontSize={0.13} color="#2b2b2b" position={[-roomL / 4, 0.18, -lineOffset - 0.28]}>
+        {`L' = ${lPrime.toFixed(2)}`}
+      </Text>
+      <mesh position={[0, 0.03, -lineOffset / 2]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}>
+        <planeGeometry args={[lineOffset, 0.03]} />
+        <meshBasicMaterial color="#2b2b2b" />
+      </mesh>
+      <Text fontSize={0.13} color="#2b2b2b" position={[0.3, 0.18, -lineOffset / 2]}>
+        {`l = ${lineOffset.toFixed(2)} м`}
+      </Text>
+
+      <mesh position={[-roomL / 2 + 0.55, hp / 2, -roomB / 2 + 0.4]}>
+        <boxGeometry args={[0.03, hp, 0.03]} />
         <meshBasicMaterial color="#2ecc71" />
       </mesh>
-      <Text fontSize={0.15} color="#2ecc71" position={[-roomL / 2 + 0.8, state.heightM / 2, -roomB / 2 + 0.2]}>
-        {`Hp = ${hp.toFixed(2)} м`}
+      <Text fontSize={0.14} color="#2ecc71" position={[-roomL / 2 + 1.15, hp / 2, -roomB / 2 + 0.4]}>
+        {`H' = ${hp.toFixed(2)} м`}
       </Text>
-      {/* Info overlay */}
-      <Text fontSize={0.2} color="#ffd43b" position={[0, 0.5, 0]}>
-        {`i = ${idx.toFixed(3)} | N = ${nRows * nCols} свет.`}
+
+      <Text fontSize={0.16} color="#ffd43b" position={[0, 0.65, 0]}>
+        {`i = ${idx.toFixed(3)} | P = ${(state.chosenLampPowerW ?? 60).toFixed(0)} Вт`}
       </Text>
-      {/* Desks */}
-      {[[-3, 0, 1], [0, 0, 1], [3, 0, 1], [-3, 0, -2], [0, 0, -2], [3, 0, -2]].map((pos, i) => (
-        <LabDesk key={`desk-${i}`} position={pos as [number, number, number]} />
-      ))}
+      <Text fontSize={0.1} color="#f5f5f5" position={[0, state.heightM + 0.8, 0]}>
+        {`Две светящиеся линии, ${fixturesPerRow} светильников в каждом ряду`}
+      </Text>
     </>
   );
 }
@@ -372,26 +473,26 @@ function NoiseInvestigationScene({ state, timeScale }: { state: LabSceneProps['n
     state.sourceAOn ? sourceLevelAtObserver({
       levelAt1mDb: state.sourceA,
       distanceM: Math.max(0.8, Math.abs(state.observerX - state.sourceAX)),
-      barrierMassPerM2: state.barrierMass,
+      barrierMassPerM2: state.barrierMassA,
     }) : Number.NEGATIVE_INFINITY,
     state.sourceBOn ? sourceLevelAtObserver({
       levelAt1mDb: state.sourceB,
       distanceM: Math.max(0.8, Math.abs(state.observerX - state.sourceBX)),
-      barrierMassPerM2: state.barrierMass,
+      barrierMassPerM2: state.barrierMassB,
     }) : Number.NEGATIVE_INFINITY,
     state.sourceCOn ? sourceLevelAtObserver({
       levelAt1mDb: state.sourceC,
       distanceM: Math.max(0.8, Math.abs(state.observerX - state.sourceCX)),
-      barrierMassPerM2: state.barrierMass,
+      barrierMassPerM2: state.barrierMassC,
     }) : Number.NEGATIVE_INFINITY,
   ].filter((value) => Number.isFinite(value));
 
   const total = contributions.length > 0 ? sumLevelsEnergyDb(contributions as number[]) : 0;
 
   const sources = [
-    { x: state.sourceAX, z: -2, level: state.sourceA, active: state.sourceAOn, color: '#ff5722', label: 'Станок A' },
-    { x: state.sourceBX, z: 0, level: state.sourceB, active: state.sourceBOn, color: '#ff9800', label: 'Станок B' },
-    { x: state.sourceCX, z: 2, level: state.sourceC, active: state.sourceCOn, color: '#ffc107', label: 'Компрессор' },
+    { x: state.sourceAX, z: -2, level: state.sourceA, active: state.sourceAOn, color: '#ff5722', label: 'Станок A', barrierMass: state.barrierMassA },
+    { x: state.sourceBX, z: 0, level: state.sourceB, active: state.sourceBOn, color: '#ff9800', label: 'Станок B', barrierMass: state.barrierMassB },
+    { x: state.sourceCX, z: 2, level: state.sourceC, active: state.sourceCOn, color: '#ffc107', label: 'Компрессор', barrierMass: state.barrierMassC },
   ];
 
   return (
@@ -414,18 +515,16 @@ function NoiseInvestigationScene({ state, timeScale }: { state: LabSceneProps['n
         <meshStandardMaterial color="#8a8478" />
       </mesh>
 
-      {/* Sound barrier wall */}
-      <mesh position={[0, 1.5, 0]} castShadow>
-        <boxGeometry args={[0.35, 3, 8]} />
-        <meshStandardMaterial color="#95a5a6" roughness={0.5} metalness={0.1} />
-      </mesh>
-      <Text fontSize={0.14} color="#bdc3c7" position={[0, 3.2, 0]}>
-        {`Преграда G=${state.barrierMass} кг/м²`}
-      </Text>
-
       {/* Sources */}
       {sources.map((source, index) => (
         <group key={`src-${index}`}>
+          <mesh position={[(source.x + state.observerX) / 2, 1.5, source.z]} castShadow>
+            <boxGeometry args={[0.24, 3, 1.7]} />
+            <meshStandardMaterial color="#95a5a6" roughness={0.55} metalness={0.08} />
+          </mesh>
+          <Text fontSize={0.11} color="#dce4e6" position={[(source.x + state.observerX) / 2, 3.15, source.z]}>
+            {`G = ${source.barrierMass} кг/м²`}
+          </Text>
           {/* Machine body */}
           <mesh position={[source.x, 0.7, source.z]} castShadow>
             <boxGeometry args={[1.0, 1.2, 0.9]} />
@@ -495,32 +594,58 @@ function VibrationIndicator({ position, intensity, timeScale }: { position: [num
   return <group ref={ref} position={position} />;
 }
 
+function sumLevelsByMethodicalTable(levels: number[]): number {
+  if (levels.length === 0) return 0;
+  const sorted = [...levels].sort((left, right) => right - left);
+  return sorted.slice(1).reduce((acc, level) => sumTwoLevelsByDeltaDb(acc, level), sorted[0]);
+}
+
 /* ─────────────── Lesson 4: Noise Calculation ─────────────── */
 
 function NoiseCalculationScene({ state, timeScale }: { state: LabSceneProps['noiseState']; timeScale: number }) {
-  // Same physics but different visual emphasis - shows calculation workspace
-  const levels = [
-    state.sourceAOn ? levelAtDistanceDb(state.sourceA, Math.max(0.8, Math.abs(state.observerX - state.sourceAX))) : Number.NEGATIVE_INFINITY,
-    state.sourceBOn ? levelAtDistanceDb(state.sourceB, Math.max(0.8, Math.abs(state.observerX - state.sourceBX))) : Number.NEGATIVE_INFINITY,
-    state.sourceCOn ? levelAtDistanceDb(state.sourceC, Math.max(0.8, Math.abs(state.observerX - state.sourceCX))) : Number.NEGATIVE_INFINITY,
-  ].filter((v) => Number.isFinite(v)) as number[];
-  const totalWithout = levels.length > 0 ? sumLevelsEnergyDb(levels) : 0;
+  const sources = [
+    { x: state.sourceAX, z: -3, level: state.sourceA, on: state.sourceAOn, color: '#ff5722', barrierMass: state.barrierMassA, label: 'Источник 1' },
+    { x: state.sourceBX, z: 0, level: state.sourceB, on: state.sourceBOn, color: '#ff9800', barrierMass: state.barrierMassB, label: 'Источник 2' },
+    { x: state.sourceCX, z: 3, level: state.sourceC, on: state.sourceCOn, color: '#ffc107', barrierMass: state.barrierMassC, label: 'Источник 3' },
+  ].map((source) => {
+    if (!source.on) {
+      return {
+        ...source,
+        distance: Math.max(0.8, Math.abs(state.observerX - source.x)),
+        distanceLevel: null,
+        barrierReduction: null,
+        barrierLevel: null,
+      };
+    }
 
-  const levelsWithBarrier = [
-    state.sourceAOn ? sourceLevelAtObserver({ levelAt1mDb: state.sourceA, distanceM: Math.max(0.8, Math.abs(state.observerX - state.sourceAX)), barrierMassPerM2: state.barrierMass }) : Number.NEGATIVE_INFINITY,
-    state.sourceBOn ? sourceLevelAtObserver({ levelAt1mDb: state.sourceB, distanceM: Math.max(0.8, Math.abs(state.observerX - state.sourceBX)), barrierMassPerM2: state.barrierMass }) : Number.NEGATIVE_INFINITY,
-    state.sourceCOn ? sourceLevelAtObserver({ levelAt1mDb: state.sourceC, distanceM: Math.max(0.8, Math.abs(state.observerX - state.sourceCX)), barrierMassPerM2: state.barrierMass }) : Number.NEGATIVE_INFINITY,
-  ].filter((v) => Number.isFinite(v)) as number[];
-  const totalWith = levelsWithBarrier.length > 0 ? sumLevelsEnergyDb(levelsWithBarrier) : 0;
+    const distance = Math.max(0.8, Math.abs(state.observerX - source.x));
+    const distanceLevel = levelAtDistanceDb(source.level, distance);
+    const barrierReduction = barrierReductionDbFromMass(source.barrierMass);
+    const barrierLevel = levelAfterBarrierDb(distanceLevel, barrierReduction);
+    return {
+      ...source,
+      distance,
+      distanceLevel,
+      barrierReduction,
+      barrierLevel,
+    };
+  });
+
+  const distanceLevels = sources
+    .filter((source) => source.distanceLevel !== null)
+    .map((source) => source.distanceLevel as number);
+  const barrierLevels = sources
+    .filter((source) => source.barrierLevel !== null)
+    .map((source) => source.barrierLevel as number);
+  const totalWithout = sumLevelsByMethodicalTable(distanceLevels);
+  const totalWith = sumLevelsByMethodicalTable(barrierLevels);
 
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[20, 12]} />
-        <meshStandardMaterial color="#3a3a3a" roughness={0.9} />
+        <meshStandardMaterial color="#404651" roughness={0.92} />
       </mesh>
-      {/* Technical room with visible measurement grid */}
-      {/* Grid on floor */}
       {Array.from({ length: 21 }).map((_, i) => (
         <group key={`grid-${i}`}>
           <mesh position={[-10 + i, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -536,38 +661,45 @@ function NoiseCalculationScene({ state, timeScale }: { state: LabSceneProps['noi
         </group>
       ))}
 
-      {/* Sources with distance markers */}
-      {[
-        { x: state.sourceAX, level: state.sourceA, on: state.sourceAOn, color: '#ff5722' },
-        { x: state.sourceBX, level: state.sourceB, on: state.sourceBOn, color: '#ff9800' },
-        { x: state.sourceCX, level: state.sourceC, on: state.sourceCOn, color: '#ffc107' },
-      ].map((src, i) => (
-        <group key={`calc-src-${i}`}>
-          <mesh position={[src.x, 0.6, -3 + i * 3]} castShadow>
+      {sources.map((source, index) => (
+        <group key={`calc-src-${index}`}>
+          <mesh position={[source.x, 0.6, source.z]} castShadow>
             <boxGeometry args={[0.8, 1.0, 0.7]} />
-            <meshStandardMaterial color={src.on ? '#666' : '#444'} metalness={0.5} />
+            <meshStandardMaterial color={source.on ? '#666' : '#444'} metalness={0.5} />
           </mesh>
-          <Text fontSize={0.12} color={src.color} position={[src.x, 1.4, -3 + i * 3]}>
-            {`L${i + 1} = ${src.level} дБ`}
+          <mesh position={[(source.x + state.observerX) / 2, 1.45, source.z]} castShadow>
+            <boxGeometry args={[0.26, 2.9, 1.6]} />
+            <meshStandardMaterial color="#8f99a3" roughness={0.45} />
+          </mesh>
+          <Text fontSize={0.12} color={source.color} position={[source.x, 1.42, source.z]}>
+            {`${source.label}: L1 = ${source.level} дБ`}
           </Text>
-          {/* Distance line to observer */}
-          {src.on && (
-            <mesh position={[(src.x + state.observerX) / 2, 0.03, -3 + i * 3 + 0.5]} rotation={[-Math.PI / 2, 0, 0]}>
-              <planeGeometry args={[Math.abs(state.observerX - src.x), 0.02]} />
-              <meshBasicMaterial color={src.color} transparent opacity={0.5} />
+          {source.on && (
+            <mesh position={[(source.x + state.observerX) / 2, 0.03, source.z + 0.45]} rotation={[-Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[source.distance, 0.02]} />
+              <meshBasicMaterial color={source.color} transparent opacity={0.5} />
             </mesh>
           )}
-          {src.on && <NoiseWave x={src.x} z={-3 + i * 3} color={src.color} speed={0.5} timeScale={timeScale} />}
+          <Text fontSize={0.11} color="#dce4e6" position={[(source.x + state.observerX) / 2, 3.05, source.z]}>
+            {`G = ${source.barrierMass} кг/м²`}
+          </Text>
+          {source.on && (
+            <>
+              <Text fontSize={0.095} color="#ffe082" position={[source.x, 1.12, source.z]}>
+                {`LR = ${source.distanceLevel?.toFixed(1)} дБ`}
+              </Text>
+              <Text fontSize={0.095} color="#b9f6ca" position={[(source.x + state.observerX) / 2 + 0.45, 1.85, source.z]}>
+                {`N = ${source.barrierReduction?.toFixed(1)} дБ`}
+              </Text>
+              <Text fontSize={0.1} color="#a5d6a7" position={[state.observerX - 0.35, 1.15, source.z]}>
+                {`L'R = ${source.barrierLevel?.toFixed(1)} дБ`}
+              </Text>
+              <NoiseWave x={source.x} z={source.z} color={source.color} speed={0.4 + index * 0.12} timeScale={timeScale} />
+            </>
+          )}
         </group>
       ))}
 
-      {/* Barrier */}
-      <mesh position={[0, 1.5, 0]} castShadow>
-        <boxGeometry args={[0.3, 3, 8]} />
-        <meshStandardMaterial color="#7f8c8d" />
-      </mesh>
-
-      {/* Observer */}
       <group position={[state.observerX, 0, 0]}>
         <mesh position={[0, 0.9, 0]} castShadow>
           <capsuleGeometry args={[0.2, 0.5, 8, 16]} />
@@ -577,11 +709,14 @@ function NoiseCalculationScene({ state, timeScale }: { state: LabSceneProps['noi
           <sphereGeometry args={[0.2, 16, 16]} />
           <meshStandardMaterial color="#ffd6b6" />
         </mesh>
-        <Text fontSize={0.15} color="#ffd43b" position={[0, 2.2, 0]}>
+        <Text fontSize={0.15} color="#ffd43b" position={[0, 2.25, 0]}>
           {`Без преграды: ${totalWithout.toFixed(1)} дБ`}
         </Text>
         <Text fontSize={0.15} color={totalWith > 80 ? '#ff6b6b' : '#9be37d'} position={[0, 2.0, 0]}>
           {`С преградой: ${totalWith.toFixed(1)} дБ`}
+        </Text>
+        <Text fontSize={0.1} color="#d1e6ff" position={[0, 1.82, 0]}>
+          Пошагово: LR → N → L'R
         </Text>
       </group>
 
@@ -592,35 +727,71 @@ function NoiseCalculationScene({ state, timeScale }: { state: LabSceneProps['noi
 
 /* ─────────────── Lesson 5: EMI ─────────────── */
 
+function EmWaveDots({
+  axis,
+  color,
+  timeScale,
+  baseY,
+}: {
+  axis: 'electric' | 'magnetic';
+  color: string;
+  timeScale: number;
+  baseY: number;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const timeRef = useRef(0);
+
+  useFrame((_, delta) => {
+    timeRef.current += delta * timeScale;
+    if (!groupRef.current) return;
+
+    groupRef.current.children.forEach((child, index) => {
+      const mesh = child as THREE.Mesh;
+      const x = -4.8 + index * 0.55;
+      const wave = Math.sin(timeRef.current * 2.2 + index * 0.45) * 0.75;
+      if (axis === 'electric') {
+        mesh.position.set(x, baseY + wave, 0);
+      } else {
+        mesh.position.set(x, baseY, wave);
+      }
+    });
+  });
+
+  return (
+    <group ref={groupRef}>
+      {Array.from({ length: 18 }).map((_, index) => (
+        <mesh key={`${axis}-${index}`}>
+          <sphereGeometry args={[0.08, 12, 12]} />
+          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.45} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 function EmiScene({ state, timeScale }: { state: LabSceneProps['emiState']; timeScale: number }) {
   const lambda = wavelengthM(Math.max(1e3, state.frequencyHz));
   const near = lambda / (2 * Math.PI);
   const far = 2 * lambda;
   const zone = classifyEmZone(Math.max(0.01, state.distanceM), lambda);
   const ppe = state.eVpm * state.hApm;
-  const waveRef = useRef<THREE.Group>(null);
-  const timeRef = useRef(0);
-
-  useFrame((_, delta) => {
-    timeRef.current += delta * timeScale;
-    if (!waveRef.current) return;
-    waveRef.current.children.forEach((child, i) => {
-      const mesh = child as THREE.Mesh;
-      const t = (timeRef.current * 0.8 + i * 0.8) % 4;
-      const scale = 0.3 + t * 0.5;
-      mesh.scale.set(scale, scale, scale);
-      const mat = mesh.material as THREE.MeshBasicMaterial;
-      mat.opacity = Math.max(0.02, 0.3 - t * 0.07);
-    });
-  });
 
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[24, 24]} />
-        <meshStandardMaterial color="#12202e" roughness={0.9} />
+        <meshStandardMaterial color="#d7e0df" roughness={0.92} />
       </mesh>
-      {/* Antenna/source */}
+
+      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[Math.max(0.25, Math.min(near, 4.2)), Math.max(0.35, Math.min(near, 4.7)), 64]} />
+        <meshBasicMaterial color="#ff7676" transparent opacity={0.35} />
+      </mesh>
+      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[Math.max(0.9, Math.min(far * 0.55, 6.8)), Math.max(1.1, Math.min(far * 0.6, 7.2)), 64]} />
+        <meshBasicMaterial color="#5da9ff" transparent opacity={0.25} />
+      </mesh>
+
       <mesh position={[0, 0.1, 0]} castShadow>
         <boxGeometry args={[0.6, 0.2, 0.6]} />
         <meshStandardMaterial color="#555" metalness={0.6} />
@@ -634,39 +805,30 @@ function EmiScene({ state, timeScale }: { state: LabSceneProps['emiState']; time
         <meshStandardMaterial emissive="#ff3333" emissiveIntensity={2} />
       </mesh>
 
-      {/* EM waves expanding */}
-      <group ref={waveRef} position={[0, 1.5, 0]}>
-        {[0, 1, 2, 3, 4].map((i) => (
-          <mesh key={i}>
-            <sphereGeometry args={[1, 16, 16]} />
-            <meshBasicMaterial color="#ff6b6b" transparent opacity={0.15} wireframe />
-          </mesh>
-        ))}
-      </group>
-
-      {/* Near zone sphere */}
-      <mesh position={[0, 1.5, 0]}>
-        <sphereGeometry args={[Math.min(8, Math.max(0.15, near)), 24, 24]} />
-        <meshStandardMaterial color="#ff4444" transparent opacity={0.1} />
+      <mesh position={[0, 1.6, 0]} rotation={[0, 0, 0]}>
+        <boxGeometry args={[10.8, 0.02, 0.02]} />
+        <meshBasicMaterial color="#353535" />
       </mesh>
-      {near < 8 && (
-        <Text fontSize={0.14} color="#ff6b6b" position={[Math.min(7, near) + 0.3, 2.5, 0]}>
-          Ближняя
-        </Text>
-      )}
-
-      {/* Far zone sphere */}
-      <mesh position={[0, 1.5, 0]}>
-        <sphereGeometry args={[Math.min(10, Math.max(0.3, far)), 24, 24]} />
-        <meshStandardMaterial color="#4488ff" transparent opacity={0.06} wireframe />
+      <EmWaveDots axis="electric" color="#ff6b6b" timeScale={timeScale} baseY={1.6} />
+      <EmWaveDots axis="magnetic" color="#4dabf7" timeScale={timeScale} baseY={1.6} />
+      <mesh position={[0, 1.6, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <planeGeometry args={[0.02, 2.2]} />
+        <meshBasicMaterial color="#ff6b6b" />
       </mesh>
-      {far < 10 && (
-        <Text fontSize={0.14} color="#74c0fc" position={[Math.min(9, far) + 0.3, 2.5, 0]}>
-          Дальняя
-        </Text>
-      )}
+      <mesh position={[0, 1.6, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.02, 2.2]} />
+        <meshBasicMaterial color="#4dabf7" />
+      </mesh>
+      <Text fontSize={0.15} color="#ff6b6b" position={[-4.9, 2.7, 0]}>
+        Электрическое поле E
+      </Text>
+      <Text fontSize={0.15} color="#4dabf7" position={[-4.7, 1.65, 1.55]}>
+        Магнитное поле H
+      </Text>
+      <Text fontSize={0.12} color="#333333" position={[0, 3.0, 0]}>
+        Поля взаимно перпендикулярны и распространяются вдоль оси волны
+      </Text>
 
-      {/* Measurement probe at distance */}
       <group position={[Math.min(state.distanceM, 10), 0, 0]}>
         <mesh position={[0, 1.2, 0]} castShadow>
           <boxGeometry args={[0.12, 0.25, 0.08]} />
@@ -691,13 +853,554 @@ function EmiScene({ state, timeScale }: { state: LabSceneProps['emiState']; time
         </Text>
       </group>
 
-      {/* Distance line */}
       <mesh position={[Math.min(state.distanceM, 10) / 2, 0.03, 0.8]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[Math.min(state.distanceM, 10), 0.03]} />
         <meshBasicMaterial color="#ffd43b" />
       </mesh>
 
+      {[
+        { label: 'Радиоволны', color: '#ffc979', x: 6.4, z: -3.5 },
+        { label: 'Микроволны', color: '#ffe08a', x: 6.4, z: -2.0 },
+        { label: 'ИК', color: '#ffb1a7', x: 6.4, z: -0.5 },
+        { label: 'Видимый', color: '#a8e6a2', x: 6.4, z: 1.0 },
+        { label: 'УФ/рентген', color: '#b6c7ff', x: 6.4, z: 2.5 },
+      ].map((band, index) => (
+        <group key={`emi-band-${index}`} position={[band.x, 0.55, band.z]}>
+          <mesh castShadow>
+            <boxGeometry args={[2.2, 1.1, 0.5]} />
+            <meshStandardMaterial color={band.color} roughness={0.45} />
+          </mesh>
+          <Text fontSize={0.12} color="#232323" position={[0, 0.8, 0]}>
+            {band.label}
+          </Text>
+        </group>
+      ))}
+
+      {near < 8 && (
+        <Text fontSize={0.14} color="#ff6b6b" position={[Math.min(7, near) + 0.3, 0.25, -0.55]}>
+          Ближняя зона
+        </Text>
+      )}
+      {far < 10 && (
+        <Text fontSize={0.14} color="#5da9ff" position={[Math.min(9, far) + 0.3, 0.25, 0.55]}>
+          Дальняя зона
+        </Text>
+      )}
+
       <pointLight position={[5, 5, 5]} color="#aab" intensity={0.5} />
+      <pointLight position={[-5, 4, 4]} color="#fff4e1" intensity={0.65} />
+    </>
+  );
+}
+
+/* ─────────────── Lesson 6: EMI Shielding ─────────────── */
+
+function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldState']; timeScale: number }) {
+  const waveRef = useRef<THREE.Group>(null);
+  const timeR = useRef(0);
+
+  const H = magneticFieldStrengthH(state.turns, state.currentA, state.distanceM, state.coilRadiusM);
+  const E = electricFieldFromH(H);
+  const ppe = powerFluxDensity(E, H);
+  const ppeAllow = allowablePPE(state.exposureTimeH);
+  const reqDb = requiredAttenuationDb(ppe, ppeAllow);
+  const muAbs = state.muRelative * 4 * Math.PI * 1e-7;
+  const alpha = attenuationCoefficient(state.frequencyHz, muAbs, state.conductivitySpm);
+  const thickness = shieldThicknessM(reqDb, alpha);
+  const wgAtt = waveguideAttenuationPerM(state.waveguideDiameterM, state.waveguideEpsilon);
+  const wgLen = waveguideLengthM(reqDb, wgAtt);
+
+  useFrame((_, delta) => {
+    timeR.current += delta * timeScale;
+    if (!waveRef.current) return;
+    waveRef.current.children.forEach((child, i) => {
+      const mesh = child as THREE.Mesh;
+      const t = (timeR.current * 1.4 + i * 0.5) % 4;
+      const x = -6 + t * 3;
+      mesh.position.x = x;
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.opacity = x < 0 ? 0.5 : Math.max(0.03, 0.5 * Math.exp(-(x * alpha * 0.3)));
+    });
+  });
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[18, 12]} />
+        <meshStandardMaterial color="#3a3e44" roughness={0.9} />
+      </mesh>
+
+      {/* EMI source (coil/transmitter) */}
+      <mesh position={[-5, 1.5, 0]} castShadow>
+        <cylinderGeometry args={[0.6, 0.6, 1.2, 16]} />
+        <meshStandardMaterial color="#c0392b" metalness={0.5} roughness={0.4} />
+      </mesh>
+      <mesh position={[-5, 2.3, 0]}>
+        <cylinderGeometry args={[0.04, 0.04, 0.6, 8]} />
+        <meshStandardMaterial color="#e74c3c" emissive="#ff3333" emissiveIntensity={0.6} />
+      </mesh>
+      <Text fontSize={0.14} color="#ff6b6b" position={[-5, 3.0, 0]}>
+        {`H = ${H.toExponential(2)} А/м`}
+      </Text>
+      <Text fontSize={0.12} color="#ffd43b" position={[-5, 2.7, 0]}>
+        {`E = ${E.toExponential(2)} В/м | ППЭ = ${ppe.toExponential(2)} Вт/м²`}
+      </Text>
+
+      {/* Shield wall */}
+      <mesh position={[0, 1.5, 0]} castShadow>
+        <boxGeometry args={[Math.max(0.05, thickness * 800), 3, 6]} />
+        <meshStandardMaterial color="#78909c" metalness={0.7} roughness={0.3} transparent opacity={0.85} />
+      </mesh>
+      <Text fontSize={0.14} color="#80cbc4" position={[0, 3.3, 0]}>
+        {`Экран: δ = ${(thickness * 1000).toFixed(2)} мм | α = ${alpha.toFixed(1)} 1/м`}
+      </Text>
+      <Text fontSize={0.11} color="#b0bec5" position={[0, 3.05, 0]}>
+        {`A₁ = ${reqDb.toFixed(1)} дБ | ППЭдоп = ${ppeAllow.toExponential(2)} Вт/м²`}
+      </Text>
+
+      {/* Waveguide (tube through shield) */}
+      <mesh position={[0, 0.5, 2.5]} rotation={[0, 0, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[state.waveguideDiameterM * 5, state.waveguideDiameterM * 5, Math.max(0.1, wgLen * 2), 16]} />
+        <meshStandardMaterial color="#455a64" metalness={0.6} transparent opacity={0.7} />
+      </mesh>
+      <Text fontSize={0.11} color="#a5d6a7" position={[0, 1.3, 2.5]}>
+        {`Волновод: l = ${(wgLen * 100).toFixed(1)} см | d = ${(state.waveguideDiameterM * 100).toFixed(1)} см`}
+      </Text>
+
+      {/* Animated wave fronts */}
+      <group ref={waveRef}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <mesh key={`wave-${i}`} position={[-6 + i, 1.5, 0]} rotation={[0, Math.PI / 2, 0]}>
+            <torusGeometry args={[0.8, 0.02, 6, 24]} />
+            <meshBasicMaterial color="#ff6b6b" transparent opacity={0.4} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Protected zone */}
+      <mesh position={[4, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[6, 6]} />
+        <meshBasicMaterial color="#4caf50" transparent opacity={0.12} />
+      </mesh>
+      <Text fontSize={0.16} color="#66bb6a" position={[4, 0.3, 0]}>
+        Защищённая зона
+      </Text>
+
+      <pointLight position={[-5, 5, 3]} color="#ffcccc" intensity={0.8} distance={12} decay={2} />
+      <pointLight position={[4, 5, -2]} color="#ccffcc" intensity={0.6} distance={10} decay={2} />
+    </>
+  );
+}
+
+/* ─────────────── Lesson 7: HF Field (Shuleikin-VdPol) ─────────────── */
+
+function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; timeScale: number }) {
+  const waveRef = useRef<THREE.Group>(null);
+  const timeR = useRef(0);
+
+  const results = state.distances.map((d) => {
+    const x = xParameter(d, state.wavelengthM, state.theta, state.sigma);
+    const F = attenuationFactorF(x);
+    const Estr = fieldStrengthShuleikin(state.powerKW, state.gainAntenna, d, F);
+    return { d, x, F, E: Estr };
+  });
+
+  useFrame((_, delta) => {
+    timeR.current += delta * timeScale;
+    if (!waveRef.current) return;
+    waveRef.current.children.forEach((child, i) => {
+      const mesh = child as THREE.Mesh;
+      const phase = (timeR.current * 0.8 + i * 0.6) % 5;
+      const r = 0.5 + phase * 2;
+      mesh.scale.set(r, r, r);
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.opacity = Math.max(0.02, 0.4 - phase * 0.08);
+    });
+  });
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[24, 16]} />
+        <meshStandardMaterial color="#2d4a22" roughness={0.92} />
+      </mesh>
+
+      {/* Antenna tower */}
+      <mesh position={[0, 3, 0]} castShadow>
+        <cylinderGeometry args={[0.08, 0.15, 6, 8]} />
+        <meshStandardMaterial color="#999" metalness={0.6} />
+      </mesh>
+      <mesh position={[0, 6.2, 0]}>
+        <boxGeometry args={[2.4, 0.06, 0.06]} />
+        <meshStandardMaterial color="#bbb" metalness={0.5} />
+      </mesh>
+      <mesh position={[0, 6.5, 0]}>
+        <sphereGeometry args={[0.1, 8, 8]} />
+        <meshStandardMaterial color="#ff5722" emissive="#ff3300" emissiveIntensity={1.2} />
+      </mesh>
+      <Text fontSize={0.16} color="#ff9800" position={[0, 7.0, 0]}>
+        {`P = ${state.powerKW} кВт | G = ${state.gainAntenna}`}
+      </Text>
+      <Text fontSize={0.12} color="#ffcc80" position={[0, 6.7, 0]}>
+        {`λ = ${state.wavelengthM.toFixed(0)} м`}
+      </Text>
+
+      {/* Expanding wave rings */}
+      <group ref={waveRef}>
+        {Array.from({ length: 5 }).map((_, i) => (
+          <mesh key={`hf-ring-${i}`} position={[0, 3, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[1, 0.03, 6, 32]} />
+            <meshBasicMaterial color="#ff9800" transparent opacity={0.3} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Distance markers with field strength */}
+      {results.map((r, i) => {
+        const scaledD = Math.min(10, r.d / (Math.max(...state.distances) / 10));
+        return (
+          <group key={`hf-pt-${i}`} position={[scaledD, 0, 0]}>
+            <mesh position={[0, 0.5, 0]} castShadow>
+              <boxGeometry args={[0.15, 1, 0.15]} />
+              <meshStandardMaterial color="#f44336" />
+            </mesh>
+            <Text fontSize={0.12} color="#fff" position={[0, 1.3, 0]}>
+              {`d=${r.d} км`}
+            </Text>
+            <Text fontSize={0.11} color="#ffd54f" position={[0, 1.05, 0]}>
+              {`E = ${r.E.toFixed(3)} мВ/м`}
+            </Text>
+            <Text fontSize={0.09} color="#bbb" position={[0, 0.85, 0]}>
+              {`F = ${r.F.toFixed(4)}`}
+            </Text>
+          </group>
+        );
+      })}
+
+      {/* Ground plane texture */}
+      <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.5, 11, 64]} />
+        <meshBasicMaterial color="#4caf50" transparent opacity={0.08} />
+      </mesh>
+
+      <pointLight position={[0, 8, 4]} color="#fff5e0" intensity={1} distance={15} decay={2} />
+      <pointLight position={[8, 4, -4]} color="#ffeedd" intensity={0.5} distance={12} decay={2} />
+    </>
+  );
+}
+
+/* ─────────────── Lesson 8: UHF Field ─────────────── */
+
+function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState']; timeScale: number }) {
+  const pulseRef = useRef<THREE.Group>(null);
+  const timeR = useRef(0);
+
+  const results = state.distances.map((gd) => {
+    const R = distanceFromPhaseCenter(state.heightM, gd);
+    const delta = elevationAngleRad(state.heightM, gd);
+    const Fd = normalizedPatternFactor(delta);
+    const Estr = fieldStrengthUHF(state.powerW, state.gain, R, Fd);
+    return { gd, R, delta, Fd, E: Estr };
+  });
+
+  useFrame((_, delta) => {
+    timeR.current += delta * timeScale;
+    if (!pulseRef.current) return;
+    pulseRef.current.children.forEach((child, i) => {
+      const mesh = child as THREE.Mesh;
+      const t = (timeR.current * 1.2 + i * 0.5) % 3;
+      const s = 0.3 + t * 1.5;
+      mesh.scale.set(s, s, s);
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.opacity = Math.max(0.02, 0.35 - t * 0.12);
+    });
+  });
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[22, 14]} />
+        <meshStandardMaterial color="#3e2723" roughness={0.9} />
+      </mesh>
+
+      {/* UHF Tower */}
+      <mesh position={[0, state.heightM / 2, 0]} castShadow>
+        <boxGeometry args={[0.3, state.heightM, 0.3]} />
+        <meshStandardMaterial color="#78909c" metalness={0.5} />
+      </mesh>
+      {/* Antenna array */}
+      {[-0.4, 0, 0.4].map((z, i) => (
+        <mesh key={`ant-${i}`} position={[0, state.heightM - 0.3, z]} castShadow>
+          <boxGeometry args={[0.8, 0.08, 0.04]} />
+          <meshStandardMaterial color="#e65100" metalness={0.4} />
+        </mesh>
+      ))}
+      <Text fontSize={0.16} color="#ff7043" position={[0, state.heightM + 0.6, 0]}>
+        {`P = ${state.powerW} Вт | G = ${state.gain}`}
+      </Text>
+      <Text fontSize={0.12} color="#ffab91" position={[0, state.heightM + 0.3, 0]}>
+        {`h = ${state.heightM} м | f = ${state.frequencyMHz} МГц`}
+      </Text>
+
+      {/* Animated radiation pulses */}
+      <group ref={pulseRef}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <mesh key={`uhf-pulse-${i}`} position={[0, state.heightM - 0.5, 0]} rotation={[Math.PI / 4, 0, 0]}>
+            <torusGeometry args={[1, 0.02, 6, 24]} />
+            <meshBasicMaterial color="#ff7043" transparent opacity={0.3} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Measuring points on ground */}
+      {results.map((r, i) => {
+        const x = Math.min(9, r.gd / (Math.max(...state.distances) / 9));
+        return (
+          <group key={`uhf-pt-${i}`} position={[x, 0, 0]}>
+            <mesh position={[0, 0.7, 0]} castShadow>
+              <capsuleGeometry args={[0.12, 0.4, 8, 12]} />
+              <meshStandardMaterial color="#42a5f5" />
+            </mesh>
+            <mesh position={[0, 1.2, 0]}>
+              <sphereGeometry args={[0.12, 12, 12]} />
+              <meshStandardMaterial color="#ffd6b6" />
+            </mesh>
+            <Text fontSize={0.11} color="#fff" position={[0, 1.7, 0]}>
+              {`r = ${r.gd} м`}
+            </Text>
+            <Text fontSize={0.1} color="#ffd54f" position={[0, 1.5, 0]}>
+              {`E = ${r.E.toFixed(2)} В/м`}
+            </Text>
+            <Text fontSize={0.08} color="#aaa" position={[0, 1.35, 0]}>
+              {`Δ = ${(r.delta * 180 / Math.PI).toFixed(1)}° | F(Δ) = ${r.Fd.toFixed(3)}`}
+            </Text>
+            {/* Line from tower top to point */}
+            <mesh position={[-x / 2, state.heightM / 2, 0]} rotation={[0, 0, Math.atan2(state.heightM, x)]}>
+              <boxGeometry args={[0.015, Math.sqrt(x * x + state.heightM * state.heightM), 0.015]} />
+              <meshBasicMaterial color="#ff704380" transparent opacity={0.2} />
+            </mesh>
+          </group>
+        );
+      })}
+
+      <pointLight position={[0, state.heightM + 3, 4]} color="#fff5e0" intensity={1} distance={18} decay={2} />
+      <pointLight position={[8, 3, -3]} color="#ffeedd" intensity={0.5} distance={12} decay={2} />
+    </>
+  );
+}
+
+/* ─────────────── Lesson 9: Electric Current through Body ─────────────── */
+
+function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyElecState']; timeScale: number }) {
+  const sparkRef = useRef<THREE.Mesh>(null);
+  const timeR = useRef(0);
+
+  const Zk = skinImpedance(state.skinResistanceOhm, state.frequencyHz, state.capacitanceNF * 1e-9);
+  const Zt = totalBodyImpedance(Zk, state.internalResistanceOhm);
+  const I = bodyCurrentMA(state.voltageV, Zt);
+  const danger = classifyCurrentDanger(I, state.frequencyHz <= 60);
+
+  const dangerColor = danger === 'safe' ? '#4caf50' : danger === 'perceptible' ? '#ff9800' : danger === 'non-releasing' ? '#f44336' : '#d50000';
+  const dangerLabel = danger === 'safe' ? 'Безопасный' : danger === 'perceptible' ? 'Ощутимый' : danger === 'non-releasing' ? 'Неотпускающий' : 'Фибрилляция!';
+
+  useFrame((_, delta) => {
+    timeR.current += delta * timeScale;
+    if (!sparkRef.current) return;
+    const flash = Math.abs(Math.sin(timeR.current * 8));
+    const mat = sparkRef.current.material as THREE.MeshStandardMaterial;
+    mat.emissiveIntensity = I > 1 ? flash * Math.min(3, I / 10) : 0.1;
+  });
+
+  return (
+    <>
+      <LabRoom width={10} depth={8} height={3} />
+      <LabDesk position={[-2, 0, 0]} />
+
+      {/* Power source */}
+      <mesh position={[-3, 0.9, 0]} castShadow>
+        <boxGeometry args={[0.5, 0.3, 0.4]} />
+        <meshStandardMaterial color="#333" metalness={0.4} />
+      </mesh>
+      <Text fontSize={0.12} color="#ff5252" position={[-3, 1.4, 0]}>
+        {`U = ${state.voltageV} В | f = ${state.frequencyHz} Гц`}
+      </Text>
+
+      {/* Wire to contact point */}
+      <mesh position={[-1.5, 0.95, 0]}>
+        <boxGeometry args={[2.5, 0.02, 0.02]} />
+        <meshStandardMaterial color="#f44336" emissive="#ff0000" emissiveIntensity={0.3} />
+      </mesh>
+
+      {/* Spark at contact */}
+      <mesh ref={sparkRef} position={[0, 1.2, 0]}>
+        <sphereGeometry args={[0.08, 12, 12]} />
+        <meshStandardMaterial color="#ffeb3b" emissive="#ffeb3b" emissiveIntensity={1} />
+      </mesh>
+
+      {/* Human figure */}
+      <group position={[1, 0, 0]}>
+        <mesh position={[0, 0.6, 0]} castShadow>
+          <capsuleGeometry args={[0.22, 0.6, 8, 16]} />
+          <meshStandardMaterial color={dangerColor} transparent opacity={0.7} />
+        </mesh>
+        <mesh position={[0, 1.3, 0]} castShadow>
+          <sphereGeometry args={[0.2, 16, 16]} />
+          <meshStandardMaterial color="#ffd6b6" />
+        </mesh>
+        {/* Arm reaching to wire */}
+        <mesh position={[-0.5, 1.0, 0]} rotation={[0, 0, Math.PI / 4]}>
+          <boxGeometry args={[0.08, 0.6, 0.08]} />
+          <meshStandardMaterial color="#ffd6b6" />
+        </mesh>
+      </group>
+
+      {/* Ground wire */}
+      <mesh position={[1, 0.15, 0]}>
+        <boxGeometry args={[0.02, 0.3, 0.02]} />
+        <meshStandardMaterial color="#4caf50" />
+      </mesh>
+
+      {/* Info panel */}
+      <Text fontSize={0.16} color={dangerColor} position={[1, 2.0, 0]}>
+        {`I = ${I.toFixed(2)} мА — ${dangerLabel}`}
+      </Text>
+      <Text fontSize={0.11} color="#90caf9" position={[1, 1.75, 0]}>
+        {`Z = ${Zt.toFixed(0)} Ом | Zк = ${Zk.toFixed(0)} Ом`}
+      </Text>
+      <Text fontSize={0.1} color="#bbb" position={[1, 1.6, 0]}>
+        {`Rн = ${state.skinResistanceOhm} Ом | Rв = ${state.internalResistanceOhm} Ом | C = ${state.capacitanceNF} нФ`}
+      </Text>
+
+      {/* Equivalent circuit diagram (simplified) */}
+      <group position={[-3, 2.2, 0]}>
+        <mesh><boxGeometry args={[0.8, 0.02, 0.02]} /><meshBasicMaterial color="#aaa" /></mesh>
+        <mesh position={[0.5, -0.15, 0]}><boxGeometry args={[0.02, 0.3, 0.02]} /><meshBasicMaterial color="#aaa" /></mesh>
+        <mesh position={[-0.5, -0.15, 0]}><boxGeometry args={[0.02, 0.3, 0.02]} /><meshBasicMaterial color="#aaa" /></mesh>
+        <Text fontSize={0.08} color="#ccc" position={[0, 0.1, 0]}>
+          Эквивалентная схема
+        </Text>
+      </group>
+    </>
+  );
+}
+
+/* ─────────────── Lesson 10: Step Voltage ─────────────── */
+
+function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundState']; timeScale: number }) {
+  const ringRef = useRef<THREE.Group>(null);
+  const timeR = useRef(0);
+
+  const phi = groundPotential(state.faultCurrentA, state.soilResistivityOhmM, state.distanceM);
+  const Ush = stepVoltage(state.faultCurrentA, state.soilResistivityOhmM, state.distanceM, state.stepLengthM);
+  const safeDist = safeDistance(state.faultCurrentA, state.soilResistivityOhmM, 40, state.stepLengthM);
+
+  useFrame((_, delta) => {
+    timeR.current += delta * timeScale;
+    if (!ringRef.current) return;
+    ringRef.current.children.forEach((child, i) => {
+      const mesh = child as THREE.Mesh;
+      const t = (timeR.current * 0.6 + i * 0.8) % 4;
+      const s = 0.5 + t * 2.5;
+      mesh.scale.set(s, 1, s);
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.opacity = Math.max(0.02, 0.35 - t * 0.09);
+    });
+  });
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[22, 22]} />
+        <meshStandardMaterial color="#5d4037" roughness={0.95} />
+      </mesh>
+
+      {/* Grounding electrode / fault point */}
+      <mesh position={[0, 0.5, 0]} castShadow>
+        <cylinderGeometry args={[0.15, 0.15, 1, 12]} />
+        <meshStandardMaterial color="#616161" metalness={0.5} />
+      </mesh>
+      <mesh position={[0, 1.1, 0]}>
+        <sphereGeometry args={[0.12, 12, 12]} />
+        <meshStandardMaterial color="#ff5722" emissive="#ff3300" emissiveIntensity={1.5} />
+      </mesh>
+      {/* Power line to fault */}
+      <mesh position={[-3, 3, 0]} castShadow>
+        <cylinderGeometry args={[0.05, 0.05, 6, 8]} />
+        <meshStandardMaterial color="#555" />
+      </mesh>
+      <mesh position={[-1.5, 2, 0]} rotation={[0, 0, Math.PI / 6]}>
+        <boxGeometry args={[0.03, 3.5, 0.03]} />
+        <meshStandardMaterial color="#222" />
+      </mesh>
+      <Text fontSize={0.16} color="#ff7043" position={[0, 1.6, 0]}>
+        {`Iз = ${state.faultCurrentA} А | ρ = ${state.soilResistivityOhmM} Ом·м`}
+      </Text>
+
+      {/* Animated concentric rings (equipotential zones) */}
+      <group ref={ringRef}>
+        {Array.from({ length: 5 }).map((_, i) => (
+          <mesh key={`eq-ring-${i}`} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[1, 0.04, 4, 48]} />
+            <meshBasicMaterial color="#ff9800" transparent opacity={0.3} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Person at observation distance */}
+      <group position={[Math.min(8, state.distanceM), 0, 0]}>
+        <mesh position={[0, 0.7, 0]} castShadow>
+          <capsuleGeometry args={[0.18, 0.5, 8, 16]} />
+          <meshStandardMaterial color={Ush > 40 ? '#f44336' : '#4caf50'} transparent opacity={0.7} />
+        </mesh>
+        <mesh position={[0, 1.35, 0]} castShadow>
+          <sphereGeometry args={[0.18, 16, 16]} />
+          <meshStandardMaterial color="#ffd6b6" />
+        </mesh>
+        {/* Step length indicator */}
+        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[state.stepLengthM, 0.06]} />
+          <meshBasicMaterial color="#42a5f5" />
+        </mesh>
+        <Text fontSize={0.1} color="#64b5f6" position={[0, 0.2, 0.3]}>
+          {`a = ${state.stepLengthM} м`}
+        </Text>
+      </group>
+
+      {/* Distance line */}
+      <mesh position={[Math.min(4, state.distanceM / 2), 0.03, 1.5]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[Math.min(8, state.distanceM), 0.03]} />
+        <meshBasicMaterial color="#ffd43b" />
+      </mesh>
+      <Text fontSize={0.13} color="#ffd43b" position={[Math.min(4, state.distanceM / 2), 0.2, 1.5]}>
+        {`x = ${state.distanceM} м`}
+      </Text>
+
+      {/* Results */}
+      <Text fontSize={0.18} color={Ush > 40 ? '#ff5252' : '#66bb6a'} position={[Math.min(8, state.distanceM), 2.0, 0]}>
+        {`Uш = ${Ush.toFixed(1)} В`}
+      </Text>
+      <Text fontSize={0.12} color="#fff176" position={[Math.min(8, state.distanceM), 1.75, 0]}>
+        {`φ = ${phi.toFixed(1)} В`}
+      </Text>
+      <Text fontSize={0.1} color="#aaa" position={[Math.min(8, state.distanceM), 1.55, 0]}>
+        {Ush > 40 ? '⚠ Опасное напряжение шага!' : '✓ Безопасно'}
+      </Text>
+
+      {/* Safe distance marker */}
+      {safeDist < 20 && (
+        <group position={[Math.min(9, safeDist), 0, -1]}>
+          <mesh position={[0, 0.5, 0]}>
+            <boxGeometry args={[0.08, 1, 0.08]} />
+            <meshStandardMaterial color="#4caf50" />
+          </mesh>
+          <Text fontSize={0.11} color="#66bb6a" position={[0, 1.2, 0]}>
+            {`Безопасно: ${safeDist.toFixed(1)} м`}
+          </Text>
+        </group>
+      )}
+
+      <pointLight position={[0, 6, 4]} color="#fff5e0" intensity={1} distance={15} decay={2} />
+      <pointLight position={[6, 3, -4]} color="#ffeedd" intensity={0.5} distance={12} decay={2} />
     </>
   );
 }
@@ -731,35 +1434,79 @@ export default function LabScene3D(props: LabSceneProps) {
     }
     if (props.lessonId === 2) {
       const hp = Math.max(0.5, props.lightState.heightM - 0.3);
-      const idx = (14 * 10) / (hp * (14 + 10));
+      const roomLength = props.lightState.roomLengthM ?? 14;
+      const roomWidth = props.lightState.roomWidthM ?? 10;
+      const idx = (roomLength * roomWidth) / (hp * (roomLength + roomWidth));
       return {
-        headline: `Расчёт: i = ${idx.toFixed(3)} | Hp = ${hp.toFixed(2)} м`,
+        headline: `Расчёт: i = ${idx.toFixed(3)} | H' = ${hp.toFixed(2)} м | P = ${(props.lightState.chosenLampPowerW ?? 60).toFixed(0)} Вт`,
       };
     }
     if (props.lessonId === 3) {
       const contributions = [
-        props.noiseState.sourceAOn ? sourceLevelAtObserver({ levelAt1mDb: props.noiseState.sourceA, distanceM: Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceAX)), barrierMassPerM2: props.noiseState.barrierMass }) : Number.NEGATIVE_INFINITY,
-        props.noiseState.sourceBOn ? sourceLevelAtObserver({ levelAt1mDb: props.noiseState.sourceB, distanceM: Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceBX)), barrierMassPerM2: props.noiseState.barrierMass }) : Number.NEGATIVE_INFINITY,
-        props.noiseState.sourceCOn ? sourceLevelAtObserver({ levelAt1mDb: props.noiseState.sourceC, distanceM: Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceCX)), barrierMassPerM2: props.noiseState.barrierMass }) : Number.NEGATIVE_INFINITY,
+        props.noiseState.sourceAOn ? sourceLevelAtObserver({ levelAt1mDb: props.noiseState.sourceA, distanceM: Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceAX)), barrierMassPerM2: props.noiseState.barrierMassA }) : Number.NEGATIVE_INFINITY,
+        props.noiseState.sourceBOn ? sourceLevelAtObserver({ levelAt1mDb: props.noiseState.sourceB, distanceM: Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceBX)), barrierMassPerM2: props.noiseState.barrierMassB }) : Number.NEGATIVE_INFINITY,
+        props.noiseState.sourceCOn ? sourceLevelAtObserver({ levelAt1mDb: props.noiseState.sourceC, distanceM: Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceCX)), barrierMassPerM2: props.noiseState.barrierMassC }) : Number.NEGATIVE_INFINITY,
       ].filter((v) => Number.isFinite(v)) as number[];
       const total = contributions.length > 0 ? sumLevelsEnergyDb(contributions) : 0;
-      return { headline: `Исследование шума: LΣ = ${total.toFixed(1)} дБ (с преградой)` };
+      return { headline: `Исследование шума: LΣ = ${total.toFixed(1)} дБ | три независимые преграды` };
     }
     if (props.lessonId === 4) {
-      const levels = [
+      const distanceLevels = [
         props.noiseState.sourceAOn ? levelAtDistanceDb(props.noiseState.sourceA, Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceAX))) : Number.NEGATIVE_INFINITY,
         props.noiseState.sourceBOn ? levelAtDistanceDb(props.noiseState.sourceB, Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceBX))) : Number.NEGATIVE_INFINITY,
         props.noiseState.sourceCOn ? levelAtDistanceDb(props.noiseState.sourceC, Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceCX))) : Number.NEGATIVE_INFINITY,
       ].filter((v) => Number.isFinite(v)) as number[];
-      const total = levels.length > 0 ? sumLevelsEnergyDb(levels) : 0;
-      return { headline: `Расчёт шума: LΣ без преграды = ${total.toFixed(1)} дБ` };
+      const barrierLevels = [
+        props.noiseState.sourceAOn ? sourceLevelAtObserver({ levelAt1mDb: props.noiseState.sourceA, distanceM: Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceAX)), barrierMassPerM2: props.noiseState.barrierMassA }) : Number.NEGATIVE_INFINITY,
+        props.noiseState.sourceBOn ? sourceLevelAtObserver({ levelAt1mDb: props.noiseState.sourceB, distanceM: Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceBX)), barrierMassPerM2: props.noiseState.barrierMassB }) : Number.NEGATIVE_INFINITY,
+        props.noiseState.sourceCOn ? sourceLevelAtObserver({ levelAt1mDb: props.noiseState.sourceC, distanceM: Math.max(0.8, Math.abs(props.noiseState.observerX - props.noiseState.sourceCX)), barrierMassPerM2: props.noiseState.barrierMassC }) : Number.NEGATIVE_INFINITY,
+      ].filter((v) => Number.isFinite(v)) as number[];
+      const totalDistance = sumLevelsByMethodicalTable(distanceLevels);
+      const totalBarrier = sumLevelsByMethodicalTable(barrierLevels);
+      return { headline: `Расчёт шума: LR = ${totalDistance.toFixed(1)} дБ | L'R = ${totalBarrier.toFixed(1)} дБ` };
     }
-    const lambda = wavelengthM(Math.max(1e3, props.emiState.frequencyHz));
-    const zone = classifyEmZone(Math.max(0.01, props.emiState.distanceM), lambda);
-    const ppe = props.emiState.eVpm * props.emiState.hApm;
-    return {
-      headline: `ЭМИ: λ = ${lambda.toExponential(2)} м | ППЭ = ${ppe.toFixed(3)} Вт/м² | зона: ${zone === 'near' ? 'ближняя' : zone === 'intermediate' ? 'промежуточная' : 'дальняя'}`,
-    };
+    if (props.lessonId === 5) {
+      const lambda = wavelengthM(Math.max(1e3, props.emiState.frequencyHz));
+      const zone = classifyEmZone(Math.max(0.01, props.emiState.distanceM), lambda);
+      const ppe = props.emiState.eVpm * props.emiState.hApm;
+      return {
+        headline: `ЭМИ: λ = ${lambda.toExponential(2)} м | ППЭ = ${ppe.toFixed(3)} Вт/м² | зона: ${zone === 'near' ? 'ближняя' : zone === 'intermediate' ? 'промежуточная' : 'дальняя'}`,
+      };
+    }
+    if (props.lessonId === 6) {
+      const H = magneticFieldStrengthH(props.shieldState.turns, props.shieldState.currentA, props.shieldState.distanceM, props.shieldState.coilRadiusM);
+      const E = electricFieldFromH(H);
+      const ppe = powerFluxDensity(E, H);
+      const muAbs = props.shieldState.muRelative * 4 * Math.PI * 1e-7;
+      const alpha = attenuationCoefficient(props.shieldState.frequencyHz, muAbs, props.shieldState.conductivitySpm);
+      const thick = shieldThicknessM(requiredAttenuationDb(ppe, allowablePPE(props.shieldState.exposureTimeH)), alpha);
+      return { headline: `Экранирование: δ = ${(thick * 1000).toFixed(2)} мм | α = ${alpha.toFixed(1)} 1/м | ППЭ = ${ppe.toExponential(2)} Вт/м²` };
+    }
+    if (props.lessonId === 7) {
+      const d0 = props.hfState.distances[0] ?? 1;
+      const x = xParameter(d0, props.hfState.wavelengthM, props.hfState.theta, props.hfState.sigma);
+      const F = attenuationFactorF(x);
+      const Estr = fieldStrengthShuleikin(props.hfState.powerKW, props.hfState.gainAntenna, d0, F);
+      return { headline: `ВЧ-поле (Шулейкин): E = ${Estr.toFixed(3)} мВ/м | F = ${F.toFixed(4)} | d = ${d0} км` };
+    }
+    if (props.lessonId === 8) {
+      const gd0 = props.uhfState.distances[0] ?? 100;
+      const R = distanceFromPhaseCenter(props.uhfState.heightM, gd0);
+      const delta = elevationAngleRad(props.uhfState.heightM, gd0);
+      const Fd = normalizedPatternFactor(delta);
+      const Estr = fieldStrengthUHF(props.uhfState.powerW, props.uhfState.gain, R, Fd);
+      return { headline: `УВЧ-поле: E = ${Estr.toFixed(2)} В/м | R = ${R.toFixed(1)} м | F(Δ) = ${Fd.toFixed(3)}` };
+    }
+    if (props.lessonId === 9) {
+      const Zk = skinImpedance(props.bodyElecState.skinResistanceOhm, props.bodyElecState.frequencyHz, props.bodyElecState.capacitanceNF * 1e-9);
+      const Zt = totalBodyImpedance(Zk, props.bodyElecState.internalResistanceOhm);
+      const I = bodyCurrentMA(props.bodyElecState.voltageV, Zt);
+      const danger = classifyCurrentDanger(I, props.bodyElecState.frequencyHz <= 60);
+      return { headline: `Ток через тело: I = ${I.toFixed(2)} мА | Z = ${Zt.toFixed(0)} Ом | ${danger === 'safe' ? 'безопасный' : danger === 'perceptible' ? 'ощутимый' : danger === 'non-releasing' ? 'неотпускающий' : 'фибрилляция'}` };
+    }
+    const Ush = stepVoltage(props.groundState.faultCurrentA, props.groundState.soilResistivityOhmM, props.groundState.distanceM, props.groundState.stepLengthM);
+    const phi = groundPotential(props.groundState.faultCurrentA, props.groundState.soilResistivityOhmM, props.groundState.distanceM);
+    return { headline: `Напряжение шага: Uш = ${Ush.toFixed(1)} В | φ = ${phi.toFixed(1)} В | x = ${props.groundState.distanceM} м` };
   }, [props]);
 
   return (
@@ -797,14 +1544,19 @@ export default function LabScene3D(props: LabSceneProps) {
       {showExplain && (
         <Alert severity="info" sx={{ mb: 1 }}>
           {props.lessonId === 1 && 'Связь со светотехникой: сцена визуализирует E ≈ I/r² с поправками на число светильников, отражение поверхностей и эксплуатационный коэффициент.'}
-          {props.lessonId === 2 && 'Сцена показывает геометрию помещения и расчет индекса i = (L·B)/(Hp·(L+B)) для выбора схемы освещения.'}
-          {props.lessonId === 3 && 'Сцена демонстрирует вклад каждого источника шума, ослабление преградой и логарифмическое суммирование уровней в точке наблюдения.'}
-          {props.lessonId === 4 && 'Сцена иллюстрирует пошаговый расчет: уровень на расстоянии, поправка преграды, суммарный уровень LΣ.'}
-          {props.lessonId === 5 && 'Сцена показывает зоны ЭМИ по отношению r/λ и расчет ППЭ = E×H для оценки безопасной дистанции.'}
+          {props.lessonId === 2 && 'Сцена повторяет схему из методички: размеры L и B, высоту подвеса H′, две светящиеся линии и расстояние l от края до линии.'}
+          {props.lessonId === 3 && 'Сцена демонстрирует вклад каждого источника шума и отдельную преграду для каждого канала распространения.'}
+          {props.lessonId === 4 && 'Сцена иллюстрирует пошаговый расчет по трем источникам: LR на расстоянии, снижение N преградой и corrected уровень L′R в рабочей точке.'}
+          {props.lessonId === 5 && 'Сцена показывает перпендикулярность электрического и магнитного полей, зоны ЭМИ по отношению r/λ и упрощенную классификацию диапазонов.'}
+          {props.lessonId === 6 && 'Сцена показывает источник ЭМИ, экранирующую стенку с рассчитанной толщиной δ и волновод. Волновые фронты затухают при прохождении экрана.'}
+          {props.lessonId === 7 && 'Сцена визуализирует распространение ВЧ-поля по формуле Шулейкина-Ван-дер-Поля с маркерами расстояния и значениями E на каждом.'}
+          {props.lessonId === 8 && 'Сцена показывает УВЧ-вышку и точки замера напряжённости на различных расстояниях с учётом диаграммы направленности F(Δ).'}
+          {props.lessonId === 9 && 'Сцена демонстрирует эквивалентную схему «напряжение → тело → земля» с визуализацией опасности тока через человека.'}
+          {props.lessonId === 10 && 'Сцена показывает растекание тока замыкания в грунте, эквипотенциальные зоны и напряжение шага между ногами человека.'}
         </Alert>
       )}
       <Box sx={{ height: { xs: 320, md: 420 }, borderRadius: 1, overflow: 'hidden' }}>
-        <SafeCanvas shadows camera={{ position: props.lessonId === 5 ? [8, 5, 10] : [8, 5, 8], fov: 46 }}>
+        <SafeCanvas shadows camera={{ position: [5, 6, 7].includes(props.lessonId) ? [8, 5, 10] : props.lessonId === 10 ? [10, 6, 10] : [8, 5, 8], fov: 46 }}>
           <ambientLight intensity={0.2} />
           <directionalLight position={[5, 10, 3]} intensity={0.7} castShadow shadow-mapSize-width={512} shadow-mapSize-height={512} />
           {props.lessonId === 1 && <LightInvestigationScene state={props.lightState} timeScale={timeScale} />}
@@ -812,6 +1564,11 @@ export default function LabScene3D(props: LabSceneProps) {
           {props.lessonId === 3 && <NoiseInvestigationScene state={props.noiseState} timeScale={timeScale} />}
           {props.lessonId === 4 && <NoiseCalculationScene state={props.noiseState} timeScale={timeScale} />}
           {props.lessonId === 5 && <EmiScene state={props.emiState} timeScale={timeScale} />}
+          {props.lessonId === 6 && <ShieldingScene state={props.shieldState} timeScale={timeScale} />}
+          {props.lessonId === 7 && <HfFieldScene state={props.hfState} timeScale={timeScale} />}
+          {props.lessonId === 8 && <UhfFieldScene state={props.uhfState} timeScale={timeScale} />}
+          {props.lessonId === 9 && <BodyElectricScene state={props.bodyElecState} timeScale={timeScale} />}
+          {props.lessonId === 10 && <StepVoltageScene state={props.groundState} timeScale={timeScale} />}
           <OrbitControls enablePan={false} />
           <hemisphereLight args={['#b1e1ff', '#b97a20', 0.25]} />
         </SafeCanvas>

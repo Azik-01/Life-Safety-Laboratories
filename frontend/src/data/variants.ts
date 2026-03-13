@@ -1,56 +1,87 @@
-import type { LabVariant, LessonId } from '../types/theme';
+﻿import type { LabVariant, LessonId } from '../types/theme';
 
-/* ─── Таблица 2.1 — по последней цифре студбилета ─── */
-const T2_1_L =    [11,   12,   13,   14,   15,   16,   17,   18,   19,   20  ] as const;
-const T2_1_B =    [ 5,    6,    7,    8,    9,   10,   11,   12,   13,   14  ] as const;
-const T2_1_H =    [ 3.4,  3.6,  3.8,  4.0,  4.2,  4.4,  4.6,  4.8,  5.0,  5.2] as const;
-const T2_1_FL =   [2300, 2310, 2280, 2290, 2320, 2330, 2340, 2285, 2295, 2305] as const;
-const T2_1_EN =   [ 450,  180,  100,  120,  150,  200,  250,  300,  350,  400] as const;
+const T2_1_L = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20] as const;
+const T2_1_B = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const;
+const T2_1_H = [3.4, 3.6, 3.8, 4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 5.2] as const;
+const T2_1_FL = [2300, 2310, 2280, 2290, 2320, 2330, 2340, 2285, 2295, 2305] as const;
+const T2_1_EN = [450, 180, 100, 120, 150, 200, 250, 300, 350, 400] as const;
 
-/* ─── Таблица 2.2 — по предпоследней цифре студбилета ─── */
-const T2_2_KZ  = [0.5,  0.6,  0.7,  0.8,  0.9,  1.0,  1.1,  1.2,  1.3,  1.4 ] as const;
-const T2_2_Z   = [1.00, 1.02, 1.04, 1.06, 1.07, 1.08, 1.09, 1.10, 1.12, 1.13] as const;
-const T2_2_WT  = [5.0,  5.2,  5.4,  5.6,  5.8,  6.0,  6.2,  6.4,  6.6,  6.8 ] as const;
-const T2_2_SN  = [200,  210,  220,  230,  240,  250,  260,  270,  280,  280 ] as const; // Sп,м²
-const T2_2_N   = [1,    2,    3,    4,    5,    6,    7,    8,    9,    10  ] as const;
-const T2_2_ETA = [45,   45,   45,   45,   45,   45,   45,   45,   45,   45  ] as const; // η, %
-const T2_2_MU  = [1.1,  1.2,  1.3,  1.4,  1.5,  1.6,  1.7,  1.8,  1.9,  2.0 ] as const;
+const T2_2_KZ = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4] as const;
+const T2_2_Z = [1.00, 1.02, 1.04, 1.06, 1.07, 1.08, 1.09, 1.10, 1.12, 1.13] as const;
+const T2_2_WM = [5.0, 5.2, 5.4, 5.6, 5.8, 6.0, 6.2, 6.4, 6.6, 6.8] as const;
+const T2_2_SP = [200, 210, 220, 230, 240, 250, 260, 270, 280, 280] as const;
+const T2_2_N = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+const T2_2_ETA = [45, 45, 45, 45, 45, 45, 45, 45, 45, 45] as const;
+const T2_2_MU = [1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0] as const;
 
-function lesson2Table1Values(d: number): Record<string, number> {
+const L4_R1 = [2.5, 2.0, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5] as const;
+const L4_L1A = [80, 90, 95, 100, 100, 110, 100, 90, 90, 100] as const;
+const L4_B1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+const L4_R2 = [7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 8.5, 8.5, 8.0, 7.5] as const;
+const L4_L1B = [110, 100, 90, 80, 80, 80, 90, 90, 100, 110] as const;
+const L4_B2 = [11, 12, 13, 14, 15, 15, 14, 13, 12, 11] as const;
+const L4_R3 = [7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5] as const;
+const L4_L1C = [95, 90, 95, 100, 105, 110, 105, 100, 95, 90] as const;
+const L4_B3 = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1] as const;
+
+const L4_G_BY_ID: Record<number, number> = {
+  1: 250,
+  2: 470,
+  3: 690,
+  4: 934,
+  5: 12,
+  6: 24,
+  7: 8,
+  8: 16,
+  9: 240,
+  10: 480,
+  11: 150,
+  12: 300,
+  13: 70,
+  14: 95,
+  15: 117,
+};
+
+const L4_SPT = [100, 150, 200, 250, 300, 350, 400, 450, 500, 550] as const;
+const L4_SC = [160, 180, 200, 220, 250, 260, 280, 300, 320, 340] as const;
+const L4_ALPHA1_E3 = [20, 25, 30, 35, 40, 45, 40, 35, 30, 25] as const;
+const L4_ALPHA2_E2 = [95, 90, 85, 80, 75, 70, 75, 80, 85, 90] as const;
+const L4_BETA1_E3 = [34, 33, 32, 31, 30, 31, 32, 33, 34, 35] as const;
+const L4_BETA2_E2 = [75, 80, 85, 90, 95, 90, 85, 80, 75, 70] as const;
+
+function lesson2Table1Values(digit: number): Record<string, number> {
   return {
-    lengthM:    T2_1_L[d],
-    widthM:     T2_1_B[d],
-    heightM:    T2_1_H[d],
-    lampFluxLm: T2_1_FL[d],
-    eNormLux:   T2_1_EN[d],
-    // Table 2.2 placeholders — require entry of student ticket
-    reserveFactor:    0,
-    nonUniformity:    0,
-    tabWt:            0,
-    roomAreaM2:       0,
-    lampsPerLuminaire:0,
-    etaPct:           0,
-    mu:               0,
+    lengthM: T2_1_L[digit],
+    widthM: T2_1_B[digit],
+    heightM: T2_1_H[digit],
+    lampFluxLm: T2_1_FL[digit],
+    eNormLux: T2_1_EN[digit],
+    reserveFactor: 0,
+    nonUniformity: 0,
+    tabWm: 0,
+    tabWt: 0,
+    roomAreaM2: 0,
+    lampsPerLuminaire: 0,
+    etaPct: 0,
+    mu: 0,
   };
 }
 
-/** Build the full merged values for lesson 2 from both digits. */
 export function lesson2MergedValues(lastDigit: number, penultimateDigit: number): Record<string, number> {
   return {
-    // Table 2.1
-    lengthM:     T2_1_L[lastDigit],
-    widthM:      T2_1_B[lastDigit],
-    heightM:     T2_1_H[lastDigit],
-    lampFluxLm:  T2_1_FL[lastDigit],
-    eNormLux:    T2_1_EN[lastDigit],
-    // Table 2.2
-    reserveFactor:     T2_2_KZ[penultimateDigit],
-    nonUniformity:     T2_2_Z[penultimateDigit],
-    tabWt:             T2_2_WT[penultimateDigit],
-    roomAreaM2:        T2_2_SN[penultimateDigit],
+    lengthM: T2_1_L[lastDigit],
+    widthM: T2_1_B[lastDigit],
+    heightM: T2_1_H[lastDigit],
+    lampFluxLm: T2_1_FL[lastDigit],
+    eNormLux: T2_1_EN[lastDigit],
+    reserveFactor: T2_2_KZ[penultimateDigit],
+    nonUniformity: T2_2_Z[penultimateDigit],
+    tabWm: T2_2_WM[penultimateDigit],
+    tabWt: T2_2_WM[penultimateDigit],
+    roomAreaM2: T2_2_SP[penultimateDigit],
     lampsPerLuminaire: T2_2_N[penultimateDigit],
-    etaPct:            T2_2_ETA[penultimateDigit],
-    mu:                T2_2_MU[penultimateDigit],
+    etaPct: T2_2_ETA[penultimateDigit],
+    mu: T2_2_MU[penultimateDigit],
   };
 }
 
@@ -76,43 +107,53 @@ function lesson3Values(base: number): Record<string, number> {
     distanceB: 3 + (base % 5),
     distanceC: 4 + (base % 4),
     barrierMassA: 120 + base * 10,
-    barrierMassB: 90 + base * 8,
-    barrierMassC: 70 + base * 6,
+    barrierMassB: 120 + base * 10,
+    barrierMassC: 120 + base * 10,
   };
 }
 
-function lesson4Values(digit: number): Record<string, number> {
-  // Barrier mass lookup from Table 4.2
-  const G: Record<number, number> = {
-    1: 250, 2: 470, 3: 690, 4: 934, 5: 12, 6: 24,
-    7: 8, 8: 16, 9: 240, 10: 480,
-    11: 150, 12: 300, 13: 70, 14: 95, 15: 117,
-  };
-  // Table 4.1 — arrays indexed where [0]=digit 1, [1]=digit 2, …, [8]=digit 9, [9]=digit 0
-  const R1  = [2.5, 2.0, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5];
-  const L1a = [80,  90,  95,  100, 100, 110, 100, 90,  90,  100];
-  const b1  = [1,   2,   3,   4,   5,   6,   7,   8,   9,   10];
-  const R2  = [7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 8.5, 8.5, 8.0, 7.5];
-  const L1b = [110, 100, 90,  80,  80,  80,  90,  90,  100, 110];
-  const b2  = [11,  12,  13,  14,  15,  15,  14,  13,  12,  11];
-  const R3  = [7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5];
-  const L1c = [95,  90,  95,  100, 105, 110, 105, 100, 95,  90];
-  const b3  = [10,  9,   8,   7,   6,   5,   4,   3,   2,   1];
-  // digit 1→idx 0, digit 2→idx 1, …, digit 9→idx 8, digit 0→idx 9
-  const idx = digit === 0 ? 9 : digit - 1;
+function lesson4Index(digit: number): number {
+  return digit === 0 ? 9 : digit - 1;
+}
+
+function lesson4SourceValues(lastDigit: number): Record<string, number> {
+  const index = lesson4Index(lastDigit);
   return {
-    sourceA1mDb: L1a[idx],
-    sourceB1mDb: L1b[idx],
-    sourceC1mDb: L1c[idx],
-    distanceA: R1[idx],
-    distanceB: R2[idx],
-    distanceC: R3[idx],
-    barrierMassA: G[b1[idx]],
-    barrierMassB: G[b2[idx]],
-    barrierMassC: G[b3[idx]],
-    barrierIdA: b1[idx],
-    barrierIdB: b2[idx],
-    barrierIdC: b3[idx],
+    sourceA1mDb: L4_L1A[index],
+    sourceB1mDb: L4_L1B[index],
+    sourceC1mDb: L4_L1C[index],
+    distanceA: L4_R1[index],
+    distanceB: L4_R2[index],
+    distanceC: L4_R3[index],
+    barrierIdA: L4_B1[index],
+    barrierIdB: L4_B2[index],
+    barrierIdC: L4_B3[index],
+    barrierMassA: L4_G_BY_ID[L4_B1[index]],
+    barrierMassB: L4_G_BY_ID[L4_B2[index]],
+    barrierMassC: L4_G_BY_ID[L4_B3[index]],
+  };
+}
+
+export function lesson4RoomValues(penultimateDigit: number): Record<string, number> {
+  return {
+    surfaceCeilingFloorM2: L4_SPT[penultimateDigit],
+    surfaceWallsM2: L4_SC[penultimateDigit],
+    alpha1e3: L4_ALPHA1_E3[penultimateDigit],
+    alpha2e2: L4_ALPHA2_E2[penultimateDigit],
+    beta1e3: L4_BETA1_E3[penultimateDigit],
+    beta2e2: L4_BETA2_E2[penultimateDigit],
+    alpha1: L4_ALPHA1_E3[penultimateDigit] / 1000,
+    alpha2: L4_ALPHA2_E2[penultimateDigit] / 100,
+    beta1: L4_BETA1_E3[penultimateDigit] / 1000,
+    beta2: L4_BETA2_E2[penultimateDigit] / 100,
+    floorGamma: 0.061,
+  };
+}
+
+export function lesson4MergedValues(lastDigit: number, penultimateDigit: number): Record<string, number> {
+  return {
+    ...lesson4SourceValues(lastDigit),
+    ...lesson4RoomValues(penultimateDigit),
   };
 }
 
@@ -144,50 +185,221 @@ function makeVariants(
 const sourceNote =
   'Данные вариантов перенесены в приложение и требуют верификации по files/labs doc/lab txt 1.txt ... 5.txt (и PDF в той же папке).';
 
-const sourceNote4 =
-  'Данные верифицированы по Таблицам 4.1 и 4.2 методички (labs doc/lab txt 4.txt). ' +
-  'Масса преграды (G) подставляется автоматически по номеру из Таблицы 4.2.';
-
 const sourceNote2 =
-  'Таблица 2.1 (последняя цифра) + Таблица 2.2 (предпоследняя цифра). ' +
-  'Введите номер студенческого билета для автоматического заполнения обеих таблиц.';
+  'Таблица 2.1 использует последнюю цифру студбилета, а таблица 2.2 — предпоследнюю. Автоподстановка объединяет обе таблицы.';
 
-/* Lesson 2: 10 variants contain only Table 2.1 data (last digit).              */
-/* Full merged values are built by pickVariantByTicketDigits using both digits. */
-const lesson2Variants: LabVariant[] = Array.from({ length: 10 }, (_, d) => ({
-  variant: d,
-  ticketLastDigits: [d],
-  values: lesson2Table1Values(d),
+const sourceNote4 =
+  'Таблица 4.1 и таблица 4.2 используют последнюю цифру студбилета, а таблица 4.3 — предпоследнюю. В приложении данные объединяются в один вариант расчёта.';
+
+const lesson2Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: lesson2Table1Values(digit),
   sourceNote: sourceNote2,
   validated: true,
 }));
+
+const lesson4Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: lesson4SourceValues(digit),
+  sourceNote: sourceNote4,
+  validated: true,
+}));
+
+/* ─── Lab 6: Table 6.1 (last digit) ─── */
+const L6_W = [3, 12, 6, 15, 19, 3, 12, 6, 15, 9] as const;
+const L6_I = [150, 350, 250, 100, 60, 40, 80, 200, 300, 400] as const;
+const L6_F = [3e8, 3e8, 4e8, 3e8, 4e8, 3e8, 4e8, 3e8, 4e8, 4e8] as const;
+const L6_T = [4, 4, 2, 0.2, 4, 6, 0.2, 4, 2, 0.2] as const;
+const L6_D = [6e-2, 1e-2, 2e-2, 3e-2, 4e-2, 5e-2, 4e-2, 3e-2, 2e-2, 1e-2] as const;
+const L6_R = [2, 3, 2, 3, 2, 3, 2, 3, 2, 3] as const;
+const L6_r = [0.15, 0.25, 0.1, 0.2, 0.1, 0.2, 0.1, 0.25, 0.1, 0.2] as const;
+
+/* Lab 6: Table 6.2 (penultimate digit) */
+const L6_MU = [1, 200, 1, 200, 1, 200, 1, 200, 1, 200] as const;
+const L6_MU_A = [1.2e-6, 2.5e-4, 1.2e-6, 2.5e-4, 1.2e-6, 2.5e-4, 1.2e-6, 2.5e-4, 1.2e-6, 2.5e-4] as const;
+const L6_GAMMA = [5.7e7, 1e7, 5.7e7, 1e7, 5.7e7, 1e7, 5.7e7, 1e7, 5.7e7, 1e7] as const;
+const L6_EPS = [7.5, 7, 8, 3, 7.5, 7.5, 3, 8, 7, 7.5] as const;
+
+function lesson6Table1Values(digit: number): Record<string, number> {
+  return {
+    W: L6_W[digit], I: L6_I[digit], f: L6_F[digit], T: L6_T[digit],
+    D: L6_D[digit], R: L6_R[digit], r: L6_r[digit],
+  };
+}
+
+export function lesson6MergedValues(lastDigit: number, penultimateDigit: number): Record<string, number> {
+  return {
+    ...lesson6Table1Values(lastDigit),
+    mu: L6_MU[penultimateDigit], muA: L6_MU_A[penultimateDigit],
+    gamma: L6_GAMMA[penultimateDigit], epsilon: L6_EPS[penultimateDigit],
+  };
+}
+
+const sourceNote6 =
+  'Таблица 6.1 (последняя цифра) + таблица 6.2 (предпоследняя цифра). Объединены для автоподстановки.';
+
+const lesson6Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: lesson6Table1Values(digit),
+  sourceNote: sourceNote6,
+  validated: true,
+}));
+
+/* ─── Lab 7: Table 7.1 (last digit) ─── */
+const L7_LAMBDA = [1050, 1650, 40, 1200, 80, 1750, 20, 1050, 70, 1900] as const;
+const L7_P_KW = [250, 300, 150, 250, 100, 350, 100, 250, 100, 350] as const;
+const L7_GA = [1.05, 1.1, 240, 1.04, 200, 1.1, 180, 1.05, 205, 1.2] as const;
+const L7_THETA = [7, 7, 10, 4, 3, 4, 5, 7, 4, 5] as const;
+const L7_SIGMA = [0.003, 0.003, 0.001, 0.01, 0.001, 0.00075, 0.001, 0.003, 0.001, 0.01] as const;
+
+/* Lab 7: Table 7.2 — distances d1…d5 (penultimate digit) */
+const L7_D1 = [400, 400, 500, 300, 600, 520, 660, 400, 450, 550] as const;
+const L7_D2 = [700, 700, 800, 600, 900, 800, 960, 750, 800, 950] as const;
+const L7_D3 = [1100, 1100, 1200, 1150, 1300, 1350, 1100, 1250, 1300, 1400] as const;
+const L7_D4 = [1500, 1500, 1600, 1700, 1700, 1600, 1500, 1600, 1700, 1800] as const;
+const L7_D5 = [2000, 2000, 2100, 2000, 2200, 2000, 2300, 2400, 2500, 2000] as const;
+
+function lesson7Table1Values(digit: number): Record<string, number> {
+  return {
+    lambda: L7_LAMBDA[digit], powerKW: L7_P_KW[digit], Ga: L7_GA[digit],
+    theta: L7_THETA[digit], sigma: L7_SIGMA[digit],
+  };
+}
+
+export function lesson7MergedValues(lastDigit: number, penultimateDigit: number): Record<string, number> {
+  return {
+    ...lesson7Table1Values(lastDigit),
+    d1: L7_D1[penultimateDigit], d2: L7_D2[penultimateDigit],
+    d3: L7_D3[penultimateDigit], d4: L7_D4[penultimateDigit],
+    d5: L7_D5[penultimateDigit],
+  };
+}
+
+const sourceNote7 =
+  'Таблица 7.1 (последняя цифра) + таблица 7.2 (предпоследняя цифра). Расчёт по Шулейкину–Ван-дер-Полю.';
+
+const lesson7Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: lesson7Table1Values(digit),
+  sourceNote: sourceNote7,
+  validated: true,
+}));
+
+/* ─── Lab 8: Table 8.2 (last digit, digit 0→index 9) ─── */
+const L8_F_RANGE = ['48-57', '48-57', '58-66', '76-84', '84-92', '92-100', '174-182', '182-190', '190-198', '198-206'] as const;
+const L8_P_IMG = [94, 80, 55, 73, 50, 78, 60, 65, 87, 75] as const;
+const L8_P_SND = [23, 20, 16, 26, 15, 24, 18, 25, 30, 30] as const;
+const L8_G = [15, 12, 15, 10, 15, 16, 21, 13, 12, 14] as const;
+const L8_H = [330, 300, 340, 320, 360, 330, 327, 320, 340, 360] as const;
+const L8_K = [1.41, 1.41, 1.41, 1.41, 1.41, 1.41, 1.41, 1.41, 1.41, 1.41] as const;
+
+/* Lab 8: Table 8.3 — distances r1…r5 (penultimate digit) */
+const L8_R1 = [50, 50, 35, 40, 35, 55, 60, 48, 54, 46] as const;
+const L8_R2 = [150, 150, 125, 140, 135, 150, 140, 170, 190, 160] as const;
+const L8_R3 = [300, 300, 270, 280, 290, 300, 290, 310, 280, 300] as const;
+const L8_R4 = [450, 450, 480, 420, 460, 450, 440, 460, 470, 480] as const;
+const L8_R5 = [550, 550, 580, 600, 590, 500, 550, 560, 570, 580] as const;
+
+function lesson8Table2Values(digit: number): Record<string, number> {
+  return {
+    fRange: 0, // placeholder; text-based range stored in sourceNote
+    pImageKW: L8_P_IMG[digit], pSoundKW: L8_P_SND[digit],
+    G: L8_G[digit], H: L8_H[digit], K: L8_K[digit],
+  };
+}
+
+export function lesson8MergedValues(lastDigit: number, penultimateDigit: number): Record<string, number> {
+  return {
+    ...lesson8Table2Values(lastDigit),
+    r1: L8_R1[penultimateDigit], r2: L8_R2[penultimateDigit],
+    r3: L8_R3[penultimateDigit], r4: L8_R4[penultimateDigit],
+    r5: L8_R5[penultimateDigit],
+  };
+}
+
+const sourceNote8 =
+  'Таблица 8.2 (последняя цифра) + таблица 8.3 (предпоследняя цифра). Расчёт E для передатчиков телецентра.';
+
+const lesson8Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: lesson8Table2Values(digit),
+  sourceNote: sourceNote8,
+  validated: true,
+}));
+
+/* ─── Lab 9: No variant table — body resistance is measured ─── */
+function lesson9Values(base: number): Record<string, number> {
+  return {
+    voltageV: 36 + base * 2,
+    frequencyHz: 50,
+    internalResistanceOhm: 500 + base * 20,
+    skinCapacitanceNF: 20 + base * 2,
+  };
+}
+
+/* ─── Lab 10: No variant table — theoretical calculations ─── */
+function lesson10Values(base: number): Record<string, number> {
+  return {
+    faultCurrentA: 5 + base * 2,
+    soilResistivityOhmM: 50 + base * 20,
+    stepLengthM: 0.8,
+  };
+}
 
 export const lessonVariants: Record<LessonId, LabVariant[]> = {
   1: makeVariants(sourceNote, lesson1Values),
   2: lesson2Variants,
   3: makeVariants(sourceNote, lesson3Values),
-  4: makeVariants(sourceNote4, lesson4Values, true),
+  4: lesson4Variants,
   5: makeVariants(sourceNote, lesson5Values),
+  6: lesson6Variants,
+  7: lesson7Variants,
+  8: lesson8Variants,
+  9: makeVariants('Лабораторная работа без вариантной таблицы; параметры задаются для моделирования.', lesson9Values),
+  10: makeVariants('Лабораторная работа без вариантной таблицы; расчёт зоны растекания тока.', lesson10Values),
 };
 
-export function pickVariantByTicketDigits(
-  lessonId: LessonId,
-  ticketInput: string
-): LabVariant {
+export function pickVariantByTicketDigits(lessonId: LessonId, ticketInput: string): LabVariant {
   const digits = ticketInput.replace(/\D/g, '');
   const lastDigit = digits.length > 0 ? Number(digits[digits.length - 1]) : 0;
+  const penultimateDigit = digits.length > 1 ? Number(digits[digits.length - 2]) : 0;
 
   if (lessonId === 2) {
-    const penultimateDigit = digits.length > 1 ? Number(digits[digits.length - 2]) : 0;
-    const base = lessonVariants[2].find((row) => row.ticketLastDigits.includes(lastDigit))
-      ?? lessonVariants[2][0];
+    const base = lessonVariants[2].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[2][0];
     return {
       ...base,
       values: lesson2MergedValues(lastDigit, penultimateDigit),
     };
   }
 
-  return lessonVariants[lessonId].find((row) => row.ticketLastDigits.includes(lastDigit))
-    ?? lessonVariants[lessonId][0];
+  if (lessonId === 4) {
+    const base = lessonVariants[4].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[4][0];
+    return {
+      ...base,
+      values: lesson4MergedValues(lastDigit, penultimateDigit),
+    };
+  }
+
+  if (lessonId === 6) {
+    const base = lessonVariants[6].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[6][0];
+    return { ...base, values: lesson6MergedValues(lastDigit, penultimateDigit) };
+  }
+
+  if (lessonId === 7) {
+    const base = lessonVariants[7].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[7][0];
+    return { ...base, values: lesson7MergedValues(lastDigit, penultimateDigit) };
+  }
+
+  if (lessonId === 8) {
+    const base = lessonVariants[8].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[8][0];
+    return { ...base, values: lesson8MergedValues(lastDigit, penultimateDigit) };
+  }
+
+  return lessonVariants[lessonId].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[lessonId][0];
 }
 

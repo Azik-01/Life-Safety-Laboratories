@@ -1,8 +1,7 @@
-import { useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import {
   Box,
   Button,
-  Chip,
   Grid,
   List,
   ListItemButton,
@@ -15,9 +14,9 @@ import {
   Typography,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getLessonById } from '../data/lessons';
+import { getKnowledgeLayer } from '../data/knowledgeLayer';
 import TheorySection from '../components/lesson/TheorySection';
 import LabSection from '../components/lesson/LabSection';
 import TestSection from '../components/lesson/TestSection';
@@ -36,15 +35,42 @@ export default function LessonPage() {
   const lesson = getLessonById(Number(id));
   const activeSection = normalizeSection(section);
   const [search, setSearch] = useState('');
+  const knowledgeLayer = lesson ? getKnowledgeLayer(lesson.id as LessonId) : undefined;
 
   const query = search.trim().toLowerCase();
-  const filteredModules = (lesson?.theoryModules ?? []).filter((module) => {
+  const theoryBlocks = useMemo(
+    () =>
+      knowledgeLayer?.theory.map((block) => ({
+        id: block.id,
+        title: block.heading,
+        keywords: block.keywords,
+        text: block.text,
+      })) ?? [],
+    [knowledgeLayer],
+  );
+  const filteredTheoryBlocks = theoryBlocks.filter((block) => {
     if (!query) return true;
-    const inTitle = module.title.toLowerCase().includes(query);
-    const inKeywords = module.keywords.some((keyword) => keyword.toLowerCase().includes(query));
-    const inFormula = module.formula.toLowerCase().includes(query);
-    return inTitle || inKeywords || inFormula;
+    const inTitle = block.title.toLowerCase().includes(query);
+    const inKeywords = block.keywords.some((keyword) => keyword.toLowerCase().includes(query));
+    const inText = block.text.toLowerCase().includes(query);
+    return inTitle || inKeywords || inText;
   });
+
+  function scrollToId(targetId: string) {
+    document.getElementById(targetId)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  }
+
+  function openLabStep(stepId: string) {
+    window.dispatchEvent(
+      new CustomEvent('lesson-lab-step-request', {
+        detail: { lessonId: Number(lesson?.id ?? 0), stepId },
+      }),
+    );
+    scrollToId('lab-wizard');
+  }
 
   if (!lesson) {
     return (
@@ -96,26 +122,18 @@ export default function LessonPage() {
             )}
             <List dense sx={{ mt: 1 }}>
               {activeSection === 'theory' &&
-                filteredModules.map((module) => (
-                  <ListItemButton
-                    key={`toc-${module.id}`}
-                    onClick={() =>
-                      document.getElementById(module.id)?.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start',
-                      })
-                    }
-                  >
-                    <ListItemText primary={module.title} />
+                filteredTheoryBlocks.map((block) => (
+                  <ListItemButton key={`toc-${block.id}`} onClick={() => scrollToId(block.id)}>
+                    <ListItemText primary={block.title} />
                   </ListItemButton>
                 ))}
               {activeSection === 'lab' && (
                 <>
-                  <ListItemButton>
+                  <ListItemButton onClick={() => scrollToId('lab-variant')}>
                     <ListItemText primary="Шаг 0. Вариант" />
                   </ListItemButton>
                   {lesson.labWizard.steps.map((step, index) => (
-                    <ListItemButton key={`step-${step.id}`}>
+                    <ListItemButton key={`step-${step.id}`} onClick={() => openLabStep(step.id)}>
                       <ListItemText primary={`Шаг ${index + 1}. ${step.title}`} />
                     </ListItemButton>
                   ))}
@@ -123,7 +141,7 @@ export default function LessonPage() {
               )}
               {activeSection === 'test' &&
                 lesson.tests.map((question, index) => (
-                  <ListItemButton key={`q-${question.id}`}>
+                  <ListItemButton key={`q-${question.id}`} onClick={() => scrollToId(`test-question-${question.id}`)}>
                     <ListItemText primary={`Вопрос ${index + 1}`} />
                   </ListItemButton>
                 ))}
@@ -139,7 +157,7 @@ export default function LessonPage() {
         </Grid>
 
         <Grid size={{ xs: 12, md: 9 }}>
-          {activeSection === 'theory' && <TheorySection modules={filteredModules} lessonId={lesson.id as LessonId} />}
+          {activeSection === 'theory' && <TheorySection lessonId={lesson.id as LessonId} />}
           {activeSection === 'lab' && <LabSection key={`lab-${lesson.id}`} lesson={lesson} />}
           {activeSection === 'test' && <TestSection questions={lesson.tests} lessonId={lesson.id as LessonId} />}
         </Grid>
@@ -147,3 +165,4 @@ export default function LessonPage() {
     </Box>
   );
 }
+

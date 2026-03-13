@@ -1,176 +1,199 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Box,
   Button,
   Card,
   CardContent,
   Chip,
-  Collapse,
-  Divider,
-  FormControlLabel,
-  LinearProgress,
   Paper,
-  Radio,
-  RadioGroup,
   Stack,
-  TextField,
   Typography,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import type { TheoryModule } from '../../types/theme';
-import type { LessonId } from '../../types/theme';
+import type { LessonId, TheoryModule } from '../../types/theme';
 import FormulaBlock from './FormulaBlock';
 import FigureZoom from './FigureZoom';
 import TermHighlight from './TermHighlight';
-import { manualAssets } from '../../data/manualAssets';
-import {
-  getKnowledgeLayer,
-  toFormulaBlockProps,
-  buildGlossary,
-  buildPracticeMethods,
-} from '../../data/knowledgeLayer';
-import AdvancedPracticeTable from './AdvancedPracticeTable';
+import MiniSimulator from './MiniSimulator';
+import { getKnowledgeLayer, toFormulaBlockProps, buildGlossary } from '../../data/knowledgeLayer';
 import { useProgress } from '../../context/ProgressContext';
-
-const MiniSimulator = lazy(() => import('./MiniSimulator'));
-
-function MiniQuestion({ moduleId, question }: { moduleId: string; question: TheoryModule['miniQuestion'] }) {
-  const [selected, setSelected] = useState<string>('');
-  const [numericValue, setNumericValue] = useState<string>('');
-  const [checked, setChecked] = useState(false);
-
-  const result = useMemo(() => {
-    if (!checked) return null;
-    if (question.type === 'single') {
-      return Number(selected) === Number(question.correctAnswer);
-    }
-    const num = Number(numericValue);
-    const correct = Number(question.correctAnswer);
-    const tolerance = question.tolerance ?? 0;
-    return Number.isFinite(num) && Math.abs(num - correct) <= tolerance;
-  }, [checked, question, selected, numericValue]);
-
-  return (
-    <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5 }}>
-      <Typography variant="subtitle2" sx={{ mb: 1 }}>
-        Мини-вопрос
-      </Typography>
-      <Typography variant="body2">{question.question}</Typography>
-      {question.type === 'single' ? (
-        <RadioGroup
-          value={selected}
-          onChange={(event) => {
-            setSelected(event.target.value);
-            setChecked(false);
-          }}
-          sx={{ mt: 0.8 }}
-        >
-          {question.options?.map((option, index) => (
-            <FormControlLabel key={`${moduleId}-${index}`} value={String(index)} control={<Radio size="small" />} label={option} />
-          ))}
-        </RadioGroup>
-      ) : (
-        <TextField
-          size="small"
-          type="number"
-          label="Ваш ответ"
-          value={numericValue}
-          onChange={(event) => {
-            setNumericValue(event.target.value);
-            setChecked(false);
-          }}
-          sx={{ mt: 1 }}
-        />
-      )}
-      <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-        <Button variant="contained" size="small" onClick={() => setChecked(true)}>
-          Проверить
-        </Button>
-        <Button
-          variant="text"
-          size="small"
-          onClick={() => {
-            setChecked(false);
-            setSelected('');
-            setNumericValue('');
-          }}
-        >
-          Сброс
-        </Button>
-      </Stack>
-      {checked && result !== null && (
-        <Alert severity={result ? 'success' : 'warning'} sx={{ mt: 1 }}>
-          {result ? 'Верно.' : 'Неверно.'} {question.explanation}
-        </Alert>
-      )}
-    </Paper>
-  );
-}
+import { getLessonById } from '../../data/lessons';
 
 interface TheorySectionProps {
-  modules: TheoryModule[];
   lessonId?: LessonId;
 }
 
-export default function TheorySection({ modules, lessonId }: TheorySectionProps) {
+export default function TheorySection({ lessonId }: TheorySectionProps) {
   const progress = useProgress();
   const knowledgeLayer = lessonId ? getKnowledgeLayer(lessonId) : undefined;
+  const lesson = lessonId ? getLessonById(lessonId) : undefined;
+  const theoryModules = lesson?.theoryModules ?? [];
   const glossary = useMemo(() => (knowledgeLayer ? buildGlossary(knowledgeLayer) : {}), [knowledgeLayer]);
-  const practiceMethods = useMemo(() => (lessonId ? buildPracticeMethods(lessonId) : []), [lessonId]);
   const [detailedMode, setDetailedMode] = useState(true);
 
-  // Build interleaved content: theory → formula → figure flow instead of separate sections
+  /* ─── Build interleaved content list ─── */
   const interleavedContent = useMemo(() => {
     if (!knowledgeLayer) return [];
-    const items: Array<{ type: 'theory' | 'formula' | 'figure'; data: unknown }> = [];
+
+    const items: Array<{
+      type: 'theory' | 'formula' | 'figure' | 'scene';
+      data: unknown;
+    }> = [];
+
     const formulas = [...knowledgeLayer.formulas];
     const figures = [...knowledgeLayer.figures];
-    let gi = 0;
     const usedFormulaIds = new Set<string>();
-    const formulaByNumber = new Map<string, (typeof formulas)[number]>();
+    const usedSimulators = new Set<string>();
+    let figureIndex = 0;
 
+    /* ── Map each formula number "X.Y" → formula object ── */
+    const formulaByNumber = new Map<string, (typeof formulas)[number]>();
     formulas.forEach((formula) => {
       const match = formula.label?.match(/\(?\s*(\d+\.\d+)\s*\)?/);
       if (match) formulaByNumber.set(match[1], formula);
     });
 
-    knowledgeLayer.theory.forEach((t, i) => {
-      items.push({ type: 'theory', data: t });
+    /* ── For each theory block, collect formula numbers it references ── */
+    const formulaRefPattern = /формул[а-яё]{0,4}\s*(\d+\.\d+)/gi;
+    const blockFormulaRefs: string[][] = knowledgeLayer.theory.map((block) =>
+      [...block.text.matchAll(formulaRefPattern)].map((m) => m[1]),
+    );
 
-      // Insert formulas in the exact order they are referenced in this theory block.
-      const referencedNumbers = [...t.text.matchAll(/формул[аы]\s*(\d+\.\d+)/gi)].map((m) => m[1]);
-      referencedNumbers.forEach((num) => {
-        const formula = formulaByNumber.get(num);
-        if (!formula || usedFormulaIds.has(formula.id)) return;
+    /* ── Assign each formula to the LAST (most specific) block that references it ── */
+    const formulaOwner = new Map<string, number>(); // formulaNumber → blockIndex
+    blockFormulaRefs.forEach((refs, blockIndex) => {
+      refs.forEach((num) => {
+        // Later blocks override earlier ones (overview block loses to specific method blocks)
+        formulaOwner.set(num, blockIndex);
+      });
+    });
+
+    /* ── Formulas not referenced by any block: distribute sequentially ── */
+    const assignedNumbers = new Set(formulaOwner.keys());
+    const unassigned: typeof formulas = [];
+    formulas.forEach((f) => {
+      const match = f.label?.match(/\(?\s*(\d+\.\d+)\s*\)?/);
+      if (!match || !assignedNumbers.has(match[1])) unassigned.push(f);
+    });
+
+    /* ── Build a formulaNumber→formula map indexed by block ── */
+    const formulasForBlock = new Map<number, typeof formulas>();
+    formulaOwner.forEach((blockIdx, num) => {
+      const f = formulaByNumber.get(num);
+      if (!f) return;
+      if (!formulasForBlock.has(blockIdx)) formulasForBlock.set(blockIdx, []);
+      formulasForBlock.get(blockIdx)!.push(f);
+    });
+    // Sort each block's formulas by their label number
+    formulasForBlock.forEach((arr) => {
+      arr.sort((a, b) => {
+        const na = parseFloat(a.label?.match(/(\d+\.\d+)/)?.[1] ?? '0');
+        const nb = parseFloat(b.label?.match(/(\d+\.\d+)/)?.[1] ?? '0');
+        return na - nb;
+      });
+    });
+
+    /* ── Distribute unassigned formulas evenly across non-first blocks ── */
+    if (unassigned.length > 0 && knowledgeLayer.theory.length > 1) {
+      const startBlock = 1; // skip overview block
+      const blocks = knowledgeLayer.theory.length - startBlock;
+      const perBlock = Math.ceil(unassigned.length / blocks);
+      let uIdx = 0;
+      for (let bi = startBlock; bi < knowledgeLayer.theory.length && uIdx < unassigned.length; bi++) {
+        if (!formulasForBlock.has(bi)) formulasForBlock.set(bi, []);
+        for (let j = 0; j < perBlock && uIdx < unassigned.length; j++, uIdx++) {
+          formulasForBlock.get(bi)!.push(unassigned[uIdx]);
+        }
+      }
+    } else if (unassigned.length > 0) {
+      // Single theory block or no blocks — assign all formulas to the first/only block
+      if (!formulasForBlock.has(0)) formulasForBlock.set(0, []);
+      unassigned.forEach((f) => formulasForBlock.get(0)!.push(f));
+    }
+
+    /* ── Build simulator lookup: distribute theoryModules across blocks ── */
+    const moduleByIndex = new Map<number, TheoryModule>();
+    const theoryBlockCount = knowledgeLayer.theory.length;
+    const moduleCount = theoryModules.length;
+    if (moduleCount > 0 && theoryBlockCount > 0) {
+      const ratio = moduleCount / theoryBlockCount;
+      for (let blockIdx = 0; blockIdx < theoryBlockCount; blockIdx++) {
+        const moduleIdx = Math.min(Math.floor(blockIdx * ratio), moduleCount - 1);
+        if (!moduleByIndex.has(blockIdx)) {
+          moduleByIndex.set(blockIdx, theoryModules[moduleIdx]);
+        }
+      }
+    }
+
+    /* ── Interleave: theory → formulas → scene → figure ── */
+    knowledgeLayer.theory.forEach((block, blockIndex) => {
+      items.push({ type: 'theory', data: block });
+
+      // Formulas owned by this block
+      const blockFormulas = formulasForBlock.get(blockIndex) ?? [];
+      blockFormulas.forEach((formula) => {
+        if (usedFormulaIds.has(formula.id)) return;
         items.push({ type: 'formula', data: formula });
         usedFormulaIds.add(formula.id);
       });
 
-      // Insert figure after every 3rd theory block
-      if ((i + 1) % 3 === 0 && gi < figures.length) {
-        items.push({ type: 'figure', data: figures[gi++] });
+      // 3D scene
+      const matchedModule = moduleByIndex.get(blockIndex);
+      if (matchedModule && !usedSimulators.has(matchedModule.simulator)) {
+        items.push({ type: 'scene', data: matchedModule });
+        usedSimulators.add(matchedModule.simulator);
+      }
+
+      // Figure every 2 blocks
+      if ((blockIndex + 1) % 2 === 0 && figureIndex < figures.length) {
+        items.push({ type: 'figure', data: figures[figureIndex++] });
       }
     });
-    // Remaining formulas/figures at end
+
+    // Any remaining formulas
     formulas.forEach((formula) => {
       if (!usedFormulaIds.has(formula.id)) {
         items.push({ type: 'formula', data: formula });
       }
     });
-    while (gi < figures.length) items.push({ type: 'figure', data: figures[gi++] });
+
+    // Remaining figures
+    while (figureIndex < figures.length) {
+      items.push({ type: 'figure', data: figures[figureIndex++] });
+    }
+
+    // Any remaining simulators
+    theoryModules.forEach((mod) => {
+      if (!usedSimulators.has(mod.simulator)) {
+        items.push({ type: 'scene', data: mod });
+        usedSimulators.add(mod.simulator);
+      }
+    });
+
     return items;
-  }, [knowledgeLayer]);
+  }, [knowledgeLayer, theoryModules]);
+
+  const visibleContent = useMemo(
+    () => (detailedMode ? interleavedContent : interleavedContent.filter((item) => item.type !== 'figure')),
+    [detailedMode, interleavedContent],
+  );
 
   useEffect(() => {
-    if (!lessonId) return;
-    modules.forEach((module) => progress.markTheoryRead(lessonId, module.id));
-  }, [lessonId, modules, progress]);
+    if (!lessonId || !knowledgeLayer) return;
+    knowledgeLayer.theory.forEach((block) => progress.markTheoryRead(lessonId, block.id));
+  }, [knowledgeLayer, lessonId, progress]);
+
+  if (!knowledgeLayer) {
+    return (
+      <Alert severity="warning">
+        Для этой лабораторной пока нет структурированной теории из методички.
+      </Alert>
+    );
+  }
 
   return (
     <Stack spacing={2}>
-      {/* Brief / detailed toggle */}
-      <Stack direction="row" justifyContent="flex-end" spacing={1}>
+      <Stack direction="row" justifyContent="flex-end">
         <Chip
           label={detailedMode ? 'Подробный режим' : 'Краткий режим'}
           color={detailedMode ? 'primary' : 'default'}
@@ -180,114 +203,41 @@ export default function TheorySection({ modules, lessonId }: TheorySectionProps)
         />
       </Stack>
 
-      {/* Knowledge layer: interleaved theory + formulas + figures */}
-      {knowledgeLayer && detailedMode && (
-        <Card>
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 1 }}>
-              📖 Теоретические сведения
-            </Typography>
-            <Stack spacing={1.5}>
-              {interleavedContent.map((item) => {
-                if (item.type === 'theory') {
-                  const block = item.data as { id: string; heading: string; text: string; keywords: string[] };
-                  return <KnowledgeBlock key={block.id} block={block} glossary={glossary} />;
-                }
-                if (item.type === 'formula') {
-                  const formula = item.data as { id: string; [key: string]: unknown };
-                  return <FormulaBlock key={formula.id} {...toFormulaBlockProps(formula as unknown as Parameters<typeof toFormulaBlockProps>[0])} />;
-                }
-                if (item.type === 'figure') {
-                  const fig = item.data as { id: string; path: string; caption: string };
-                  return <FigureZoom key={fig.id} src={fig.path} caption={fig.caption} />;
-                }
-                return null;
-              })}
-            </Stack>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Existing theory module cards (unchanged structure) */}
-      {modules.map((module) => {
-        const assets = manualAssets.filter((asset) => module.assetIds?.includes(asset.id));
-        return (
-          <Card key={module.id} id={module.id}>
-            <CardContent>
-              <Typography variant="h6">{module.title}</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.8 }}>
-                <TermHighlight text={module.definition} glossary={glossary} />
-              </Typography>
-
-              <FormulaBlock
-                expression={module.formula}
-                variables={[]}
-                explanation={module.formulaExplanation}
-              />
-              <Typography variant="caption" display="block" sx={{ mt: 0.8 }}>
-                Единицы: {module.units}
-              </Typography>
-
-              <Suspense fallback={<LinearProgress sx={{ mt: 1 }} />}>
-                <MiniSimulator type={module.simulator} />
-              </Suspense>
-
-              {detailedMode && (
-                <>
-                  <Typography variant="subtitle2" sx={{ mt: 1.5 }}>
-                    Что это значит на практике
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    <TermHighlight text={module.practicalMeaning} glossary={glossary} />
-                  </Typography>
-
-                  <Typography variant="subtitle2" sx={{ mt: 1.5 }}>
-                    Типичные ошибки
-                  </Typography>
-                  <Stack spacing={0.4}>
-                    {module.commonMistakes.map((mistake, index) => (
-                      <Typography key={`${module.id}-mistake-${index}`} variant="body2" color="text.secondary">
-                        • {mistake}
-                      </Typography>
-                    ))}
-                  </Stack>
-                </>
-              )}
-
-              {assets.length > 0 && (
-                <Box sx={{ mt: 1.5 }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Иллюстрации из методички
-                  </Typography>
-                  <Stack spacing={1.2}>
-                    {assets.map((asset) => (
-                      <FigureZoom
-                        key={asset.id}
-                        src={asset.path}
-                        alt={asset.alt}
-                        caption={`${asset.caption} (${asset.pageHint})`}
-                      />
-                    ))}
-                  </Stack>
-                </Box>
-              )}
-
-              <MiniQuestion moduleId={module.id} question={module.miniQuestion} />
-            </CardContent>
-            <Divider />
-          </Card>
-        );
-      })}
-
-      {/* Practice table from knowledge layer */}
-      {practiceMethods.length > 0 && (
-        <AdvancedPracticeTable methods={practiceMethods} title="Практический расчёт" />
-      )}
+      <Card>
+        <CardContent>
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            Теоретические сведения
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Теория, формулы, сцены и иллюстрации идут в том порядке, в котором студент выполняет расчёт по методичке.
+          </Typography>
+          <Stack spacing={1.5}>
+            {visibleContent.map((item) => {
+              if (item.type === 'theory') {
+                const block = item.data as { id: string; heading: string; text: string; keywords: string[] };
+                return <KnowledgeBlock key={block.id} block={block} glossary={glossary} />;
+              }
+              if (item.type === 'formula') {
+                const formula = item.data as Parameters<typeof toFormulaBlockProps>[0];
+                return <FormulaBlock key={formula.id} {...toFormulaBlockProps(formula)} />;
+              }
+              if (item.type === 'scene') {
+                const mod = item.data as TheoryModule;
+                return (
+                  <Paper key={`scene-${mod.id}`} variant="outlined" sx={{ p: 1.5 }}>
+                    <MiniSimulator type={mod.simulator} />
+                  </Paper>
+                );
+              }
+              const figure = item.data as { id: string; path: string; caption: string };
+              return <FigureZoom key={figure.id} src={figure.path} caption={figure.caption} />;
+            })}
+          </Stack>
+        </CardContent>
+      </Card>
     </Stack>
   );
 }
-
-/* ---------- KnowledgeBlock sub-component ---------- */
 
 function KnowledgeBlock({
   block,
@@ -297,8 +247,8 @@ function KnowledgeBlock({
   glossary: Record<string, string>;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const isLong = block.text.length > 200;
-  const displayText = !isLong || expanded ? block.text : block.text.slice(0, 200) + '…';
+  const isLong = block.text.length > 260;
+  const displayText = !isLong || expanded ? block.text : `${block.text.slice(0, 260)}…`;
 
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }} id={block.id}>
@@ -319,8 +269,8 @@ function KnowledgeBlock({
         </Button>
       )}
       <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
-        {block.keywords.map((kw) => (
-          <Chip key={kw} label={kw} size="small" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+        {block.keywords.map((keyword) => (
+          <Chip key={keyword} label={keyword} size="small" variant="outlined" sx={{ fontSize: '0.7rem' }} />
         ))}
       </Stack>
     </Paper>

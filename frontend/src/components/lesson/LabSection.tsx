@@ -528,23 +528,46 @@ export default function LabSection({ lesson }: LabSectionProps) {
     const f = v.f ?? 3e8;
     const T = v.T ?? 4;
     const R = v.R ?? 3;
+    const r = 0.1; // coil radius
     const mu = v.mu ?? 200;
-    const muA = absolutePermeability(mu);
     const gamma = v.gamma ?? 1e7;
     const D = v.D ?? 0.01;
     const eps = v.epsilon ?? 7;
 
-    const H = magneticFieldStrengthH(W, I, R, 0.1);
+    /* Step 1: β_m coefficient (if R/r > 10 then β_m = 1) */
+    const betaM = R / r > 10 ? 1 : 1;
+
+    /* Step 2: Formula 6.1 — H = β_m · W · I / R */
+    const H = magneticFieldStrengthH(W, I, R, r);
+
+    /* Formula 6.2 — E = H · 377 (implicit, used below) */
     const E = electricFieldFromH(H);
+
+    /* Step 3: Formula 6.4 — PPE = E · H */
     const PPE = E * H;
+
+    /* Step 4: Formula 6.5 — PPE_allowed = N / T */
     const PPEmax = allowablePPE(T);
+
+    /* Step 5: Formula 6.6 — L = 10·lg(PPE / PPE_allowed) */
     const Ldb = requiredAttenuationDb(PPE, PPEmax);
+
+    /* Formula 6.9 — μa = μ0 · μ */
+    const muA = absolutePermeability(mu);
+
+    /* Step 6: Formula 6.8 — α = √(π·f·μa·γ) */
     const alpha = attenuationCoefficient(f, muA, gamma);
+
+    /* Formula 6.7 — M = L / (8.68 · α) (depends on 6.8) */
     const M = shieldThicknessM(Ldb, alpha);
+
+    /* Step 7: Formula 6.10 — waveguide attenuation per metre */
     const A1 = waveguideAttenuationPerM(D, eps);
+
+    /* Step 8: Formula 6.11 — waveguide length */
     const wgLen = waveguideLengthM(Ldb, A1);
 
-    return { W, I, f, T, R, mu, muA, gamma, D, eps, H, E, PPE, PPEmax, Ldb, alpha, M, A1, wgLen };
+    return { W, I, f, T, R, mu, muA, gamma, D, eps, betaM, H, E, PPE, PPEmax, Ldb, alpha, M, A1, wgLen };
   }, [lesson.id, lesson6Full]);
 
   /* ── Lesson 7 computed metrics ── */
@@ -1368,9 +1391,12 @@ export default function LabSection({ lesson }: LabSectionProps) {
         {/* ── Lesson 6: Shield calc controls ── */}
         {lesson.id === 6 && lesson6Calcs && (
           <Stack spacing={1}>
-            <Typography variant="caption" fontWeight={600}>Параметры экрана ЭМИ</Typography>
+            <Typography variant="caption" fontWeight={600}>Параметры экрана ЭМИ (последовательная проверка)</Typography>
+            <Alert severity="info">
+              Шаг 1: β_m = {lesson6Calcs.betaM} (R/r {'>'} 10 → β_m = 1)
+            </Alert>
             <Alert severity={lesson6Calcs.PPE <= lesson6Calcs.PPEmax ? 'success' : 'warning'}>
-              H = {lesson6Calcs.H.toFixed(2)} А/м; E = {lesson6Calcs.E.toFixed(1)} В/м; ППЭ = {lesson6Calcs.PPE.toFixed(2)} Вт/м²
+              Ф. 6.1: H = {lesson6Calcs.H.toFixed(2)} А/м; Ф. 6.2: E = {lesson6Calcs.E.toFixed(1)} В/м; Ф. 6.4: ППЭ = {lesson6Calcs.PPE.toFixed(2)} Вт/м²
             </Alert>
             <Alert severity="info">
               L = {lesson6Calcs.Ldb.toFixed(2)} дБ; α = {lesson6Calcs.alpha.toFixed(2)} 1/м

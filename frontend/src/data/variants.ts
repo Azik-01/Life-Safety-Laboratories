@@ -351,6 +351,46 @@ function lesson10Values(base: number): Record<string, number> {
   };
 }
 
+/* ─── Data category exports: lab vs theory split ─── */
+
+/** Lab 6 lab-specific data (student variant values from tables 6.1 + 6.2) */
+export const lesson6LabData = {
+  table61: { W: L6_W, I: L6_I, f: L6_F, R: L6_R, D: L6_D, T: L6_T },
+  table62: { mu: L6_MU, muA: L6_MU_A, gamma: L6_GAMMA, epsilon: L6_EPS },
+};
+
+/** Lab 6 theory/reference data (constants used in formulas) */
+export const lesson6TheoryData = {
+  mu0: 4 * Math.PI * 1e-7,
+  c: 299_792_458,
+  npToDb: 8.68,
+  energyLoadN: 2,
+};
+
+/** Lab 7 lab-specific data (student variant values from tables 7.1 + 7.2) */
+export const lesson7LabData = {
+  table71: { lambda: L7_LAMBDA, powerKW: L7_P_KW, Ga: L7_GA, theta: L7_THETA, sigma: L7_SIGMA },
+  table72: { d1: L7_D1, d2: L7_D2, d3: L7_D3, d4: L7_D4, d5: L7_D5 },
+};
+
+/** Lab 7 theory/reference data */
+export const lesson7TheoryData = {
+  c: 299_792_458,
+  fieldConstant: 245,
+};
+
+/** Lab 8 lab-specific data (student variant values from tables 8.2 + 8.3) */
+export const lesson8LabData = {
+  table82: { fRange: L8_F_RANGE, pImageKW: L8_P_IMG, pSoundKW: L8_P_SND, G: L8_G, H: L8_H, K: L8_K },
+  table83: { r1: L8_R1, r2: L8_R2, r3: L8_R3, r4: L8_R4, r5: L8_R5 },
+};
+
+/** Lab 8 theory/reference data */
+export const lesson8TheoryData = {
+  kHorizontalDefault: 1.41,
+  speedOfLight: 299_792_458,
+};
+
 export const lessonVariants: Record<LessonId, LabVariant[]> = {
   1: makeVariants(sourceNote, lesson1Values),
   2: lesson2Variants,

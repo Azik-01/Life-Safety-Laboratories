@@ -1831,83 +1831,92 @@ interface TheoryScene3DProps {
   params: Record<string, number>;
 }
 
+/**
+ * Renders the correct scene sub-component based on `type`.
+ *
+ * This is intentionally a plain function component (NOT wrapped in useMemo)
+ * so that React can **reconcile** child scene components when only props
+ * change.  The previous useMemo approach recreated the entire JSX tree on
+ * every parameter tweak, which unmounted / remounted every mesh, broke
+ * OrbitControls state and reset useFrame animations — making the scene
+ * feel like it "reloads" instead of updating smoothly.
+ */
+function SceneContent({ type, params }: TheoryScene3DProps) {
+  switch (type) {
+    case 'light-flux':
+      return <LightFluxScene intensity={params.a ?? 500} solidAngle={params.b ?? 1.2} />;
+    case 'light-illuminance':
+      return <IlluminanceScene flux={params.a ?? 3000} area={Math.max(0.1, params.b ?? 6)} />;
+    case 'light-brightness':
+      return <BrightnessScene intensity={params.a ?? 500} area={Math.max(0.1, params.b ?? 1)} />;
+    case 'light-pulsation':
+      return <PulsationScene eMax={params.a ?? 500} eMin={params.b ?? 200} eAvg={Math.max(1, params.c ?? 350)} />;
+    case 'light-room-index':
+      return <RoomIndexScene length={Math.max(2, (params.a ?? 500) / 50)} width={Math.max(2, params.b ?? 6)} height={Math.max(1, params.c ?? 3)} />;
+    case 'light-specific-power':
+      return <SpecificPowerScene area={Math.max(10, params.a ?? 50)} width={Math.max(3, params.b ?? 6)} lampPower={Math.max(20, (params.c ?? 3) * 20)} density={params.d ?? 120} />;
+    case 'light-multi-source': {
+      const i1 = params.a ?? 80, i2 = params.b ?? 80, i3 = params.c ?? 80, i4 = params.d ?? 80;
+      const d1 = params.e ?? 80, d2 = params.f ?? 80, d3 = params.g ?? 80, d4 = params.h ?? 80;
+      return (
+        <MultiLightScene
+          on1={i1 > 0} on2={i2 > 0} on3={i3 > 0} on4={i4 > 0}
+          int1={Math.abs(i1)} int2={Math.abs(i2)} int3={Math.abs(i3)} int4={Math.abs(i4)}
+          dir1={d1} dir2={d2} dir3={d3} dir4={d4}
+        />
+      );
+    }
+    case 'noise-distance':
+      return <NoiseDistanceScene level={params.a ?? 100} distance={Math.max(0.5, params.b ?? 3)} />;
+    case 'noise-barrier':
+      return <NoiseBarrierScene mass={Math.max(10, params.a ?? 150)} levelBefore={params.b ?? 90} />;
+    case 'noise-sum':
+      return <NoiseSumScene l1={params.a ?? 90} l2={params.b ?? 85} l3={params.c ?? 80} />;
+    case 'noise-reflection':
+      return <NoiseReflectionScene level={params.a ?? 85} />;
+    case 'emi-spectrum':
+      return <EmiSpectrumScene frequency={Math.max(1e3, (params.a ?? 100) * 1e3)} />;
+    case 'emi-ppe-zones':
+      return <EmiZonesScene frequency={Math.max(1e3, (params.a ?? 100) * 1e3)} distance={Math.max(0.01, params.b ?? 2)} />;
+    case 'emi-wave':
+      return <EmiWaveScene eField={Math.max(0.1, params.a ?? 20)} hField={Math.max(0.001, params.b ?? 0.05)} />;
+    case 'emi-shield-thickness':
+      return <ShieldThicknessScene thickness={Math.max(0.001, (params.a ?? 1) / 1000)} attenuation={params.b ?? 20} />;
+    case 'emi-waveguide':
+      return <WaveguideScene diameter={Math.max(0.005, (params.a ?? 10) / 1000)} length={Math.max(0.01, (params.b ?? 50) / 1000)} />;
+    case 'emi-field-attenuation':
+      return <EmiFieldAttenuationScene fieldBefore={Math.max(1, params.a ?? 100)} fieldAfter={Math.max(0, params.b ?? 5)} />;
+    case 'hf-field-strength':
+      return <HfFieldStrengthScene power={Math.max(1, params.a ?? 300)} distance={Math.max(100, params.b ?? 1000)} />;
+    case 'hf-wave-propagation':
+      return <HfWavePropagationScene wavelength={Math.max(10, params.a ?? 500)} distance={Math.max(100, params.b ?? 3000)} />;
+    case 'hf-soil-attenuation':
+      return <HfSoilAttenuationScene conductivity={Math.max(0.001, params.a ?? 0.005)} />;
+    case 'uhf-field-strength':
+      return <UhfFieldStrengthScene power={Math.max(1, params.a ?? 50000)} height={Math.max(10, params.b ?? 300)} radius={Math.max(10, params.c ?? 400)} />;
+    case 'uhf-antenna-pattern':
+      return <UhfAntennaPatternScene gain={Math.max(1, params.a ?? 10)} />;
+    case 'radiation-dose':
+      return <RadiationDoseScene frequency={Math.max(1e3, (params.a ?? 100) * 1e6)} pdu={Math.max(0.1, params.b ?? 5)} />;
+    case 'electric-current-body':
+      return <ElectricCurrentBodyScene current={Math.max(0, params.a ?? 10)} />;
+    case 'electric-resistance':
+      return <ElectricResistanceScene resistance={Math.max(100, params.a ?? 3000)} />;
+    case 'electric-frequency-effect':
+      return <ElectricFrequencyEffectScene frequency={Math.max(1, params.a ?? 50)} />;
+    case 'ground-current-spread':
+      return <GroundCurrentSpreadScene current={Math.max(0.1, params.a ?? 10)} resistivity={Math.max(1, params.b ?? 100)} />;
+    case 'step-voltage':
+      return <StepVoltageScene distance={Math.max(1, params.a ?? 5)} stepV={Math.max(0, params.b ?? 50)} />;
+    case 'equipotential-zones':
+      return <EquipotentialZonesScene current={Math.max(0.1, params.a ?? 10)} resistivity={Math.max(1, params.b ?? 100)} />;
+    default:
+      return <Room />;
+  }
+}
+
 export default function TheoryScene3D({ type, params }: TheoryScene3DProps) {
   const title = sceneTitle[type] || 'Интерактивная 3D-визуализация';
-
-  const scene = useMemo(() => {
-    switch (type) {
-      case 'light-flux':
-        return <LightFluxScene intensity={params.a ?? 500} solidAngle={params.b ?? 1.2} />;
-      case 'light-illuminance':
-        return <IlluminanceScene flux={params.a ?? 3000} area={Math.max(0.1, params.b ?? 6)} />;
-      case 'light-brightness':
-        return <BrightnessScene intensity={params.a ?? 500} area={Math.max(0.1, params.b ?? 1)} />;
-      case 'light-pulsation':
-        return <PulsationScene eMax={params.a ?? 500} eMin={params.b ?? 200} eAvg={Math.max(1, params.c ?? 350)} />;
-      case 'light-room-index':
-        return <RoomIndexScene length={Math.max(2, (params.a ?? 500) / 50)} width={Math.max(2, params.b ?? 6)} height={Math.max(1, params.c ?? 3)} />;
-      case 'light-specific-power':
-        return <SpecificPowerScene area={Math.max(10, params.a ?? 50)} width={Math.max(3, params.b ?? 6)} lampPower={Math.max(20, (params.c ?? 3) * 20)} density={params.d ?? 120} />;
-      case 'light-multi-source': {
-        // intensities come in a-d (0-100), directions in e-h (0-100 = % aimed at worker)
-        const i1 = params.a ?? 80, i2 = params.b ?? 80, i3 = params.c ?? 80, i4 = params.d ?? 80;
-        const d1 = params.e ?? 80, d2 = params.f ?? 80, d3 = params.g ?? 80, d4 = params.h ?? 80;
-        return (
-          <MultiLightScene
-            on1={i1 > 0} on2={i2 > 0} on3={i3 > 0} on4={i4 > 0}
-            int1={Math.abs(i1)} int2={Math.abs(i2)} int3={Math.abs(i3)} int4={Math.abs(i4)}
-            dir1={d1} dir2={d2} dir3={d3} dir4={d4}
-          />
-        );
-      }
-      case 'noise-distance':
-        return <NoiseDistanceScene level={params.a ?? 100} distance={Math.max(0.5, params.b ?? 3)} />;
-      case 'noise-barrier':
-        return <NoiseBarrierScene mass={Math.max(10, params.a ?? 150)} levelBefore={params.b ?? 90} />;
-      case 'noise-sum':
-        return <NoiseSumScene l1={params.a ?? 90} l2={params.b ?? 85} l3={params.c ?? 80} />;
-      case 'noise-reflection':
-        return <NoiseReflectionScene level={params.a ?? 85} />;
-      case 'emi-spectrum':
-        return <EmiSpectrumScene frequency={Math.max(1e3, (params.a ?? 100) * 1e3)} />;
-      case 'emi-ppe-zones':
-        return <EmiZonesScene frequency={Math.max(1e3, (params.a ?? 100) * 1e3)} distance={Math.max(0.01, params.b ?? 2)} />;
-      case 'emi-wave':
-        return <EmiWaveScene eField={Math.max(0.1, params.a ?? 20)} hField={Math.max(0.001, params.b ?? 0.05)} />;
-      case 'emi-shield-thickness':
-        return <ShieldThicknessScene thickness={Math.max(0.001, (params.a ?? 1) / 1000)} attenuation={params.b ?? 20} />;
-      case 'emi-waveguide':
-        return <WaveguideScene diameter={Math.max(0.005, (params.a ?? 10) / 1000)} length={Math.max(0.01, (params.b ?? 50) / 1000)} />;
-      case 'emi-field-attenuation':
-        return <EmiFieldAttenuationScene fieldBefore={Math.max(1, params.a ?? 100)} fieldAfter={Math.max(0, params.b ?? 5)} />;
-      case 'hf-field-strength':
-        return <HfFieldStrengthScene power={Math.max(1, params.a ?? 300)} distance={Math.max(100, params.b ?? 1000)} />;
-      case 'hf-wave-propagation':
-        return <HfWavePropagationScene wavelength={Math.max(10, params.a ?? 500)} distance={Math.max(100, params.b ?? 3000)} />;
-      case 'hf-soil-attenuation':
-        return <HfSoilAttenuationScene conductivity={Math.max(0.001, params.a ?? 0.005)} />;
-      case 'uhf-field-strength':
-        return <UhfFieldStrengthScene power={Math.max(1, params.a ?? 50000)} height={Math.max(10, params.b ?? 300)} radius={Math.max(10, params.c ?? 400)} />;
-      case 'uhf-antenna-pattern':
-        return <UhfAntennaPatternScene gain={Math.max(1, params.a ?? 10)} />;
-      case 'radiation-dose':
-        return <RadiationDoseScene frequency={Math.max(1e3, (params.a ?? 100) * 1e6)} pdu={Math.max(0.1, params.b ?? 5)} />;
-      case 'electric-current-body':
-        return <ElectricCurrentBodyScene current={Math.max(0, params.a ?? 10)} />;
-      case 'electric-resistance':
-        return <ElectricResistanceScene resistance={Math.max(100, params.a ?? 3000)} />;
-      case 'electric-frequency-effect':
-        return <ElectricFrequencyEffectScene frequency={Math.max(1, params.a ?? 50)} />;
-      case 'ground-current-spread':
-        return <GroundCurrentSpreadScene current={Math.max(0.1, params.a ?? 10)} resistivity={Math.max(1, params.b ?? 100)} />;
-      case 'step-voltage':
-        return <StepVoltageScene distance={Math.max(1, params.a ?? 5)} stepV={Math.max(0, params.b ?? 50)} />;
-      case 'equipotential-zones':
-        return <EquipotentialZonesScene current={Math.max(0.1, params.a ?? 10)} resistivity={Math.max(1, params.b ?? 100)} />;
-      default:
-        return <Room />;
-    }
-  }, [type, params]);
 
   return (
     <Paper variant="outlined" sx={{ mt: 1, mb: 1 }}>
@@ -1926,7 +1935,7 @@ export default function TheoryScene3D({ type, params }: TheoryScene3DProps) {
             shadow-camera-near={0.5}
             shadow-camera-far={30}
           />
-          {scene}
+          <SceneContent type={type} params={params} />
           <OrbitControls enablePan={false} />
           <hemisphereLight args={['#b1e1ff', '#b97a20', 0.25]} />
         </SafeCanvas>

@@ -111,6 +111,8 @@ export default function MiniSimulator({ type }: SimulatorProps) {
   const [g, setG] = useState(80);
   const [h, setH] = useState(80);
 
+  const sceneParams = useMemo(() => ({ a, b, c, d, e, f, g, h }), [a, b, c, d, e, f, g, h]);
+
   const content = useMemo(() => {
     switch (type) {
       case 'light-flux': {
@@ -730,10 +732,12 @@ export default function MiniSimulator({ type }: SimulatorProps) {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         Изменяйте параметры ползунками — результат отобразится в 3D-сцене и в расчётах ниже.
       </Typography>
-      {/* Interactive 3D Scene */}
+      {/* Interactive 3D Scene — params is memoized so that the
+          scene only re-renders when a slider value actually changes,
+          not on every parent render. */}
       {!isTestEnvironment && (
         <Suspense fallback={<LinearProgress sx={{ mb: 1 }} />}>
-          <TheoryScene3D type={type} params={{ a, b, c, d, e, f, g, h }} />
+          <TheoryScene3D type={type} params={sceneParams} />
         </Suspense>
       )}
       {/* Controls */}

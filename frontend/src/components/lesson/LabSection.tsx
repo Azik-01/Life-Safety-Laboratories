@@ -109,11 +109,14 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const [l9Rn, setL9Rn] = useState(5000);
   const [l9C, setL9C] = useState(20);
   const [l9Rv, setL9Rv] = useState(500);
+  const [l9TouchType, setL9TouchType] = useState<'unipolar' | 'bipolar' | 'multipolar'>('unipolar');
+  const [l9DamagedPhases, setL9DamagedPhases] = useState<[string, string]>(['A', 'B']);
   /* ── Lesson 10 (step voltage) state ── */
   const [l10Iz, setL10Iz] = useState(10);
   const [l10Rho, setL10Rho] = useState(100);
   const [l10X, setL10X] = useState(5);
   const [l10A, setL10A] = useState(0.8);
+  const [l10Surface, setL10Surface] = useState<'earth' | 'sand' | 'stone'>('earth');
   const [trainingMode, setTrainingMode] = useState(false);
   const [manualTableOpen, setManualTableOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(() =>
@@ -528,23 +531,46 @@ export default function LabSection({ lesson }: LabSectionProps) {
     const f = v.f ?? 3e8;
     const T = v.T ?? 4;
     const R = v.R ?? 3;
+    const r = 0.1; // coil radius
     const mu = v.mu ?? 200;
-    const muA = absolutePermeability(mu);
     const gamma = v.gamma ?? 1e7;
     const D = v.D ?? 0.01;
     const eps = v.epsilon ?? 7;
 
-    const H = magneticFieldStrengthH(W, I, R, 0.1);
+    /* Step 1: β_m coefficient — for lab conditions R/r is always > 10, so β_m = 1 (per methodology) */
+    const betaM = 1;
+
+    /* Step 2: Formula 6.1 — H = β_m · W · I / R */
+    const H = magneticFieldStrengthH(W, I, R, r);
+
+    /* Formula 6.2 — E = H · 377 (implicit, used below) */
     const E = electricFieldFromH(H);
+
+    /* Step 3: Formula 6.4 — PPE = E · H */
     const PPE = E * H;
+
+    /* Step 4: Formula 6.5 — PPE_allowed = N / T */
     const PPEmax = allowablePPE(T);
+
+    /* Step 5: Formula 6.6 — L = 10·lg(PPE / PPE_allowed) */
     const Ldb = requiredAttenuationDb(PPE, PPEmax);
+
+    /* Formula 6.9 — μa = μ0 · μ */
+    const muA = absolutePermeability(mu);
+
+    /* Step 6: Formula 6.8 — α = √(π·f·μa·γ) */
     const alpha = attenuationCoefficient(f, muA, gamma);
+
+    /* Formula 6.7 — M = L / (8.68 · α) (depends on 6.8) */
     const M = shieldThicknessM(Ldb, alpha);
+
+    /* Step 7: Formula 6.10 — waveguide attenuation per metre */
     const A1 = waveguideAttenuationPerM(D, eps);
+
+    /* Step 8: Formula 6.11 — waveguide length */
     const wgLen = waveguideLengthM(Ldb, A1);
 
-    return { W, I, f, T, R, mu, muA, gamma, D, eps, H, E, PPE, PPEmax, Ldb, alpha, M, A1, wgLen };
+    return { W, I, f, T, R, mu, muA, gamma, D, eps, betaM, H, E, PPE, PPEmax, Ldb, alpha, M, A1, wgLen };
   }, [lesson.id, lesson6Full]);
 
   /* ── Lesson 7 computed metrics ── */
@@ -559,7 +585,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
     const distances = [v.d1 ?? 1000, v.d2 ?? 2000, v.d3 ?? 3000, v.d4 ?? 4000, v.d5 ?? 5000];
     const band = classifyWaveBand(lambda);
     const results = distances.map((d) => {
-      const x = xParameter(lambda, d, theta, sigma);
+      const x = xParameter(d, lambda, theta, sigma);
       const F = attenuationFactorF(x);
       const E = fieldStrengthShuleikin(P, Ga, d, F);
       return { d, x, F, E };
@@ -709,6 +735,98 @@ export default function LabSection({ lesson }: LabSectionProps) {
       // no-op
     }
   }
+
+  /* ── Memoize state objects passed to LabScene3D so the 3D scene
+       only re-renders when relevant values actually change,
+       not on every parent render. ── */
+  const lightStateMemo = useMemo(() => ({
+    lampType,
+    intensityCd,
+    heightM,
+    sensorOffsetM,
+    reflectance,
+    luminaireCount,
+    roomLengthM: lesson.id === 2 ? (lesson2Calcs?.L ?? lesson2Full.lengthM ?? 14) : undefined,
+    roomWidthM: lesson.id === 2 ? (lesson2Calcs?.B ?? lesson2Full.widthM ?? 10) : undefined,
+    chosenLampPowerW: lesson.id === 2 ? lesson2LampPower : undefined,
+    lineOffsetM: lesson.id === 2 ? (lesson2Calcs?.lLine ?? undefined) : undefined,
+    lineRows: lesson.id === 2 ? 2 : undefined,
+  }), [lampType, intensityCd, heightM, sensorOffsetM, reflectance, luminaireCount,
+    lesson.id, lesson2Calcs, lesson2Full.lengthM, lesson2Full.widthM, lesson2LampPower]);
+
+  const noiseStateMemo = useMemo(() => ({
+    sourceA, sourceB, sourceC,
+    sourceAX, sourceBX, sourceCX,
+    observerX,
+    barrierMassA, barrierMassB, barrierMassC,
+    sourceAOn, sourceBOn, sourceCOn,
+  }), [sourceA, sourceB, sourceC, sourceAX, sourceBX, sourceCX,
+    observerX, barrierMassA, barrierMassB, barrierMassC,
+    sourceAOn, sourceBOn, sourceCOn]);
+
+  const emiStateMemo = useMemo(() => ({
+    frequencyHz, distanceM, eVpm, hApm,
+  }), [frequencyHz, distanceM, eVpm, hApm]);
+
+  const shieldStateMemo = useMemo(() => ({
+    frequencyHz: lesson6Full.f ?? 3e8,
+    turns: lesson6Full.W ?? 12,
+    currentA: (lesson6Full.I ?? 350) / 1000,
+    distanceM: lesson6Full.R ?? 3,
+    coilRadiusM: 0.1,
+    conductivitySpm: lesson6Full.gamma ?? 1e7,
+    muRelative: lesson6Full.mu ?? 200,
+    exposureTimeH: lesson6Full.T ?? 4,
+    waveguideDiameterM: lesson6Full.D ?? 0.01,
+    waveguideEpsilon: lesson6Full.epsilon ?? 7,
+  }), [lesson6Full]);
+
+  const hfStateMemo = useMemo(() => ({
+    powerKW: lesson7Full.P ?? 1,
+    gainAntenna: lesson7Full.G ?? 1,
+    wavelengthM: lesson7Full.lambda ?? 2000,
+    theta: lesson7Full.theta ?? 3e-3,
+    sigma: lesson7Full.sigma ?? 1e-3,
+    distances: [
+      lesson7Full.d1 ?? 50,
+      lesson7Full.d2 ?? 100,
+      lesson7Full.d3 ?? 200,
+      lesson7Full.d4 ?? 500,
+      lesson7Full.d5 ?? 1000,
+    ],
+  }), [lesson7Full]);
+
+  const uhfStateMemo = useMemo(() => ({
+    powerW: lesson8Full.P ?? 100,
+    gain: lesson8Full.G ?? 4,
+    heightM: lesson8Full.h ?? 25,
+    frequencyMHz: lesson8Full.f ?? 900,
+    distances: [
+      lesson8Full.r1 ?? 50,
+      lesson8Full.r2 ?? 100,
+      lesson8Full.r3 ?? 200,
+      lesson8Full.r4 ?? 500,
+      lesson8Full.r5 ?? 1000,
+    ],
+  }), [lesson8Full]);
+
+  const bodyElecStateMemo = useMemo(() => ({
+    voltageV: l9Voltage,
+    frequencyHz: l9Freq,
+    skinResistanceOhm: l9Rn,
+    capacitanceNF: l9C,
+    internalResistanceOhm: l9Rv,
+    touchType: l9TouchType,
+    damagedPhases: l9DamagedPhases,
+  }), [l9Voltage, l9Freq, l9Rn, l9C, l9Rv, l9TouchType, l9DamagedPhases]);
+
+  const groundStateMemo = useMemo(() => ({
+    faultCurrentA: l10Iz,
+    soilResistivityOhmM: l10Rho,
+    distanceM: l10X,
+    stepLengthM: l10A,
+    surfaceType: l10Surface,
+  }), [l10Iz, l10Rho, l10X, l10A, l10Surface]);
 
   return (
     <Stack spacing={2}>
@@ -949,87 +1067,14 @@ export default function LabSection({ lesson }: LabSectionProps) {
       >
         <LabScene3D
           lessonId={lesson.id}
-          lightState={{
-            lampType,
-            intensityCd,
-            heightM,
-            sensorOffsetM,
-            reflectance,
-            luminaireCount,
-            roomLengthM: lesson.id === 2 ? (lesson2Calcs?.L ?? lesson2Full.lengthM ?? 14) : undefined,
-            roomWidthM: lesson.id === 2 ? (lesson2Calcs?.B ?? lesson2Full.widthM ?? 10) : undefined,
-            chosenLampPowerW: lesson.id === 2 ? lesson2LampPower : undefined,
-            lineOffsetM: lesson.id === 2 ? (lesson2Calcs?.lLine ?? undefined) : undefined,
-            lineRows: lesson.id === 2 ? 2 : undefined,
-          }}
-          noiseState={{
-            sourceA,
-            sourceB,
-            sourceC,
-            sourceAX,
-            sourceBX,
-            sourceCX,
-            observerX,
-            barrierMassA,
-            barrierMassB,
-            barrierMassC,
-            sourceAOn,
-            sourceBOn,
-            sourceCOn,
-          }}
-          emiState={{ frequencyHz, distanceM, eVpm, hApm }}
-          shieldState={{
-            frequencyHz: lesson6Full.f ?? 3e8,
-            turns: lesson6Full.W ?? 12,
-            currentA: (lesson6Full.I ?? 350) / 1000,
-            distanceM: lesson6Full.R ?? 3,
-            coilRadiusM: 0.1,
-            conductivitySpm: lesson6Full.gamma ?? 1e7,
-            muRelative: lesson6Full.mu ?? 200,
-            exposureTimeH: lesson6Full.T ?? 4,
-            waveguideDiameterM: lesson6Full.D ?? 0.01,
-            waveguideEpsilon: lesson6Full.epsilon ?? 7,
-          }}
-          hfState={{
-            powerKW: lesson7Full.P ?? 1,
-            gainAntenna: lesson7Full.G ?? 1,
-            wavelengthM: lesson7Full.lambda ?? 2000,
-            theta: lesson7Full.theta ?? 3e-3,
-            sigma: lesson7Full.sigma ?? 1e-3,
-            distances: [
-              lesson7Full.d1 ?? 50,
-              lesson7Full.d2 ?? 100,
-              lesson7Full.d3 ?? 200,
-              lesson7Full.d4 ?? 500,
-              lesson7Full.d5 ?? 1000,
-            ],
-          }}
-          uhfState={{
-            powerW: lesson8Full.P ?? 100,
-            gain: lesson8Full.G ?? 4,
-            heightM: lesson8Full.h ?? 25,
-            frequencyMHz: lesson8Full.f ?? 900,
-            distances: [
-              lesson8Full.r1 ?? 50,
-              lesson8Full.r2 ?? 100,
-              lesson8Full.r3 ?? 200,
-              lesson8Full.r4 ?? 500,
-              lesson8Full.r5 ?? 1000,
-            ],
-          }}
-          bodyElecState={{
-            voltageV: l9Voltage,
-            frequencyHz: l9Freq,
-            skinResistanceOhm: l9Rn,
-            capacitanceNF: l9C,
-            internalResistanceOhm: l9Rv,
-          }}
-          groundState={{
-            faultCurrentA: l10Iz,
-            soilResistivityOhmM: l10Rho,
-            distanceM: l10X,
-            stepLengthM: l10A,
-          }}
+          lightState={lightStateMemo}
+          noiseState={noiseStateMemo}
+          emiState={emiStateMemo}
+          shieldState={shieldStateMemo}
+          hfState={hfStateMemo}
+          uhfState={uhfStateMemo}
+          bodyElecState={bodyElecStateMemo}
+          groundState={groundStateMemo}
         />
       </Suspense>
 
@@ -1352,9 +1397,12 @@ export default function LabSection({ lesson }: LabSectionProps) {
         {/* ── Lesson 6: Shield calc controls ── */}
         {lesson.id === 6 && lesson6Calcs && (
           <Stack spacing={1}>
-            <Typography variant="caption" fontWeight={600}>Параметры экрана ЭМИ</Typography>
+            <Typography variant="caption" fontWeight={600}>Параметры экрана ЭМИ (последовательная проверка)</Typography>
+            <Alert severity="info">
+              Шаг 1: β_m = {lesson6Calcs.betaM} (R/r {'>'} 10 → β_m = 1)
+            </Alert>
             <Alert severity={lesson6Calcs.PPE <= lesson6Calcs.PPEmax ? 'success' : 'warning'}>
-              H = {lesson6Calcs.H.toFixed(2)} А/м; E = {lesson6Calcs.E.toFixed(1)} В/м; ППЭ = {lesson6Calcs.PPE.toFixed(2)} Вт/м²
+              Ф. 6.1: H = {lesson6Calcs.H.toFixed(2)} А/м; Ф. 6.2: E = {lesson6Calcs.E.toFixed(1)} В/м; Ф. 6.4: ППЭ = {lesson6Calcs.PPE.toFixed(2)} Вт/м²
             </Alert>
             <Alert severity="info">
               L = {lesson6Calcs.Ldb.toFixed(2)} дБ; α = {lesson6Calcs.alpha.toFixed(2)} 1/м
@@ -1438,6 +1486,21 @@ export default function LabSection({ lesson }: LabSectionProps) {
             <Slider value={l9C} min={1} max={100} step={1} onChange={(_, v) => setL9C(v as number)} />
             <Typography variant="caption">Rв (Ом): {l9Rv}</Typography>
             <Slider value={l9Rv} min={100} max={1500} step={50} onChange={(_, v) => setL9Rv(v as number)} />
+            <Typography variant="caption" fontWeight={600}>Тип прикосновения</Typography>
+            <Select size="small" value={l9TouchType} onChange={(e) => setL9TouchType(e.target.value as 'unipolar' | 'bipolar' | 'multipolar')}>
+              <MenuItem value="unipolar">Однополюсное (одна рука)</MenuItem>
+              <MenuItem value="bipolar">Двухполюсное (две руки)</MenuItem>
+              <MenuItem value="multipolar">Многополюсное</MenuItem>
+            </Select>
+            <Typography variant="caption" fontWeight={600}>Повреждённые фазы</Typography>
+            <Select size="small" value={`${l9DamagedPhases[0]}-${l9DamagedPhases[1]}`} onChange={(e) => {
+              const [a, b] = (e.target.value as string).split('-');
+              setL9DamagedPhases([a, b]);
+            }}>
+              <MenuItem value="A-B">Фаза А ↔ Фаза Б</MenuItem>
+              <MenuItem value="A-C">Фаза А ↔ Фаза С</MenuItem>
+              <MenuItem value="B-C">Фаза Б ↔ Фаза С</MenuItem>
+            </Select>
             {lesson9Calcs && (
               <Alert severity={lesson9Calcs.ImA < 10 ? 'success' : 'error'}>
                 Zн = {lesson9Calcs.Zn.toFixed(0)} Ом; Z = {lesson9Calcs.Z.toFixed(0)} Ом; I = {lesson9Calcs.ImA.toFixed(2)} мА — {lesson9Calcs.danger}
@@ -1458,6 +1521,19 @@ export default function LabSection({ lesson }: LabSectionProps) {
             <Slider value={l10X} min={1} max={30} step={0.5} onChange={(_, v) => setL10X(v as number)} />
             <Typography variant="caption">a (м): {l10A}</Typography>
             <Slider value={l10A} min={0.3} max={1.5} step={0.1} onChange={(_, v) => setL10A(v as number)} />
+            <Typography variant="caption" fontWeight={600}>Тип поверхности</Typography>
+            <Select size="small" value={l10Surface} onChange={(e) => {
+              const surface = e.target.value as 'earth' | 'sand' | 'stone';
+              setL10Surface(surface);
+              /* Adjust soil resistivity based on surface */
+              if (surface === 'sand') setL10Rho(300);
+              else if (surface === 'stone') setL10Rho(500);
+              else setL10Rho(100);
+            }}>
+              <MenuItem value="earth">Земля (ρ ≈ 100 Ом·м)</MenuItem>
+              <MenuItem value="sand">Песок (ρ ≈ 300 Ом·м)</MenuItem>
+              <MenuItem value="stone">Камень (ρ ≈ 500 Ом·м)</MenuItem>
+            </Select>
             {lesson10Calcs && (
               <Alert severity={lesson10Calcs.Ush < 36 ? 'success' : 'error'}>
                 φ(x) = {lesson10Calcs.phi.toFixed(2)} В; Uш = {lesson10Calcs.Ush.toFixed(2)} В {lesson10Calcs.Ush >= 36 ? '⚠ ОПАСНО' : '✓ безопасно'}

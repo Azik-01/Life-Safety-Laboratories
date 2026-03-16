@@ -22,6 +22,7 @@ import {
 } from '../../formulas/shielding';
 import {
   fieldStrengthShuleikin, attenuationFactorF, xParameter,
+  classifyWaveBand, xParameterDVSV, xParameterKV,
 } from '../../formulas/hfField';
 import {
   fieldStrengthUHF, distanceFromPhaseCenter, elevationAngleRad,
@@ -121,12 +122,15 @@ interface LabSceneProps {
     skinResistanceOhm: number;
     capacitanceNF: number;
     internalResistanceOhm: number;
+    touchType?: 'unipolar' | 'bipolar' | 'multipolar';
+    damagedPhases?: [string, string];
   };
   groundState: {
     faultCurrentA: number;
     soilResistivityOhmM: number;
     distanceM: number;
     stepLengthM: number;
+    surfaceType?: 'earth' | 'sand' | 'stone';
   };
 }
 
@@ -997,13 +1001,32 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
 function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; timeScale: number }) {
   const waveRef = useRef<THREE.Group>(null);
   const timeR = useRef(0);
+  const [boostedIndices, setBoostedIndices] = useState<Set<number>>(new Set());
 
-  const results = state.distances.map((d) => {
-    const x = xParameter(d, state.wavelengthM, state.theta, state.sigma);
+  /* ── Explicit calculation cycle per requirements ── */
+  const band = classifyWaveBand(state.wavelengthM);
+  const results = state.distances.map((d, i) => {
+    /* Step 1: Formula 7.6 (KV) or 7.5 (DV/SV) — 5 times */
+    const x = (band === 'DV' || band === 'SV')
+      ? xParameterDVSV(d, state.wavelengthM, state.theta, state.sigma)
+      : xParameterKV(d, state.wavelengthM, state.theta, state.sigma);
+
+    /* Step 2: Formula 7.3 — attenuation factor F, 5 times */
     const F = attenuationFactorF(x);
-    const Estr = fieldStrengthShuleikin(state.powerKW, state.gainAntenna, d, F);
-    return { d, x, F, E: Estr };
+
+    /* Step 3: Formula 7.2 — field strength, 5 times */
+    const E = fieldStrengthShuleikin(state.powerKW, state.gainAntenna, d, F);
+
+    /* Apply booster: multiply E by 1.5 if booster is active at this index */
+    const boosted = boostedIndices.has(i);
+    const Efinal = boosted ? E * 1.5 : E;
+
+    return { d, x, F, E, Efinal, boosted };
   });
+
+  /* Signal weak threshold: if E < max(E)/3, signal is weak */
+  const maxE = Math.max(...results.map((r) => r.E), 1e-9);
+  const weakThreshold = maxE / 3;
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1018,6 +1041,15 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
     });
   });
 
+  const toggleBooster = (index: number) => {
+    setBoostedIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
@@ -1025,7 +1057,7 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
         <meshStandardMaterial color="#2d4a22" roughness={0.92} />
       </mesh>
 
-      {/* Antenna tower */}
+      {/* Antenna tower (base station) */}
       <mesh position={[0, 3, 0]} castShadow>
         <cylinderGeometry args={[0.08, 0.15, 6, 8]} />
         <meshStandardMaterial color="#999" metalness={0.6} />
@@ -1042,8 +1074,29 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
         {`P = ${state.powerKW} кВт | G = ${state.gainAntenna}`}
       </Text>
       <Text fontSize={0.12} color="#ffcc80" position={[0, 6.7, 0]}>
-        {`λ = ${state.wavelengthM.toFixed(0)} м`}
+        {`λ = ${state.wavelengthM.toFixed(0)} м | ${band}`}
       </Text>
+
+      {/* Obstacle buildings between stations */}
+      {[2.5, 5, 7].map((xPos, i) => (
+        <mesh key={`obstacle-${i}`} position={[xPos, 0.6 + i * 0.3, -1.5]} castShadow>
+          <boxGeometry args={[0.6, 1.2 + i * 0.6, 0.8]} />
+          <meshStandardMaterial color={['#78909c', '#607d8b', '#546e7a'][i]} roughness={0.8} />
+        </mesh>
+      ))}
+      {/* Trees as obstacles */}
+      {[3.5, 6.5].map((xPos, i) => (
+        <group key={`tree-${i}`} position={[xPos, 0, 1.5]}>
+          <mesh position={[0, 0.6, 0]} castShadow>
+            <cylinderGeometry args={[0.06, 0.08, 1.2, 6]} />
+            <meshStandardMaterial color="#5d4037" />
+          </mesh>
+          <mesh position={[0, 1.4, 0]} castShadow>
+            <coneGeometry args={[0.5, 1.2, 8]} />
+            <meshStandardMaterial color="#2e7d32" />
+          </mesh>
+        </group>
+      ))}
 
       {/* Expanding wave rings */}
       <group ref={waveRef}>
@@ -1055,24 +1108,58 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
         ))}
       </group>
 
-      {/* Distance markers with field strength */}
+      {/* Distance markers with field strength + signal bar graph + boosters */}
       {results.map((r, i) => {
         const scaledD = Math.min(10, r.d / (Math.max(...state.distances) / 10));
+        const barHeight = Math.max(0.1, (r.Efinal / maxE) * 3);
+        const isWeak = r.E < weakThreshold;
+        const barColor = r.boosted ? '#66bb6a' : isWeak ? '#f44336' : '#ff9800';
         return (
           <group key={`hf-pt-${i}`} position={[scaledD, 0, 0]}>
+            {/* Measurement post */}
             <mesh position={[0, 0.5, 0]} castShadow>
               <boxGeometry args={[0.15, 1, 0.15]} />
               <meshStandardMaterial color="#f44336" />
             </mesh>
             <Text fontSize={0.12} color="#fff" position={[0, 1.3, 0]}>
-              {`d=${r.d} км`}
+              {`d=${r.d} м`}
             </Text>
             <Text fontSize={0.11} color="#ffd54f" position={[0, 1.05, 0]}>
-              {`E = ${r.E.toFixed(3)} мВ/м`}
+              {`E = ${r.Efinal.toFixed(3)} мВ/м`}
             </Text>
             <Text fontSize={0.09} color="#bbb" position={[0, 0.85, 0]}>
-              {`F = ${r.F.toFixed(4)}`}
+              {`F = ${r.F.toFixed(4)}${r.boosted ? ' ⚡усилен' : ''}`}
             </Text>
+
+            {/* Signal strength bar graph */}
+            <mesh position={[0, barHeight / 2, 1.5]}>
+              <boxGeometry args={[0.3, barHeight, 0.3]} />
+              <meshStandardMaterial color={barColor} transparent opacity={0.8} />
+            </mesh>
+
+            {/* Booster indicator (click to toggle) — green glowing cylinder if weak signal */}
+            {isWeak && !r.boosted && (
+              <mesh position={[0, 0.15, -0.8]} onClick={() => toggleBooster(i)}>
+                <cylinderGeometry args={[0.12, 0.12, 0.3, 8]} />
+                <meshStandardMaterial color="#4caf50" emissive="#00e676" emissiveIntensity={1.5} transparent opacity={0.6} />
+              </mesh>
+            )}
+            {r.boosted && (
+              <mesh position={[0, 0.15, -0.8]} onClick={() => toggleBooster(i)}>
+                <cylinderGeometry args={[0.15, 0.15, 0.4, 8]} />
+                <meshStandardMaterial color="#00e676" emissive="#00e676" emissiveIntensity={2} />
+              </mesh>
+            )}
+            {(isWeak && !r.boosted) && (
+              <Text fontSize={0.08} color="#ff5252" position={[0, 0.5, -0.8]}>
+                {'⬆ усилитель'}
+              </Text>
+            )}
+            {r.boosted && (
+              <Text fontSize={0.08} color="#00e676" position={[0, 0.6, -0.8]}>
+                {'✓ усилен'}
+              </Text>
+            )}
           </group>
         );
       })}
@@ -1094,14 +1181,37 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
 function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState']; timeScale: number }) {
   const pulseRef = useRef<THREE.Group>(null);
   const timeR = useRef(0);
+  const [imgBoosted, setImgBoosted] = useState<Set<number>>(new Set());
+  const [sndBoosted, setSndBoosted] = useState<Set<number>>(new Set());
 
-  const results = state.distances.map((gd) => {
+  /* ── Explicit calculation cycle per requirements ── */
+  const results = state.distances.map((gd, i) => {
+    /* Step 1: Formula 8.6 — R from phase center, 5 times */
     const R = distanceFromPhaseCenter(state.heightM, gd);
+
+    /* Step 2: Formula 8.5 — elevation angle + pattern factor, 5 times */
     const delta = elevationAngleRad(state.heightM, gd);
     const Fd = normalizedPatternFactor(delta);
-    const Estr = fieldStrengthUHF(state.powerW, state.gain, R, Fd);
-    return { gd, R, delta, Fd, E: Estr };
+
+    /* Step 3: Formula 8.4 — field strength, 10 times (5 video + 5 audio) */
+    const Eimg = fieldStrengthUHF(state.powerW * 0.8, state.gain, R, Fd);
+    const Esnd = fieldStrengthUHF(state.powerW * 0.2, state.gain, R, Fd);
+
+    /* Apply booster multipliers */
+    const imgBoost = imgBoosted.has(i);
+    const sndBoost = sndBoosted.has(i);
+    const EimgFinal = imgBoost ? Eimg * 2 : Eimg;
+    const EsndFinal = sndBoost ? Esnd * 2 : Esnd;
+    const Etotal = Math.sqrt(EimgFinal ** 2 + EsndFinal ** 2);
+
+    return { gd, R, delta, Fd, Eimg, Esnd, EimgFinal, EsndFinal, Etotal, imgBoost, sndBoost };
   });
+
+  /* Weak signal thresholds */
+  const maxImg = Math.max(...results.map((r) => r.Eimg), 1e-9);
+  const maxSnd = Math.max(...results.map((r) => r.Esnd), 1e-9);
+  const imgWeakThreshold = maxImg / 3;
+  const sndWeakThreshold = maxSnd / 3;
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1123,7 +1233,7 @@ function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState'];
         <meshStandardMaterial color="#3e2723" roughness={0.9} />
       </mesh>
 
-      {/* UHF Tower */}
+      {/* TV Tower */}
       <mesh position={[0, state.heightM / 2, 0]} castShadow>
         <boxGeometry args={[0.3, state.heightM, 0.3]} />
         <meshStandardMaterial color="#78909c" metalness={0.5} />
@@ -1136,7 +1246,7 @@ function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState'];
         </mesh>
       ))}
       <Text fontSize={0.16} color="#ff7043" position={[0, state.heightM + 0.6, 0]}>
-        {`P = ${state.powerW} Вт | G = ${state.gain}`}
+        {`Телевышка: P = ${state.powerW} Вт | G = ${state.gain}`}
       </Text>
       <Text fontSize={0.12} color="#ffab91" position={[0, state.heightM + 0.3, 0]}>
         {`h = ${state.heightM} м | f = ${state.frequencyMHz} МГц`}
@@ -1152,11 +1262,14 @@ function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState'];
         ))}
       </group>
 
-      {/* Measuring points on ground */}
+      {/* Measuring points: TV receivers with separate audio/video indicators */}
       {results.map((r, i) => {
         const x = Math.min(9, r.gd / (Math.max(...state.distances) / 9));
+        const imgWeak = r.Eimg < imgWeakThreshold && !r.imgBoost;
+        const sndWeak = r.Esnd < sndWeakThreshold && !r.sndBoost;
         return (
           <group key={`uhf-pt-${i}`} position={[x, 0, 0]}>
+            {/* TV receiver (person with TV set) */}
             <mesh position={[0, 0.7, 0]} castShadow>
               <capsuleGeometry args={[0.12, 0.4, 8, 12]} />
               <meshStandardMaterial color="#42a5f5" />
@@ -1165,15 +1278,96 @@ function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState'];
               <sphereGeometry args={[0.12, 12, 12]} />
               <meshStandardMaterial color="#ffd6b6" />
             </mesh>
+
+            {/* TV screen indicator */}
+            <mesh position={[0.4, 0.6, 0]}>
+              <boxGeometry args={[0.4, 0.3, 0.05]} />
+              <meshStandardMaterial
+                color={imgWeak ? '#f44336' : '#4caf50'}
+                emissive={imgWeak ? '#ff0000' : '#00c853'}
+                emissiveIntensity={0.5}
+              />
+            </mesh>
+            {/* Video interference cross marker when weak */}
+            {imgWeak && (
+              <Text fontSize={0.15} color="#ff1744" position={[0.4, 0.6, 0.05]}>
+                {'✕'}
+              </Text>
+            )}
+
+            {/* Audio speaker indicator */}
+            <mesh position={[0.4, 0.2, 0]}>
+              <boxGeometry args={[0.15, 0.15, 0.1]} />
+              <meshStandardMaterial
+                color={sndWeak ? '#ff9800' : '#2196f3'}
+                emissive={sndWeak ? '#ff6d00' : '#0091ea'}
+                emissiveIntensity={0.4}
+              />
+            </mesh>
+            {/* Audio interference triangle when weak */}
+            {sndWeak && (
+              <Text fontSize={0.12} color="#ff9100" position={[0.4, 0.2, 0.08]}>
+                {'▲'}
+              </Text>
+            )}
+
+            {/* Labels */}
             <Text fontSize={0.11} color="#fff" position={[0, 1.7, 0]}>
               {`r = ${r.gd} м`}
             </Text>
             <Text fontSize={0.1} color="#ffd54f" position={[0, 1.5, 0]}>
-              {`E = ${r.E.toFixed(2)} В/м`}
+              {`E_из = ${r.EimgFinal.toFixed(2)} | E_зв = ${r.EsndFinal.toFixed(2)} В/м`}
             </Text>
             <Text fontSize={0.08} color="#aaa" position={[0, 1.35, 0]}>
               {`Δ = ${(r.delta * 180 / Math.PI).toFixed(1)}° | F(Δ) = ${r.Fd.toFixed(3)}`}
             </Text>
+
+            {/* Video booster button */}
+            {(imgWeak || r.imgBoost) && (
+              <group>
+                <mesh position={[0.8, 0.6, 0]} onClick={() => {
+                  setImgBoosted((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(i)) next.delete(i); else next.add(i);
+                    return next;
+                  });
+                }}>
+                  <cylinderGeometry args={[0.08, 0.08, 0.2, 6]} />
+                  <meshStandardMaterial
+                    color={r.imgBoost ? '#00e676' : '#ef5350'}
+                    emissive={r.imgBoost ? '#00e676' : '#ef5350'}
+                    emissiveIntensity={r.imgBoost ? 2 : 0.8}
+                  />
+                </mesh>
+                <Text fontSize={0.06} color={r.imgBoost ? '#00e676' : '#ff5252'} position={[0.8, 0.85, 0]}>
+                  {r.imgBoost ? '✓ видео' : '⬆ видео'}
+                </Text>
+              </group>
+            )}
+
+            {/* Audio booster button */}
+            {(sndWeak || r.sndBoost) && (
+              <group>
+                <mesh position={[0.8, 0.2, 0]} onClick={() => {
+                  setSndBoosted((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(i)) next.delete(i); else next.add(i);
+                    return next;
+                  });
+                }}>
+                  <cylinderGeometry args={[0.08, 0.08, 0.2, 6]} />
+                  <meshStandardMaterial
+                    color={r.sndBoost ? '#00b0ff' : '#ffa726'}
+                    emissive={r.sndBoost ? '#00b0ff' : '#ffa726'}
+                    emissiveIntensity={r.sndBoost ? 2 : 0.8}
+                  />
+                </mesh>
+                <Text fontSize={0.06} color={r.sndBoost ? '#00b0ff' : '#ffa726'} position={[0.8, 0.45, 0]}>
+                  {r.sndBoost ? '✓ звук' : '⬆ звук'}
+                </Text>
+              </group>
+            )}
+
             {/* Line from tower top to point */}
             <mesh position={[-x / 2, state.heightM / 2, 0]} rotation={[0, 0, Math.atan2(state.heightM, x)]}>
               <boxGeometry args={[0.015, Math.sqrt(x * x + state.heightM * state.heightM), 0.015]} />
@@ -1195,13 +1389,20 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
   const sparkRef = useRef<THREE.Mesh>(null);
   const timeR = useRef(0);
 
+  const touchType = state.touchType ?? 'unipolar';
+  const damagedPhases = state.damagedPhases ?? ['A', 'B'];
+
+  /* Compute impedance and current based on touch type */
   const Zk = skinImpedance(state.skinResistanceOhm, state.frequencyHz, state.capacitanceNF * 1e-9);
-  const Zt = totalBodyImpedance(Zk, state.internalResistanceOhm);
+  const Zt = touchType === 'bipolar' ? totalBodyImpedance(Zk, state.internalResistanceOhm) * 0.5
+    : touchType === 'multipolar' ? totalBodyImpedance(Zk, state.internalResistanceOhm) * 0.3
+    : totalBodyImpedance(Zk, state.internalResistanceOhm);
   const I = bodyCurrentMA(state.voltageV, Zt);
   const danger = classifyCurrentDanger(I, state.frequencyHz <= 60);
 
   const dangerColor = danger === 'safe' ? '#4caf50' : danger === 'perceptible' ? '#ff9800' : danger === 'non-releasing' ? '#f44336' : '#d50000';
-  const dangerLabel = danger === 'safe' ? 'Безопасный' : danger === 'perceptible' ? 'Ощутимый' : danger === 'non-releasing' ? 'Неотпускающий' : 'Фибрилляция!';
+  const dangerLabel = danger === 'safe' ? 'Безопасный' : danger === 'perceptible' ? 'Ощутимый (покалывание)' : danger === 'non-releasing' ? 'Неотпускающий (сокращение мышц)' : 'Фибрилляция (остановка сердца)!';
+  const touchLabel = touchType === 'unipolar' ? 'Однополюсное (одна рука)' : touchType === 'bipolar' ? 'Двухполюсное (две руки)' : 'Многополюсное';
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1211,75 +1412,220 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
     mat.emissiveIntensity = I > 1 ? flash * Math.min(3, I / 10) : 0.1;
   });
 
+  /* Phase wire positions */
+  const phasePositions: Record<string, [number, number, number]> = {
+    A: [-4, 2.8, -1],
+    B: [-4, 2.8, 0],
+    C: [-4, 2.8, 1],
+    O: [-4, 2.2, 0],
+  };
+
+  const phaseColors: Record<string, string> = { A: '#f44336', B: '#2196f3', C: '#4caf50', O: '#9e9e9e' };
+
+  /* Current path based on touch type */
+  const showCurrentPathArm1 = true;
+  const showCurrentPathArm2 = touchType === 'bipolar' || touchType === 'multipolar';
+  const showCurrentPathLegs = touchType === 'multipolar';
+
+  /* Danger level comparison thresholds (per fig 9.4) */
+  const dangerLevels = [
+    { label: 'Ощутимый', minMA: 0.5, maxMA: 10, color: '#ff9800' },
+    { label: 'Неотпускающий', minMA: 10, maxMA: 100, color: '#f44336' },
+    { label: 'Фибрилляция', minMA: 100, maxMA: 500, color: '#d50000' },
+  ];
+
   return (
     <>
-      <LabRoom width={10} depth={8} height={3} />
+      <LabRoom width={12} depth={10} height={3.5} />
       <LabDesk position={[-2, 0, 0]} />
 
-      {/* Power source */}
-      <mesh position={[-3, 0.9, 0]} castShadow>
-        <boxGeometry args={[0.5, 0.3, 0.4]} />
-        <meshStandardMaterial color="#333" metalness={0.4} />
+      {/* Three-phase network wires (A, B, C) + Neutral (O) */}
+      {(['A', 'B', 'C', 'O'] as const).map((phase) => {
+        const pos = phasePositions[phase];
+        const isDamaged = damagedPhases.includes(phase);
+        return (
+          <group key={`phase-${phase}`}>
+            {/* Wire */}
+            <mesh position={[pos[0] + 2, pos[1], pos[2]]}>
+              <boxGeometry args={[6, 0.03, 0.03]} />
+              <meshStandardMaterial
+                color={phaseColors[phase]}
+                emissive={isDamaged ? '#ff0000' : '#000'}
+                emissiveIntensity={isDamaged ? 0.8 : 0}
+              />
+            </mesh>
+            <Text fontSize={0.12} color={phaseColors[phase]} position={[pos[0] - 0.3, pos[1] + 0.15, pos[2]]}>
+              {phase === 'O' ? 'N (нейтраль)' : `Фаза ${phase}`}
+            </Text>
+            {/* Resistance symbol between wires */}
+            {phase !== 'O' && (
+              <mesh position={[pos[0] + 0.5, pos[1] - 0.15, pos[2]]}>
+                <boxGeometry args={[0.2, 0.08, 0.08]} />
+                <meshStandardMaterial color="#795548" />
+              </mesh>
+            )}
+            {/* Damaged insulation indicator */}
+            {isDamaged && (
+              <mesh position={[0, pos[1], pos[2]]}>
+                <sphereGeometry args={[0.08, 8, 8]} />
+                <meshStandardMaterial color="#ff1744" emissive="#ff0000" emissiveIntensity={2} />
+              </mesh>
+            )}
+          </group>
+        );
+      })}
+
+      {/* Equipment box (ЭО) */}
+      <mesh position={[0, 1.2, 0]} castShadow>
+        <boxGeometry args={[0.8, 1.0, 0.6]} />
+        <meshStandardMaterial color="#455a64" metalness={0.4} />
       </mesh>
-      <Text fontSize={0.12} color="#ff5252" position={[-3, 1.4, 0]}>
-        {`U = ${state.voltageV} В | f = ${state.frequencyHz} Гц`}
+      <Text fontSize={0.1} color="#ccc" position={[0, 1.8, 0.35]}>
+        {'ЭО'}
       </Text>
 
-      {/* Wire to contact point */}
-      <mesh position={[-1.5, 0.95, 0]}>
-        <boxGeometry args={[2.5, 0.02, 0.02]} />
-        <meshStandardMaterial color="#f44336" emissive="#ff0000" emissiveIntensity={0.3} />
-      </mesh>
-
-      {/* Spark at contact */}
-      <mesh ref={sparkRef} position={[0, 1.2, 0]}>
-        <sphereGeometry args={[0.08, 12, 12]} />
+      {/* Spark at contact point */}
+      <mesh ref={sparkRef} position={[0.4, 1.5, 0]}>
+        <sphereGeometry args={[0.06, 12, 12]} />
         <meshStandardMaterial color="#ffeb3b" emissive="#ffeb3b" emissiveIntensity={1} />
       </mesh>
 
       {/* Human figure */}
-      <group position={[1, 0, 0]}>
+      <group position={[1.5, 0, 0]}>
+        {/* Body (colored by danger level) */}
         <mesh position={[0, 0.6, 0]} castShadow>
           <capsuleGeometry args={[0.22, 0.6, 8, 16]} />
           <meshStandardMaterial color={dangerColor} transparent opacity={0.7} />
         </mesh>
+        {/* Head */}
         <mesh position={[0, 1.3, 0]} castShadow>
           <sphereGeometry args={[0.2, 16, 16]} />
           <meshStandardMaterial color="#ffd6b6" />
         </mesh>
-        {/* Arm reaching to wire */}
+
+        {/* Right arm (always touching) */}
         <mesh position={[-0.5, 1.0, 0]} rotation={[0, 0, Math.PI / 4]}>
           <boxGeometry args={[0.08, 0.6, 0.08]} />
           <meshStandardMaterial color="#ffd6b6" />
         </mesh>
+
+        {/* Left arm (touching for bipolar/multipolar) */}
+        {showCurrentPathArm2 && (
+          <mesh position={[0.5, 1.0, 0]} rotation={[0, 0, -Math.PI / 4]}>
+            <boxGeometry args={[0.08, 0.6, 0.08]} />
+            <meshStandardMaterial color="#ffd6b6" />
+          </mesh>
+        )}
+
+        {/* Legs */}
+        <mesh position={[-0.12, 0.0, 0]}>
+          <boxGeometry args={[0.1, 0.5, 0.1]} />
+          <meshStandardMaterial color="#37474f" />
+        </mesh>
+        <mesh position={[0.12, 0.0, 0]}>
+          <boxGeometry args={[0.1, 0.5, 0.1]} />
+          <meshStandardMaterial color="#37474f" />
+        </mesh>
+
+        {/* ── RED CURRENT PATH highlight ── */}
+        {/* Path through right arm */}
+        {showCurrentPathArm1 && I > 0.5 && (
+          <mesh position={[-0.5, 1.0, 0]} rotation={[0, 0, Math.PI / 4]}>
+            <boxGeometry args={[0.12, 0.65, 0.12]} />
+            <meshBasicMaterial color="#ff0000" transparent opacity={0.35} />
+          </mesh>
+        )}
+        {/* Path through body */}
+        {I > 0.5 && (
+          <mesh position={[0, 0.6, 0]}>
+            <capsuleGeometry args={[0.26, 0.65, 8, 16]} />
+            <meshBasicMaterial color="#ff0000" transparent opacity={0.25} />
+          </mesh>
+        )}
+        {/* Path through left arm (bipolar) */}
+        {showCurrentPathArm2 && I > 0.5 && (
+          <mesh position={[0.5, 1.0, 0]} rotation={[0, 0, -Math.PI / 4]}>
+            <boxGeometry args={[0.12, 0.65, 0.12]} />
+            <meshBasicMaterial color="#ff0000" transparent opacity={0.35} />
+          </mesh>
+        )}
+        {/* Ground return path through legs (unipolar: arm→body→legs→ground) */}
+        {touchType === 'unipolar' && I > 0.5 && (
+          <>
+            <mesh position={[-0.12, 0.0, 0]}>
+              <boxGeometry args={[0.14, 0.55, 0.14]} />
+              <meshBasicMaterial color="#ff0000" transparent opacity={0.25} />
+            </mesh>
+            <mesh position={[0.12, 0.0, 0]}>
+              <boxGeometry args={[0.14, 0.55, 0.14]} />
+              <meshBasicMaterial color="#ff0000" transparent opacity={0.25} />
+            </mesh>
+          </>
+        )}
+        {/* Path through legs (multipolar: all limbs) */}
+        {showCurrentPathLegs && I > 0.5 && (
+          <>
+            <mesh position={[-0.12, 0.0, 0]}>
+              <boxGeometry args={[0.14, 0.55, 0.14]} />
+              <meshBasicMaterial color="#ff0000" transparent opacity={0.3} />
+            </mesh>
+            <mesh position={[0.12, 0.0, 0]}>
+              <boxGeometry args={[0.14, 0.55, 0.14]} />
+              <meshBasicMaterial color="#ff0000" transparent opacity={0.3} />
+            </mesh>
+          </>
+        )}
       </group>
 
       {/* Ground wire */}
-      <mesh position={[1, 0.15, 0]}>
+      <mesh position={[1.5, 0.15, 0]}>
         <boxGeometry args={[0.02, 0.3, 0.02]} />
         <meshStandardMaterial color="#4caf50" />
       </mesh>
 
+      {/* ── Danger level comparison panel (per fig 9.4) ── */}
+      <group position={[4, 0.5, -2]}>
+        <Text fontSize={0.1} color="#fff" position={[0, 2.2, 0]}>
+          {'Сравнение уровней тока (рис. 9.4)'}
+        </Text>
+        {dangerLevels.map((level, li) => {
+          const barH = (level.maxMA - level.minMA) / 100;
+          const isActive = I >= level.minMA && I < level.maxMA;
+          return (
+            <group key={`danger-${li}`} position={[0, li * 0.6, 0]}>
+              <mesh position={[0, 0.15, 0]}>
+                <boxGeometry args={[1.2, 0.35, 0.05]} />
+                <meshStandardMaterial
+                  color={level.color}
+                  transparent
+                  opacity={isActive ? 0.9 : 0.3}
+                  emissive={isActive ? level.color : '#000'}
+                  emissiveIntensity={isActive ? 1 : 0}
+                />
+              </mesh>
+              <Text fontSize={0.08} color="#fff" position={[0, 0.15, 0.04]}>
+                {`${level.label}: ${level.minMA}–${level.maxMA} мА`}
+              </Text>
+              {isActive && (
+                <Text fontSize={0.07} color="#ffeb3b" position={[0, -0.05, 0.04]}>
+                  {'◄ текущий уровень'}
+                </Text>
+              )}
+            </group>
+          );
+        })}
+      </group>
+
       {/* Info panel */}
-      <Text fontSize={0.16} color={dangerColor} position={[1, 2.0, 0]}>
+      <Text fontSize={0.16} color={dangerColor} position={[1.5, 2.2, 0]}>
         {`I = ${I.toFixed(2)} мА — ${dangerLabel}`}
       </Text>
-      <Text fontSize={0.11} color="#90caf9" position={[1, 1.75, 0]}>
-        {`Z = ${Zt.toFixed(0)} Ом | Zк = ${Zk.toFixed(0)} Ом`}
+      <Text fontSize={0.11} color="#90caf9" position={[1.5, 1.95, 0]}>
+        {`Z = ${Zt.toFixed(0)} Ом | ${touchLabel}`}
       </Text>
-      <Text fontSize={0.1} color="#bbb" position={[1, 1.6, 0]}>
-        {`Rн = ${state.skinResistanceOhm} Ом | Rв = ${state.internalResistanceOhm} Ом | C = ${state.capacitanceNF} нФ`}
+      <Text fontSize={0.1} color="#bbb" position={[1.5, 1.8, 0]}>
+        {`Повреждение: ${damagedPhases[0]}↔${damagedPhases[1]} | U = ${state.voltageV} В`}
       </Text>
-
-      {/* Equivalent circuit diagram (simplified) */}
-      <group position={[-3, 2.2, 0]}>
-        <mesh><boxGeometry args={[0.8, 0.02, 0.02]} /><meshBasicMaterial color="#aaa" /></mesh>
-        <mesh position={[0.5, -0.15, 0]}><boxGeometry args={[0.02, 0.3, 0.02]} /><meshBasicMaterial color="#aaa" /></mesh>
-        <mesh position={[-0.5, -0.15, 0]}><boxGeometry args={[0.02, 0.3, 0.02]} /><meshBasicMaterial color="#aaa" /></mesh>
-        <Text fontSize={0.08} color="#ccc" position={[0, 0.1, 0]}>
-          Эквивалентная схема
-        </Text>
-      </group>
     </>
   );
 }
@@ -1290,9 +1636,23 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
   const ringRef = useRef<THREE.Group>(null);
   const timeR = useRef(0);
 
+  const surfaceType = state.surfaceType ?? 'earth';
   const phi = groundPotential(state.faultCurrentA, state.soilResistivityOhmM, state.distanceM);
   const Ush = stepVoltage(state.faultCurrentA, state.soilResistivityOhmM, state.distanceM, state.stepLengthM);
   const safeDist = safeDistance(state.faultCurrentA, state.soilResistivityOhmM, 40, state.stepLengthM);
+
+  /* Danger zone radius: 5–25 m based on voltage */
+  const dangerRadius = Math.min(25, Math.max(5, state.faultCurrentA * state.soilResistivityOhmM / 500));
+  const scaledDangerRadius = Math.min(10, dangerRadius);
+
+  /* Surface properties */
+  const surfaceColors: Record<string, string> = { earth: '#5d4037', sand: '#c8a96e', stone: '#78909c' };
+  const surfaceRoughness: Record<string, number> = { earth: 0.95, sand: 0.8, stone: 0.6 };
+
+  /* x1 and x2 positions for step voltage visualization */
+  const personX = Math.min(8, state.distanceM);
+  const x1 = state.distanceM;
+  const x2 = state.distanceM + state.stepLengthM;
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1309,12 +1669,60 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
 
   return (
     <>
+      {/* Ground surface - changes with surface type */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[22, 22]} />
-        <meshStandardMaterial color="#5d4037" roughness={0.95} />
+        <meshStandardMaterial color={surfaceColors[surfaceType]} roughness={surfaceRoughness[surfaceType]} />
       </mesh>
 
-      {/* Grounding electrode / fault point */}
+      {/* Surface type texture details */}
+      {surfaceType === 'sand' && (
+        <>
+          {Array.from({ length: 20 }).map((_, i) => (
+            <mesh key={`sand-${i}`} position={[(i % 5) * 4 - 8, 0.01, Math.floor(i / 5) * 4 - 8]} rotation={[-Math.PI / 2, 0, 0]}>
+              <circleGeometry args={[0.3 + Math.random() * 0.3, 8]} />
+              <meshStandardMaterial color="#b8956a" transparent opacity={0.3} />
+            </mesh>
+          ))}
+        </>
+      )}
+      {surfaceType === 'stone' && (
+        <>
+          {Array.from({ length: 12 }).map((_, i) => (
+            <mesh key={`stone-${i}`} position={[(i % 4) * 5 - 7.5, 0.05, Math.floor(i / 4) * 5 - 5]}>
+              <boxGeometry args={[0.8 + (i % 3) * 0.3, 0.1, 0.6 + (i % 2) * 0.3]} />
+              <meshStandardMaterial color="#90a4ae" roughness={0.5} />
+            </mesh>
+          ))}
+        </>
+      )}
+
+      {/* Three-phase power line with fallen wire */}
+      {/* Standing pole */}
+      <mesh position={[-3, 3, 0]} castShadow>
+        <cylinderGeometry args={[0.05, 0.05, 6, 8]} />
+        <meshStandardMaterial color="#555" />
+      </mesh>
+      {/* Cross-arm */}
+      <mesh position={[-3, 5.5, 0]}>
+        <boxGeometry args={[2, 0.08, 0.08]} />
+        <meshStandardMaterial color="#444" />
+      </mesh>
+      {/* 3 phase wires on pole */}
+      {[-0.7, 0, 0.7].map((zOff, wi) => (
+        <mesh key={`wire-${wi}`} position={[-3, 5.5, zOff]}>
+          <sphereGeometry args={[0.04, 6, 6]} />
+          <meshStandardMaterial color={['#f44336', '#2196f3', '#4caf50'][wi]} />
+        </mesh>
+      ))}
+
+      {/* Fallen wire from pole to ground (fault point) */}
+      <mesh position={[-1.5, 2.5, 0]} rotation={[0, 0, Math.PI / 5]}>
+        <boxGeometry args={[0.025, 4.5, 0.025]} />
+        <meshStandardMaterial color="#222" />
+      </mesh>
+
+      {/* Grounding electrode / fault point (where wire touches ground) */}
       <mesh position={[0, 0.5, 0]} castShadow>
         <cylinderGeometry args={[0.15, 0.15, 1, 12]} />
         <meshStandardMaterial color="#616161" metalness={0.5} />
@@ -1323,17 +1731,24 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
         <sphereGeometry args={[0.12, 12, 12]} />
         <meshStandardMaterial color="#ff5722" emissive="#ff3300" emissiveIntensity={1.5} />
       </mesh>
-      {/* Power line to fault */}
-      <mesh position={[-3, 3, 0]} castShadow>
-        <cylinderGeometry args={[0.05, 0.05, 6, 8]} />
-        <meshStandardMaterial color="#555" />
-      </mesh>
-      <mesh position={[-1.5, 2, 0]} rotation={[0, 0, Math.PI / 6]}>
-        <boxGeometry args={[0.03, 3.5, 0.03]} />
-        <meshStandardMaterial color="#222" />
-      </mesh>
       <Text fontSize={0.16} color="#ff7043" position={[0, 1.6, 0]}>
         {`Iз = ${state.faultCurrentA} А | ρ = ${state.soilResistivityOhmM} Ом·м`}
+      </Text>
+      <Text fontSize={0.1} color="#ffab91" position={[0, 1.35, 0]}>
+        {`Поверхность: ${surfaceType === 'earth' ? 'Земля' : surfaceType === 'sand' ? 'Песок' : 'Камень'}`}
+      </Text>
+
+      {/* Danger zone circle on ground */}
+      <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.3, scaledDangerRadius, 64]} />
+        <meshBasicMaterial color="#ff5722" transparent opacity={0.12} />
+      </mesh>
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[scaledDangerRadius - 0.1, scaledDangerRadius, 64]} />
+        <meshBasicMaterial color="#ff5722" transparent opacity={0.5} />
+      </mesh>
+      <Text fontSize={0.12} color="#ff8a65" position={[scaledDangerRadius + 0.5, 0.1, 0]}>
+        {`Зона: ${dangerRadius.toFixed(1)} м`}
       </Text>
 
       {/* Animated concentric rings (equipotential zones) */}
@@ -1347,42 +1762,72 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
       </group>
 
       {/* Person at observation distance */}
-      <group position={[Math.min(8, state.distanceM), 0, 0]}>
+      <group position={[personX, 0, 0]}>
+        {/* Body */}
         <mesh position={[0, 0.7, 0]} castShadow>
           <capsuleGeometry args={[0.18, 0.5, 8, 16]} />
           <meshStandardMaterial color={Ush > 40 ? '#f44336' : '#4caf50'} transparent opacity={0.7} />
         </mesh>
+        {/* Head */}
         <mesh position={[0, 1.35, 0]} castShadow>
           <sphereGeometry args={[0.18, 16, 16]} />
           <meshStandardMaterial color="#ffd6b6" />
         </mesh>
-        {/* Step length indicator */}
-        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[state.stepLengthM, 0.06]} />
+        {/* Arms */}
+        <mesh position={[-0.3, 0.9, 0]} rotation={[0, 0, Math.PI / 8]}>
+          <boxGeometry args={[0.07, 0.4, 0.07]} />
+          <meshStandardMaterial color="#ffd6b6" />
+        </mesh>
+        <mesh position={[0.3, 0.9, 0]} rotation={[0, 0, -Math.PI / 8]}>
+          <boxGeometry args={[0.07, 0.4, 0.07]} />
+          <meshStandardMaterial color="#ffd6b6" />
+        </mesh>
+        {/* Legs with visible feet positions */}
+        <mesh position={[-0.12, 0.0, 0]}>
+          <boxGeometry args={[0.1, 0.45, 0.1]} />
+          <meshStandardMaterial color="#37474f" />
+        </mesh>
+        <mesh position={[state.stepLengthM * 0.4, 0.0, 0]}>
+          <boxGeometry args={[0.1, 0.45, 0.1]} />
+          <meshStandardMaterial color="#37474f" />
+        </mesh>
+
+        {/* x1 distance line (front foot to fault point) */}
+        <mesh position={[-personX / 2 - 0.06, 0.04, -0.5]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[personX - 0.12, 0.03]} />
           <meshBasicMaterial color="#42a5f5" />
         </mesh>
-        <Text fontSize={0.1} color="#64b5f6" position={[0, 0.2, 0.3]}>
+        <Text fontSize={0.1} color="#42a5f5" position={[-personX / 2, 0.2, -0.5]}>
+          {`x₁ = ${x1.toFixed(1)} м`}
+        </Text>
+
+        {/* x2 distance line (back foot to fault point) */}
+        <mesh position={[-personX / 2 + state.stepLengthM * 0.2, 0.04, 0.5]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[personX + state.stepLengthM * 0.4, 0.03]} />
+          <meshBasicMaterial color="#ef5350" />
+        </mesh>
+        <Text fontSize={0.1} color="#ef5350" position={[-personX / 2 + state.stepLengthM * 0.2, 0.2, 0.5]}>
+          {`x₂ = ${x2.toFixed(1)} м`}
+        </Text>
+
+        {/* Step length indicator between feet */}
+        <mesh position={[state.stepLengthM * 0.2 - 0.06, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[state.stepLengthM * 0.4 + 0.12, 0.06]} />
+          <meshBasicMaterial color="#ffd43b" />
+        </mesh>
+        <Text fontSize={0.09} color="#ffd43b" position={[state.stepLengthM * 0.2, 0.15, 0.3]}>
           {`a = ${state.stepLengthM} м`}
         </Text>
       </group>
 
-      {/* Distance line */}
-      <mesh position={[Math.min(4, state.distanceM / 2), 0.03, 1.5]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[Math.min(8, state.distanceM), 0.03]} />
-        <meshBasicMaterial color="#ffd43b" />
-      </mesh>
-      <Text fontSize={0.13} color="#ffd43b" position={[Math.min(4, state.distanceM / 2), 0.2, 1.5]}>
-        {`x = ${state.distanceM} м`}
-      </Text>
-
       {/* Results */}
-      <Text fontSize={0.18} color={Ush > 40 ? '#ff5252' : '#66bb6a'} position={[Math.min(8, state.distanceM), 2.0, 0]}>
+      <Text fontSize={0.18} color={Ush > 40 ? '#ff5252' : '#66bb6a'} position={[personX, 2.0, 0]}>
         {`Uш = ${Ush.toFixed(1)} В`}
       </Text>
-      <Text fontSize={0.12} color="#fff176" position={[Math.min(8, state.distanceM), 1.75, 0]}>
+      <Text fontSize={0.12} color="#fff176" position={[personX, 1.75, 0]}>
         {`φ = ${phi.toFixed(1)} В`}
       </Text>
-      <Text fontSize={0.1} color="#aaa" position={[Math.min(8, state.distanceM), 1.55, 0]}>
+      <Text fontSize={0.1} color="#aaa" position={[personX, 1.55, 0]}>
         {Ush > 40 ? '⚠ Опасное напряжение шага!' : '✓ Безопасно'}
       </Text>
 

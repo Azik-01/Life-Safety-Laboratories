@@ -537,8 +537,8 @@ export default function LabSection({ lesson }: LabSectionProps) {
     const D = v.D ?? 0.01;
     const eps = v.epsilon ?? 7;
 
-    /* Step 1: β_m coefficient (if R/r > 10 then β_m = 1) */
-    const betaM = R / r > 10 ? 1 : 1;
+    /* Step 1: β_m coefficient — for lab conditions R/r is always > 10, so β_m = 1 (per methodology) */
+    const betaM = 1;
 
     /* Step 2: Formula 6.1 — H = β_m · W · I / R */
     const H = magneticFieldStrengthH(W, I, R, r);
@@ -585,7 +585,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
     const distances = [v.d1 ?? 1000, v.d2 ?? 2000, v.d3 ?? 3000, v.d4 ?? 4000, v.d5 ?? 5000];
     const band = classifyWaveBand(lambda);
     const results = distances.map((d) => {
-      const x = xParameter(lambda, d, theta, sigma);
+      const x = xParameter(d, lambda, theta, sigma);
       const F = attenuationFactorF(x);
       const E = fieldStrengthShuleikin(P, Ga, d, F);
       return { d, x, F, E };

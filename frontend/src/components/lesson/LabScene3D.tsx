@@ -1549,7 +1549,20 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
             <meshBasicMaterial color="#ff0000" transparent opacity={0.35} />
           </mesh>
         )}
-        {/* Path through legs (multipolar) */}
+        {/* Ground return path through legs (unipolar: arm→body→legs→ground) */}
+        {touchType === 'unipolar' && I > 0.5 && (
+          <>
+            <mesh position={[-0.12, 0.0, 0]}>
+              <boxGeometry args={[0.14, 0.55, 0.14]} />
+              <meshBasicMaterial color="#ff0000" transparent opacity={0.25} />
+            </mesh>
+            <mesh position={[0.12, 0.0, 0]}>
+              <boxGeometry args={[0.14, 0.55, 0.14]} />
+              <meshBasicMaterial color="#ff0000" transparent opacity={0.25} />
+            </mesh>
+          </>
+        )}
+        {/* Path through legs (multipolar: all limbs) */}
         {showCurrentPathLegs && I > 0.5 && (
           <>
             <mesh position={[-0.12, 0.0, 0]}>

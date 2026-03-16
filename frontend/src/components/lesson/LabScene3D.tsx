@@ -1178,14 +1178,37 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
 function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState']; timeScale: number }) {
   const pulseRef = useRef<THREE.Group>(null);
   const timeR = useRef(0);
+  const [imgBoosted, setImgBoosted] = useState<Set<number>>(new Set());
+  const [sndBoosted, setSndBoosted] = useState<Set<number>>(new Set());
 
-  const results = state.distances.map((gd) => {
+  /* ── Explicit calculation cycle per requirements ── */
+  const results = state.distances.map((gd, i) => {
+    /* Step 1: Formula 8.6 — R from phase center, 5 times */
     const R = distanceFromPhaseCenter(state.heightM, gd);
+
+    /* Step 2: Formula 8.5 — elevation angle + pattern factor, 5 times */
     const delta = elevationAngleRad(state.heightM, gd);
     const Fd = normalizedPatternFactor(delta);
-    const Estr = fieldStrengthUHF(state.powerW, state.gain, R, Fd);
-    return { gd, R, delta, Fd, E: Estr };
+
+    /* Step 3: Formula 8.4 — field strength, 10 times (5 video + 5 audio) */
+    const Eimg = fieldStrengthUHF(state.powerW * 0.8, state.gain, R, Fd);
+    const Esnd = fieldStrengthUHF(state.powerW * 0.2, state.gain, R, Fd);
+
+    /* Apply booster multipliers */
+    const imgBoost = imgBoosted.has(i);
+    const sndBoost = sndBoosted.has(i);
+    const EimgFinal = imgBoost ? Eimg * 2 : Eimg;
+    const EsndFinal = sndBoost ? Esnd * 2 : Esnd;
+    const Etotal = Math.sqrt(EimgFinal ** 2 + EsndFinal ** 2);
+
+    return { gd, R, delta, Fd, Eimg, Esnd, EimgFinal, EsndFinal, Etotal, imgBoost, sndBoost };
   });
+
+  /* Weak signal thresholds */
+  const maxImg = Math.max(...results.map((r) => r.Eimg), 1e-9);
+  const maxSnd = Math.max(...results.map((r) => r.Esnd), 1e-9);
+  const imgWeakThreshold = maxImg / 3;
+  const sndWeakThreshold = maxSnd / 3;
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1207,7 +1230,7 @@ function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState'];
         <meshStandardMaterial color="#3e2723" roughness={0.9} />
       </mesh>
 
-      {/* UHF Tower */}
+      {/* TV Tower */}
       <mesh position={[0, state.heightM / 2, 0]} castShadow>
         <boxGeometry args={[0.3, state.heightM, 0.3]} />
         <meshStandardMaterial color="#78909c" metalness={0.5} />
@@ -1220,7 +1243,7 @@ function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState'];
         </mesh>
       ))}
       <Text fontSize={0.16} color="#ff7043" position={[0, state.heightM + 0.6, 0]}>
-        {`P = ${state.powerW} Вт | G = ${state.gain}`}
+        {`Телевышка: P = ${state.powerW} Вт | G = ${state.gain}`}
       </Text>
       <Text fontSize={0.12} color="#ffab91" position={[0, state.heightM + 0.3, 0]}>
         {`h = ${state.heightM} м | f = ${state.frequencyMHz} МГц`}
@@ -1236,11 +1259,14 @@ function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState'];
         ))}
       </group>
 
-      {/* Measuring points on ground */}
+      {/* Measuring points: TV receivers with separate audio/video indicators */}
       {results.map((r, i) => {
         const x = Math.min(9, r.gd / (Math.max(...state.distances) / 9));
+        const imgWeak = r.Eimg < imgWeakThreshold && !r.imgBoost;
+        const sndWeak = r.Esnd < sndWeakThreshold && !r.sndBoost;
         return (
           <group key={`uhf-pt-${i}`} position={[x, 0, 0]}>
+            {/* TV receiver (person with TV set) */}
             <mesh position={[0, 0.7, 0]} castShadow>
               <capsuleGeometry args={[0.12, 0.4, 8, 12]} />
               <meshStandardMaterial color="#42a5f5" />
@@ -1249,15 +1275,96 @@ function UhfFieldScene({ state, timeScale }: { state: LabSceneProps['uhfState'];
               <sphereGeometry args={[0.12, 12, 12]} />
               <meshStandardMaterial color="#ffd6b6" />
             </mesh>
+
+            {/* TV screen indicator */}
+            <mesh position={[0.4, 0.6, 0]}>
+              <boxGeometry args={[0.4, 0.3, 0.05]} />
+              <meshStandardMaterial
+                color={imgWeak ? '#f44336' : '#4caf50'}
+                emissive={imgWeak ? '#ff0000' : '#00c853'}
+                emissiveIntensity={0.5}
+              />
+            </mesh>
+            {/* Video interference cross marker when weak */}
+            {imgWeak && (
+              <Text fontSize={0.15} color="#ff1744" position={[0.4, 0.6, 0.05]}>
+                {'✕'}
+              </Text>
+            )}
+
+            {/* Audio speaker indicator */}
+            <mesh position={[0.4, 0.2, 0]}>
+              <boxGeometry args={[0.15, 0.15, 0.1]} />
+              <meshStandardMaterial
+                color={sndWeak ? '#ff9800' : '#2196f3'}
+                emissive={sndWeak ? '#ff6d00' : '#0091ea'}
+                emissiveIntensity={0.4}
+              />
+            </mesh>
+            {/* Audio interference triangle when weak */}
+            {sndWeak && (
+              <Text fontSize={0.12} color="#ff9100" position={[0.4, 0.2, 0.08]}>
+                {'▲'}
+              </Text>
+            )}
+
+            {/* Labels */}
             <Text fontSize={0.11} color="#fff" position={[0, 1.7, 0]}>
               {`r = ${r.gd} м`}
             </Text>
             <Text fontSize={0.1} color="#ffd54f" position={[0, 1.5, 0]}>
-              {`E = ${r.E.toFixed(2)} В/м`}
+              {`E_из = ${r.EimgFinal.toFixed(2)} | E_зв = ${r.EsndFinal.toFixed(2)} В/м`}
             </Text>
             <Text fontSize={0.08} color="#aaa" position={[0, 1.35, 0]}>
               {`Δ = ${(r.delta * 180 / Math.PI).toFixed(1)}° | F(Δ) = ${r.Fd.toFixed(3)}`}
             </Text>
+
+            {/* Video booster button */}
+            {(imgWeak || r.imgBoost) && (
+              <group>
+                <mesh position={[0.8, 0.6, 0]} onClick={() => {
+                  setImgBoosted((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(i)) next.delete(i); else next.add(i);
+                    return next;
+                  });
+                }}>
+                  <cylinderGeometry args={[0.08, 0.08, 0.2, 6]} />
+                  <meshStandardMaterial
+                    color={r.imgBoost ? '#00e676' : '#ef5350'}
+                    emissive={r.imgBoost ? '#00e676' : '#ef5350'}
+                    emissiveIntensity={r.imgBoost ? 2 : 0.8}
+                  />
+                </mesh>
+                <Text fontSize={0.06} color={r.imgBoost ? '#00e676' : '#ff5252'} position={[0.8, 0.85, 0]}>
+                  {r.imgBoost ? '✓ видео' : '⬆ видео'}
+                </Text>
+              </group>
+            )}
+
+            {/* Audio booster button */}
+            {(sndWeak || r.sndBoost) && (
+              <group>
+                <mesh position={[0.8, 0.2, 0]} onClick={() => {
+                  setSndBoosted((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(i)) next.delete(i); else next.add(i);
+                    return next;
+                  });
+                }}>
+                  <cylinderGeometry args={[0.08, 0.08, 0.2, 6]} />
+                  <meshStandardMaterial
+                    color={r.sndBoost ? '#00b0ff' : '#ffa726'}
+                    emissive={r.sndBoost ? '#00b0ff' : '#ffa726'}
+                    emissiveIntensity={r.sndBoost ? 2 : 0.8}
+                  />
+                </mesh>
+                <Text fontSize={0.06} color={r.sndBoost ? '#00b0ff' : '#ffa726'} position={[0.8, 0.45, 0]}>
+                  {r.sndBoost ? '✓ звук' : '⬆ звук'}
+                </Text>
+              </group>
+            )}
+
             {/* Line from tower top to point */}
             <mesh position={[-x / 2, state.heightM / 2, 0]} rotation={[0, 0, Math.atan2(state.heightM, x)]}>
               <boxGeometry args={[0.015, Math.sqrt(x * x + state.heightM * state.heightM), 0.015]} />

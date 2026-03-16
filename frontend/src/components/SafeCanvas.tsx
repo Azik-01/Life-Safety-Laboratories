@@ -1,14 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Canvas, type CanvasProps } from '@react-three/fiber';
 import type { RootState } from '@react-three/fiber';
 import { Box, Button, Paper, Stack, Typography } from '@mui/material';
 
-export default function SafeCanvas({ children, onCreated, gl, ...rest }: CanvasProps) {
+export default function SafeCanvas({ children, onCreated, gl, frameloop, ...rest }: CanvasProps) {
   const [isLost, setIsLost] = useState(false);
   const [canvasKey, setCanvasKey] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const onLostRef = useRef<((event: Event) => void) | null>(null);
   const onRestoredRef = useRef<(() => void) | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isVisible, setIsVisible] = useState(true);
+
+  /* ── Pause the render-loop while the canvas is off-screen ──
+     This saves significant GPU time when several scenes coexist
+     on the same page (e.g. multiple MiniSimulators on a Theory tab). */
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsVisible(entry.isIntersecting),
+      { threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -19,7 +36,7 @@ export default function SafeCanvas({ children, onCreated, gl, ...rest }: CanvasP
     };
   }, []);
 
-  const handleCreated = (state: RootState) => {
+  const handleCreated = useCallback((state: RootState) => {
     const canvas = state.gl.domElement;
     canvasRef.current = canvas;
 
@@ -39,21 +56,26 @@ export default function SafeCanvas({ children, onCreated, gl, ...rest }: CanvasP
     if (onCreated) {
       onCreated(state);
     }
-  };
+  }, [onCreated]);
 
-  const mergedGl = {
-    powerPreference: 'high-performance',
+  const mergedGl = useMemo(() => ({
+    powerPreference: 'high-performance' as const,
     antialias: false,
     ...(typeof gl === 'object' ? gl : {}),
-  } as CanvasProps['gl'];
+  }), [gl]);
+
+  /* When off-screen, stop the render loop entirely. */
+  const activeFrameloop = isVisible ? (frameloop ?? 'always') : 'never';
 
   return (
-    <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
+    <Box ref={containerRef} sx={{ width: '100%', height: '100%', position: 'relative' }}>
       <Canvas
         key={canvasKey}
         onCreated={handleCreated}
         dpr={[1, 1.25]}
         gl={mergedGl}
+        frameloop={activeFrameloop}
+        performance={{ min: 0.5 }}
         {...rest}
       >
         {children}

@@ -710,6 +710,95 @@ export default function LabSection({ lesson }: LabSectionProps) {
     }
   }
 
+  /* ── Memoize state objects passed to LabScene3D so the 3D scene
+       only re-renders when relevant values actually change,
+       not on every parent render. ── */
+  const lightStateMemo = useMemo(() => ({
+    lampType,
+    intensityCd,
+    heightM,
+    sensorOffsetM,
+    reflectance,
+    luminaireCount,
+    roomLengthM: lesson.id === 2 ? (lesson2Calcs?.L ?? lesson2Full.lengthM ?? 14) : undefined,
+    roomWidthM: lesson.id === 2 ? (lesson2Calcs?.B ?? lesson2Full.widthM ?? 10) : undefined,
+    chosenLampPowerW: lesson.id === 2 ? lesson2LampPower : undefined,
+    lineOffsetM: lesson.id === 2 ? (lesson2Calcs?.lLine ?? undefined) : undefined,
+    lineRows: lesson.id === 2 ? 2 : undefined,
+  }), [lampType, intensityCd, heightM, sensorOffsetM, reflectance, luminaireCount,
+    lesson.id, lesson2Calcs, lesson2Full.lengthM, lesson2Full.widthM, lesson2LampPower]);
+
+  const noiseStateMemo = useMemo(() => ({
+    sourceA, sourceB, sourceC,
+    sourceAX, sourceBX, sourceCX,
+    observerX,
+    barrierMassA, barrierMassB, barrierMassC,
+    sourceAOn, sourceBOn, sourceCOn,
+  }), [sourceA, sourceB, sourceC, sourceAX, sourceBX, sourceCX,
+    observerX, barrierMassA, barrierMassB, barrierMassC,
+    sourceAOn, sourceBOn, sourceCOn]);
+
+  const emiStateMemo = useMemo(() => ({
+    frequencyHz, distanceM, eVpm, hApm,
+  }), [frequencyHz, distanceM, eVpm, hApm]);
+
+  const shieldStateMemo = useMemo(() => ({
+    frequencyHz: lesson6Full.f ?? 3e8,
+    turns: lesson6Full.W ?? 12,
+    currentA: (lesson6Full.I ?? 350) / 1000,
+    distanceM: lesson6Full.R ?? 3,
+    coilRadiusM: 0.1,
+    conductivitySpm: lesson6Full.gamma ?? 1e7,
+    muRelative: lesson6Full.mu ?? 200,
+    exposureTimeH: lesson6Full.T ?? 4,
+    waveguideDiameterM: lesson6Full.D ?? 0.01,
+    waveguideEpsilon: lesson6Full.epsilon ?? 7,
+  }), [lesson6Full]);
+
+  const hfStateMemo = useMemo(() => ({
+    powerKW: lesson7Full.P ?? 1,
+    gainAntenna: lesson7Full.G ?? 1,
+    wavelengthM: lesson7Full.lambda ?? 2000,
+    theta: lesson7Full.theta ?? 3e-3,
+    sigma: lesson7Full.sigma ?? 1e-3,
+    distances: [
+      lesson7Full.d1 ?? 50,
+      lesson7Full.d2 ?? 100,
+      lesson7Full.d3 ?? 200,
+      lesson7Full.d4 ?? 500,
+      lesson7Full.d5 ?? 1000,
+    ],
+  }), [lesson7Full]);
+
+  const uhfStateMemo = useMemo(() => ({
+    powerW: lesson8Full.P ?? 100,
+    gain: lesson8Full.G ?? 4,
+    heightM: lesson8Full.h ?? 25,
+    frequencyMHz: lesson8Full.f ?? 900,
+    distances: [
+      lesson8Full.r1 ?? 50,
+      lesson8Full.r2 ?? 100,
+      lesson8Full.r3 ?? 200,
+      lesson8Full.r4 ?? 500,
+      lesson8Full.r5 ?? 1000,
+    ],
+  }), [lesson8Full]);
+
+  const bodyElecStateMemo = useMemo(() => ({
+    voltageV: l9Voltage,
+    frequencyHz: l9Freq,
+    skinResistanceOhm: l9Rn,
+    capacitanceNF: l9C,
+    internalResistanceOhm: l9Rv,
+  }), [l9Voltage, l9Freq, l9Rn, l9C, l9Rv]);
+
+  const groundStateMemo = useMemo(() => ({
+    faultCurrentA: l10Iz,
+    soilResistivityOhmM: l10Rho,
+    distanceM: l10X,
+    stepLengthM: l10A,
+  }), [l10Iz, l10Rho, l10X, l10A]);
+
   return (
     <Stack spacing={2}>
       <Paper id="lab-variant" variant="outlined" sx={{ p: 2 }}>
@@ -949,87 +1038,14 @@ export default function LabSection({ lesson }: LabSectionProps) {
       >
         <LabScene3D
           lessonId={lesson.id}
-          lightState={{
-            lampType,
-            intensityCd,
-            heightM,
-            sensorOffsetM,
-            reflectance,
-            luminaireCount,
-            roomLengthM: lesson.id === 2 ? (lesson2Calcs?.L ?? lesson2Full.lengthM ?? 14) : undefined,
-            roomWidthM: lesson.id === 2 ? (lesson2Calcs?.B ?? lesson2Full.widthM ?? 10) : undefined,
-            chosenLampPowerW: lesson.id === 2 ? lesson2LampPower : undefined,
-            lineOffsetM: lesson.id === 2 ? (lesson2Calcs?.lLine ?? undefined) : undefined,
-            lineRows: lesson.id === 2 ? 2 : undefined,
-          }}
-          noiseState={{
-            sourceA,
-            sourceB,
-            sourceC,
-            sourceAX,
-            sourceBX,
-            sourceCX,
-            observerX,
-            barrierMassA,
-            barrierMassB,
-            barrierMassC,
-            sourceAOn,
-            sourceBOn,
-            sourceCOn,
-          }}
-          emiState={{ frequencyHz, distanceM, eVpm, hApm }}
-          shieldState={{
-            frequencyHz: lesson6Full.f ?? 3e8,
-            turns: lesson6Full.W ?? 12,
-            currentA: (lesson6Full.I ?? 350) / 1000,
-            distanceM: lesson6Full.R ?? 3,
-            coilRadiusM: 0.1,
-            conductivitySpm: lesson6Full.gamma ?? 1e7,
-            muRelative: lesson6Full.mu ?? 200,
-            exposureTimeH: lesson6Full.T ?? 4,
-            waveguideDiameterM: lesson6Full.D ?? 0.01,
-            waveguideEpsilon: lesson6Full.epsilon ?? 7,
-          }}
-          hfState={{
-            powerKW: lesson7Full.P ?? 1,
-            gainAntenna: lesson7Full.G ?? 1,
-            wavelengthM: lesson7Full.lambda ?? 2000,
-            theta: lesson7Full.theta ?? 3e-3,
-            sigma: lesson7Full.sigma ?? 1e-3,
-            distances: [
-              lesson7Full.d1 ?? 50,
-              lesson7Full.d2 ?? 100,
-              lesson7Full.d3 ?? 200,
-              lesson7Full.d4 ?? 500,
-              lesson7Full.d5 ?? 1000,
-            ],
-          }}
-          uhfState={{
-            powerW: lesson8Full.P ?? 100,
-            gain: lesson8Full.G ?? 4,
-            heightM: lesson8Full.h ?? 25,
-            frequencyMHz: lesson8Full.f ?? 900,
-            distances: [
-              lesson8Full.r1 ?? 50,
-              lesson8Full.r2 ?? 100,
-              lesson8Full.r3 ?? 200,
-              lesson8Full.r4 ?? 500,
-              lesson8Full.r5 ?? 1000,
-            ],
-          }}
-          bodyElecState={{
-            voltageV: l9Voltage,
-            frequencyHz: l9Freq,
-            skinResistanceOhm: l9Rn,
-            capacitanceNF: l9C,
-            internalResistanceOhm: l9Rv,
-          }}
-          groundState={{
-            faultCurrentA: l10Iz,
-            soilResistivityOhmM: l10Rho,
-            distanceM: l10X,
-            stepLengthM: l10A,
-          }}
+          lightState={lightStateMemo}
+          noiseState={noiseStateMemo}
+          emiState={emiStateMemo}
+          shieldState={shieldStateMemo}
+          hfState={hfStateMemo}
+          uhfState={uhfStateMemo}
+          bodyElecState={bodyElecStateMemo}
+          groundState={groundStateMemo}
         />
       </Suspense>
 

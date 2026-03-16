@@ -109,6 +109,8 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const [l9Rn, setL9Rn] = useState(5000);
   const [l9C, setL9C] = useState(20);
   const [l9Rv, setL9Rv] = useState(500);
+  const [l9TouchType, setL9TouchType] = useState<'unipolar' | 'bipolar' | 'multipolar'>('unipolar');
+  const [l9DamagedPhases, setL9DamagedPhases] = useState<[string, string]>(['A', 'B']);
   /* ── Lesson 10 (step voltage) state ── */
   const [l10Iz, setL10Iz] = useState(10);
   const [l10Rho, setL10Rho] = useState(100);
@@ -813,7 +815,9 @@ export default function LabSection({ lesson }: LabSectionProps) {
     skinResistanceOhm: l9Rn,
     capacitanceNF: l9C,
     internalResistanceOhm: l9Rv,
-  }), [l9Voltage, l9Freq, l9Rn, l9C, l9Rv]);
+    touchType: l9TouchType,
+    damagedPhases: l9DamagedPhases,
+  }), [l9Voltage, l9Freq, l9Rn, l9C, l9Rv, l9TouchType, l9DamagedPhases]);
 
   const groundStateMemo = useMemo(() => ({
     faultCurrentA: l10Iz,
@@ -1480,6 +1484,21 @@ export default function LabSection({ lesson }: LabSectionProps) {
             <Slider value={l9C} min={1} max={100} step={1} onChange={(_, v) => setL9C(v as number)} />
             <Typography variant="caption">Rв (Ом): {l9Rv}</Typography>
             <Slider value={l9Rv} min={100} max={1500} step={50} onChange={(_, v) => setL9Rv(v as number)} />
+            <Typography variant="caption" fontWeight={600}>Тип прикосновения</Typography>
+            <Select size="small" value={l9TouchType} onChange={(e) => setL9TouchType(e.target.value as 'unipolar' | 'bipolar' | 'multipolar')}>
+              <MenuItem value="unipolar">Однополюсное (одна рука)</MenuItem>
+              <MenuItem value="bipolar">Двухполюсное (две руки)</MenuItem>
+              <MenuItem value="multipolar">Многополюсное</MenuItem>
+            </Select>
+            <Typography variant="caption" fontWeight={600}>Повреждённые фазы</Typography>
+            <Select size="small" value={`${l9DamagedPhases[0]}-${l9DamagedPhases[1]}`} onChange={(e) => {
+              const [a, b] = (e.target.value as string).split('-');
+              setL9DamagedPhases([a, b]);
+            }}>
+              <MenuItem value="A-B">Фаза А ↔ Фаза Б</MenuItem>
+              <MenuItem value="A-C">Фаза А ↔ Фаза С</MenuItem>
+              <MenuItem value="B-C">Фаза Б ↔ Фаза С</MenuItem>
+            </Select>
             {lesson9Calcs && (
               <Alert severity={lesson9Calcs.ImA < 10 ? 'success' : 'error'}>
                 Zн = {lesson9Calcs.Zn.toFixed(0)} Ом; Z = {lesson9Calcs.Z.toFixed(0)} Ом; I = {lesson9Calcs.ImA.toFixed(2)} мА — {lesson9Calcs.danger}

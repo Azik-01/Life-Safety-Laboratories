@@ -122,6 +122,8 @@ interface LabSceneProps {
     skinResistanceOhm: number;
     capacitanceNF: number;
     internalResistanceOhm: number;
+    touchType?: 'unipolar' | 'bipolar' | 'multipolar';
+    damagedPhases?: [string, string];
   };
   groundState: {
     faultCurrentA: number;
@@ -1386,13 +1388,20 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
   const sparkRef = useRef<THREE.Mesh>(null);
   const timeR = useRef(0);
 
+  const touchType = state.touchType ?? 'unipolar';
+  const damagedPhases = state.damagedPhases ?? ['A', 'B'];
+
+  /* Compute impedance and current based on touch type */
   const Zk = skinImpedance(state.skinResistanceOhm, state.frequencyHz, state.capacitanceNF * 1e-9);
-  const Zt = totalBodyImpedance(Zk, state.internalResistanceOhm);
+  const Zt = touchType === 'bipolar' ? totalBodyImpedance(Zk, state.internalResistanceOhm) * 0.5
+    : touchType === 'multipolar' ? totalBodyImpedance(Zk, state.internalResistanceOhm) * 0.3
+    : totalBodyImpedance(Zk, state.internalResistanceOhm);
   const I = bodyCurrentMA(state.voltageV, Zt);
   const danger = classifyCurrentDanger(I, state.frequencyHz <= 60);
 
   const dangerColor = danger === 'safe' ? '#4caf50' : danger === 'perceptible' ? '#ff9800' : danger === 'non-releasing' ? '#f44336' : '#d50000';
-  const dangerLabel = danger === 'safe' ? 'Безопасный' : danger === 'perceptible' ? 'Ощутимый' : danger === 'non-releasing' ? 'Неотпускающий' : 'Фибрилляция!';
+  const dangerLabel = danger === 'safe' ? 'Безопасный' : danger === 'perceptible' ? 'Ощутимый (покалывание)' : danger === 'non-releasing' ? 'Неотпускающий (сокращение мышц)' : 'Фибрилляция (остановка сердца)!';
+  const touchLabel = touchType === 'unipolar' ? 'Однополюсное (одна рука)' : touchType === 'bipolar' ? 'Двухполюсное (две руки)' : 'Многополюсное';
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1402,75 +1411,207 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
     mat.emissiveIntensity = I > 1 ? flash * Math.min(3, I / 10) : 0.1;
   });
 
+  /* Phase wire positions */
+  const phasePositions: Record<string, [number, number, number]> = {
+    A: [-4, 2.8, -1],
+    B: [-4, 2.8, 0],
+    C: [-4, 2.8, 1],
+    O: [-4, 2.2, 0],
+  };
+
+  const phaseColors: Record<string, string> = { A: '#f44336', B: '#2196f3', C: '#4caf50', O: '#9e9e9e' };
+
+  /* Current path based on touch type */
+  const showCurrentPathArm1 = true;
+  const showCurrentPathArm2 = touchType === 'bipolar' || touchType === 'multipolar';
+  const showCurrentPathLegs = touchType === 'multipolar';
+
+  /* Danger level comparison thresholds (per fig 9.4) */
+  const dangerLevels = [
+    { label: 'Ощутимый', minMA: 0.5, maxMA: 10, color: '#ff9800' },
+    { label: 'Неотпускающий', minMA: 10, maxMA: 100, color: '#f44336' },
+    { label: 'Фибрилляция', minMA: 100, maxMA: 500, color: '#d50000' },
+  ];
+
   return (
     <>
-      <LabRoom width={10} depth={8} height={3} />
+      <LabRoom width={12} depth={10} height={3.5} />
       <LabDesk position={[-2, 0, 0]} />
 
-      {/* Power source */}
-      <mesh position={[-3, 0.9, 0]} castShadow>
-        <boxGeometry args={[0.5, 0.3, 0.4]} />
-        <meshStandardMaterial color="#333" metalness={0.4} />
+      {/* Three-phase network wires (A, B, C) + Neutral (O) */}
+      {(['A', 'B', 'C', 'O'] as const).map((phase) => {
+        const pos = phasePositions[phase];
+        const isDamaged = damagedPhases.includes(phase);
+        return (
+          <group key={`phase-${phase}`}>
+            {/* Wire */}
+            <mesh position={[pos[0] + 2, pos[1], pos[2]]}>
+              <boxGeometry args={[6, 0.03, 0.03]} />
+              <meshStandardMaterial
+                color={phaseColors[phase]}
+                emissive={isDamaged ? '#ff0000' : '#000'}
+                emissiveIntensity={isDamaged ? 0.8 : 0}
+              />
+            </mesh>
+            <Text fontSize={0.12} color={phaseColors[phase]} position={[pos[0] - 0.3, pos[1] + 0.15, pos[2]]}>
+              {phase === 'O' ? 'N (нейтраль)' : `Фаза ${phase}`}
+            </Text>
+            {/* Resistance symbol between wires */}
+            {phase !== 'O' && (
+              <mesh position={[pos[0] + 0.5, pos[1] - 0.15, pos[2]]}>
+                <boxGeometry args={[0.2, 0.08, 0.08]} />
+                <meshStandardMaterial color="#795548" />
+              </mesh>
+            )}
+            {/* Damaged insulation indicator */}
+            {isDamaged && (
+              <mesh position={[0, pos[1], pos[2]]}>
+                <sphereGeometry args={[0.08, 8, 8]} />
+                <meshStandardMaterial color="#ff1744" emissive="#ff0000" emissiveIntensity={2} />
+              </mesh>
+            )}
+          </group>
+        );
+      })}
+
+      {/* Equipment box (ЭО) */}
+      <mesh position={[0, 1.2, 0]} castShadow>
+        <boxGeometry args={[0.8, 1.0, 0.6]} />
+        <meshStandardMaterial color="#455a64" metalness={0.4} />
       </mesh>
-      <Text fontSize={0.12} color="#ff5252" position={[-3, 1.4, 0]}>
-        {`U = ${state.voltageV} В | f = ${state.frequencyHz} Гц`}
+      <Text fontSize={0.1} color="#ccc" position={[0, 1.8, 0.35]}>
+        {'ЭО'}
       </Text>
 
-      {/* Wire to contact point */}
-      <mesh position={[-1.5, 0.95, 0]}>
-        <boxGeometry args={[2.5, 0.02, 0.02]} />
-        <meshStandardMaterial color="#f44336" emissive="#ff0000" emissiveIntensity={0.3} />
-      </mesh>
-
-      {/* Spark at contact */}
-      <mesh ref={sparkRef} position={[0, 1.2, 0]}>
-        <sphereGeometry args={[0.08, 12, 12]} />
+      {/* Spark at contact point */}
+      <mesh ref={sparkRef} position={[0.4, 1.5, 0]}>
+        <sphereGeometry args={[0.06, 12, 12]} />
         <meshStandardMaterial color="#ffeb3b" emissive="#ffeb3b" emissiveIntensity={1} />
       </mesh>
 
       {/* Human figure */}
-      <group position={[1, 0, 0]}>
+      <group position={[1.5, 0, 0]}>
+        {/* Body (colored by danger level) */}
         <mesh position={[0, 0.6, 0]} castShadow>
           <capsuleGeometry args={[0.22, 0.6, 8, 16]} />
           <meshStandardMaterial color={dangerColor} transparent opacity={0.7} />
         </mesh>
+        {/* Head */}
         <mesh position={[0, 1.3, 0]} castShadow>
           <sphereGeometry args={[0.2, 16, 16]} />
           <meshStandardMaterial color="#ffd6b6" />
         </mesh>
-        {/* Arm reaching to wire */}
+
+        {/* Right arm (always touching) */}
         <mesh position={[-0.5, 1.0, 0]} rotation={[0, 0, Math.PI / 4]}>
           <boxGeometry args={[0.08, 0.6, 0.08]} />
           <meshStandardMaterial color="#ffd6b6" />
         </mesh>
+
+        {/* Left arm (touching for bipolar/multipolar) */}
+        {showCurrentPathArm2 && (
+          <mesh position={[0.5, 1.0, 0]} rotation={[0, 0, -Math.PI / 4]}>
+            <boxGeometry args={[0.08, 0.6, 0.08]} />
+            <meshStandardMaterial color="#ffd6b6" />
+          </mesh>
+        )}
+
+        {/* Legs */}
+        <mesh position={[-0.12, 0.0, 0]}>
+          <boxGeometry args={[0.1, 0.5, 0.1]} />
+          <meshStandardMaterial color="#37474f" />
+        </mesh>
+        <mesh position={[0.12, 0.0, 0]}>
+          <boxGeometry args={[0.1, 0.5, 0.1]} />
+          <meshStandardMaterial color="#37474f" />
+        </mesh>
+
+        {/* ── RED CURRENT PATH highlight ── */}
+        {/* Path through right arm */}
+        {showCurrentPathArm1 && I > 0.5 && (
+          <mesh position={[-0.5, 1.0, 0]} rotation={[0, 0, Math.PI / 4]}>
+            <boxGeometry args={[0.12, 0.65, 0.12]} />
+            <meshBasicMaterial color="#ff0000" transparent opacity={0.35} />
+          </mesh>
+        )}
+        {/* Path through body */}
+        {I > 0.5 && (
+          <mesh position={[0, 0.6, 0]}>
+            <capsuleGeometry args={[0.26, 0.65, 8, 16]} />
+            <meshBasicMaterial color="#ff0000" transparent opacity={0.25} />
+          </mesh>
+        )}
+        {/* Path through left arm (bipolar) */}
+        {showCurrentPathArm2 && I > 0.5 && (
+          <mesh position={[0.5, 1.0, 0]} rotation={[0, 0, -Math.PI / 4]}>
+            <boxGeometry args={[0.12, 0.65, 0.12]} />
+            <meshBasicMaterial color="#ff0000" transparent opacity={0.35} />
+          </mesh>
+        )}
+        {/* Path through legs (multipolar) */}
+        {showCurrentPathLegs && I > 0.5 && (
+          <>
+            <mesh position={[-0.12, 0.0, 0]}>
+              <boxGeometry args={[0.14, 0.55, 0.14]} />
+              <meshBasicMaterial color="#ff0000" transparent opacity={0.3} />
+            </mesh>
+            <mesh position={[0.12, 0.0, 0]}>
+              <boxGeometry args={[0.14, 0.55, 0.14]} />
+              <meshBasicMaterial color="#ff0000" transparent opacity={0.3} />
+            </mesh>
+          </>
+        )}
       </group>
 
       {/* Ground wire */}
-      <mesh position={[1, 0.15, 0]}>
+      <mesh position={[1.5, 0.15, 0]}>
         <boxGeometry args={[0.02, 0.3, 0.02]} />
         <meshStandardMaterial color="#4caf50" />
       </mesh>
 
+      {/* ── Danger level comparison panel (per fig 9.4) ── */}
+      <group position={[4, 0.5, -2]}>
+        <Text fontSize={0.1} color="#fff" position={[0, 2.2, 0]}>
+          {'Сравнение уровней тока (рис. 9.4)'}
+        </Text>
+        {dangerLevels.map((level, li) => {
+          const barH = (level.maxMA - level.minMA) / 100;
+          const isActive = I >= level.minMA && I < level.maxMA;
+          return (
+            <group key={`danger-${li}`} position={[0, li * 0.6, 0]}>
+              <mesh position={[0, 0.15, 0]}>
+                <boxGeometry args={[1.2, 0.35, 0.05]} />
+                <meshStandardMaterial
+                  color={level.color}
+                  transparent
+                  opacity={isActive ? 0.9 : 0.3}
+                  emissive={isActive ? level.color : '#000'}
+                  emissiveIntensity={isActive ? 1 : 0}
+                />
+              </mesh>
+              <Text fontSize={0.08} color="#fff" position={[0, 0.15, 0.04]}>
+                {`${level.label}: ${level.minMA}–${level.maxMA} мА`}
+              </Text>
+              {isActive && (
+                <Text fontSize={0.07} color="#ffeb3b" position={[0, -0.05, 0.04]}>
+                  {'◄ текущий уровень'}
+                </Text>
+              )}
+            </group>
+          );
+        })}
+      </group>
+
       {/* Info panel */}
-      <Text fontSize={0.16} color={dangerColor} position={[1, 2.0, 0]}>
+      <Text fontSize={0.16} color={dangerColor} position={[1.5, 2.2, 0]}>
         {`I = ${I.toFixed(2)} мА — ${dangerLabel}`}
       </Text>
-      <Text fontSize={0.11} color="#90caf9" position={[1, 1.75, 0]}>
-        {`Z = ${Zt.toFixed(0)} Ом | Zк = ${Zk.toFixed(0)} Ом`}
+      <Text fontSize={0.11} color="#90caf9" position={[1.5, 1.95, 0]}>
+        {`Z = ${Zt.toFixed(0)} Ом | ${touchLabel}`}
       </Text>
-      <Text fontSize={0.1} color="#bbb" position={[1, 1.6, 0]}>
-        {`Rн = ${state.skinResistanceOhm} Ом | Rв = ${state.internalResistanceOhm} Ом | C = ${state.capacitanceNF} нФ`}
+      <Text fontSize={0.1} color="#bbb" position={[1.5, 1.8, 0]}>
+        {`Повреждение: ${damagedPhases[0]}↔${damagedPhases[1]} | U = ${state.voltageV} В`}
       </Text>
-
-      {/* Equivalent circuit diagram (simplified) */}
-      <group position={[-3, 2.2, 0]}>
-        <mesh><boxGeometry args={[0.8, 0.02, 0.02]} /><meshBasicMaterial color="#aaa" /></mesh>
-        <mesh position={[0.5, -0.15, 0]}><boxGeometry args={[0.02, 0.3, 0.02]} /><meshBasicMaterial color="#aaa" /></mesh>
-        <mesh position={[-0.5, -0.15, 0]}><boxGeometry args={[0.02, 0.3, 0.02]} /><meshBasicMaterial color="#aaa" /></mesh>
-        <Text fontSize={0.08} color="#ccc" position={[0, 0.1, 0]}>
-          Эквивалентная схема
-        </Text>
-      </group>
     </>
   );
 }

@@ -130,6 +130,7 @@ interface LabSceneProps {
     soilResistivityOhmM: number;
     distanceM: number;
     stepLengthM: number;
+    surfaceType?: 'earth' | 'sand' | 'stone';
   };
 }
 
@@ -1622,9 +1623,23 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
   const ringRef = useRef<THREE.Group>(null);
   const timeR = useRef(0);
 
+  const surfaceType = state.surfaceType ?? 'earth';
   const phi = groundPotential(state.faultCurrentA, state.soilResistivityOhmM, state.distanceM);
   const Ush = stepVoltage(state.faultCurrentA, state.soilResistivityOhmM, state.distanceM, state.stepLengthM);
   const safeDist = safeDistance(state.faultCurrentA, state.soilResistivityOhmM, 40, state.stepLengthM);
+
+  /* Danger zone radius: 5–25 m based on voltage */
+  const dangerRadius = Math.min(25, Math.max(5, state.faultCurrentA * state.soilResistivityOhmM / 500));
+  const scaledDangerRadius = Math.min(10, dangerRadius);
+
+  /* Surface properties */
+  const surfaceColors: Record<string, string> = { earth: '#5d4037', sand: '#c8a96e', stone: '#78909c' };
+  const surfaceRoughness: Record<string, number> = { earth: 0.95, sand: 0.8, stone: 0.6 };
+
+  /* x1 and x2 positions for step voltage visualization */
+  const personX = Math.min(8, state.distanceM);
+  const x1 = state.distanceM;
+  const x2 = state.distanceM + state.stepLengthM;
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1641,12 +1656,60 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
 
   return (
     <>
+      {/* Ground surface - changes with surface type */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[22, 22]} />
-        <meshStandardMaterial color="#5d4037" roughness={0.95} />
+        <meshStandardMaterial color={surfaceColors[surfaceType]} roughness={surfaceRoughness[surfaceType]} />
       </mesh>
 
-      {/* Grounding electrode / fault point */}
+      {/* Surface type texture details */}
+      {surfaceType === 'sand' && (
+        <>
+          {Array.from({ length: 20 }).map((_, i) => (
+            <mesh key={`sand-${i}`} position={[(i % 5) * 4 - 8, 0.01, Math.floor(i / 5) * 4 - 8]} rotation={[-Math.PI / 2, 0, 0]}>
+              <circleGeometry args={[0.3 + Math.random() * 0.3, 8]} />
+              <meshStandardMaterial color="#b8956a" transparent opacity={0.3} />
+            </mesh>
+          ))}
+        </>
+      )}
+      {surfaceType === 'stone' && (
+        <>
+          {Array.from({ length: 12 }).map((_, i) => (
+            <mesh key={`stone-${i}`} position={[(i % 4) * 5 - 7.5, 0.05, Math.floor(i / 4) * 5 - 5]}>
+              <boxGeometry args={[0.8 + (i % 3) * 0.3, 0.1, 0.6 + (i % 2) * 0.3]} />
+              <meshStandardMaterial color="#90a4ae" roughness={0.5} />
+            </mesh>
+          ))}
+        </>
+      )}
+
+      {/* Three-phase power line with fallen wire */}
+      {/* Standing pole */}
+      <mesh position={[-3, 3, 0]} castShadow>
+        <cylinderGeometry args={[0.05, 0.05, 6, 8]} />
+        <meshStandardMaterial color="#555" />
+      </mesh>
+      {/* Cross-arm */}
+      <mesh position={[-3, 5.5, 0]}>
+        <boxGeometry args={[2, 0.08, 0.08]} />
+        <meshStandardMaterial color="#444" />
+      </mesh>
+      {/* 3 phase wires on pole */}
+      {[-0.7, 0, 0.7].map((zOff, wi) => (
+        <mesh key={`wire-${wi}`} position={[-3, 5.5, zOff]}>
+          <sphereGeometry args={[0.04, 6, 6]} />
+          <meshStandardMaterial color={['#f44336', '#2196f3', '#4caf50'][wi]} />
+        </mesh>
+      ))}
+
+      {/* Fallen wire from pole to ground (fault point) */}
+      <mesh position={[-1.5, 2.5, 0]} rotation={[0, 0, Math.PI / 5]}>
+        <boxGeometry args={[0.025, 4.5, 0.025]} />
+        <meshStandardMaterial color="#222" />
+      </mesh>
+
+      {/* Grounding electrode / fault point (where wire touches ground) */}
       <mesh position={[0, 0.5, 0]} castShadow>
         <cylinderGeometry args={[0.15, 0.15, 1, 12]} />
         <meshStandardMaterial color="#616161" metalness={0.5} />
@@ -1655,17 +1718,24 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
         <sphereGeometry args={[0.12, 12, 12]} />
         <meshStandardMaterial color="#ff5722" emissive="#ff3300" emissiveIntensity={1.5} />
       </mesh>
-      {/* Power line to fault */}
-      <mesh position={[-3, 3, 0]} castShadow>
-        <cylinderGeometry args={[0.05, 0.05, 6, 8]} />
-        <meshStandardMaterial color="#555" />
-      </mesh>
-      <mesh position={[-1.5, 2, 0]} rotation={[0, 0, Math.PI / 6]}>
-        <boxGeometry args={[0.03, 3.5, 0.03]} />
-        <meshStandardMaterial color="#222" />
-      </mesh>
       <Text fontSize={0.16} color="#ff7043" position={[0, 1.6, 0]}>
         {`Iз = ${state.faultCurrentA} А | ρ = ${state.soilResistivityOhmM} Ом·м`}
+      </Text>
+      <Text fontSize={0.1} color="#ffab91" position={[0, 1.35, 0]}>
+        {`Поверхность: ${surfaceType === 'earth' ? 'Земля' : surfaceType === 'sand' ? 'Песок' : 'Камень'}`}
+      </Text>
+
+      {/* Danger zone circle on ground */}
+      <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.3, scaledDangerRadius, 64]} />
+        <meshBasicMaterial color="#ff5722" transparent opacity={0.12} />
+      </mesh>
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[scaledDangerRadius - 0.1, scaledDangerRadius, 64]} />
+        <meshBasicMaterial color="#ff5722" transparent opacity={0.5} />
+      </mesh>
+      <Text fontSize={0.12} color="#ff8a65" position={[scaledDangerRadius + 0.5, 0.1, 0]}>
+        {`Зона: ${dangerRadius.toFixed(1)} м`}
       </Text>
 
       {/* Animated concentric rings (equipotential zones) */}
@@ -1679,42 +1749,72 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
       </group>
 
       {/* Person at observation distance */}
-      <group position={[Math.min(8, state.distanceM), 0, 0]}>
+      <group position={[personX, 0, 0]}>
+        {/* Body */}
         <mesh position={[0, 0.7, 0]} castShadow>
           <capsuleGeometry args={[0.18, 0.5, 8, 16]} />
           <meshStandardMaterial color={Ush > 40 ? '#f44336' : '#4caf50'} transparent opacity={0.7} />
         </mesh>
+        {/* Head */}
         <mesh position={[0, 1.35, 0]} castShadow>
           <sphereGeometry args={[0.18, 16, 16]} />
           <meshStandardMaterial color="#ffd6b6" />
         </mesh>
-        {/* Step length indicator */}
-        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[state.stepLengthM, 0.06]} />
+        {/* Arms */}
+        <mesh position={[-0.3, 0.9, 0]} rotation={[0, 0, Math.PI / 8]}>
+          <boxGeometry args={[0.07, 0.4, 0.07]} />
+          <meshStandardMaterial color="#ffd6b6" />
+        </mesh>
+        <mesh position={[0.3, 0.9, 0]} rotation={[0, 0, -Math.PI / 8]}>
+          <boxGeometry args={[0.07, 0.4, 0.07]} />
+          <meshStandardMaterial color="#ffd6b6" />
+        </mesh>
+        {/* Legs with visible feet positions */}
+        <mesh position={[-0.12, 0.0, 0]}>
+          <boxGeometry args={[0.1, 0.45, 0.1]} />
+          <meshStandardMaterial color="#37474f" />
+        </mesh>
+        <mesh position={[state.stepLengthM * 0.4, 0.0, 0]}>
+          <boxGeometry args={[0.1, 0.45, 0.1]} />
+          <meshStandardMaterial color="#37474f" />
+        </mesh>
+
+        {/* x1 distance line (front foot to fault point) */}
+        <mesh position={[-personX / 2 - 0.06, 0.04, -0.5]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[personX - 0.12, 0.03]} />
           <meshBasicMaterial color="#42a5f5" />
         </mesh>
-        <Text fontSize={0.1} color="#64b5f6" position={[0, 0.2, 0.3]}>
+        <Text fontSize={0.1} color="#42a5f5" position={[-personX / 2, 0.2, -0.5]}>
+          {`x₁ = ${x1.toFixed(1)} м`}
+        </Text>
+
+        {/* x2 distance line (back foot to fault point) */}
+        <mesh position={[-personX / 2 + state.stepLengthM * 0.2, 0.04, 0.5]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[personX + state.stepLengthM * 0.4, 0.03]} />
+          <meshBasicMaterial color="#ef5350" />
+        </mesh>
+        <Text fontSize={0.1} color="#ef5350" position={[-personX / 2 + state.stepLengthM * 0.2, 0.2, 0.5]}>
+          {`x₂ = ${x2.toFixed(1)} м`}
+        </Text>
+
+        {/* Step length indicator between feet */}
+        <mesh position={[state.stepLengthM * 0.2 - 0.06, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[state.stepLengthM * 0.4 + 0.12, 0.06]} />
+          <meshBasicMaterial color="#ffd43b" />
+        </mesh>
+        <Text fontSize={0.09} color="#ffd43b" position={[state.stepLengthM * 0.2, 0.15, 0.3]}>
           {`a = ${state.stepLengthM} м`}
         </Text>
       </group>
 
-      {/* Distance line */}
-      <mesh position={[Math.min(4, state.distanceM / 2), 0.03, 1.5]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[Math.min(8, state.distanceM), 0.03]} />
-        <meshBasicMaterial color="#ffd43b" />
-      </mesh>
-      <Text fontSize={0.13} color="#ffd43b" position={[Math.min(4, state.distanceM / 2), 0.2, 1.5]}>
-        {`x = ${state.distanceM} м`}
-      </Text>
-
       {/* Results */}
-      <Text fontSize={0.18} color={Ush > 40 ? '#ff5252' : '#66bb6a'} position={[Math.min(8, state.distanceM), 2.0, 0]}>
+      <Text fontSize={0.18} color={Ush > 40 ? '#ff5252' : '#66bb6a'} position={[personX, 2.0, 0]}>
         {`Uш = ${Ush.toFixed(1)} В`}
       </Text>
-      <Text fontSize={0.12} color="#fff176" position={[Math.min(8, state.distanceM), 1.75, 0]}>
+      <Text fontSize={0.12} color="#fff176" position={[personX, 1.75, 0]}>
         {`φ = ${phi.toFixed(1)} В`}
       </Text>
-      <Text fontSize={0.1} color="#aaa" position={[Math.min(8, state.distanceM), 1.55, 0]}>
+      <Text fontSize={0.1} color="#aaa" position={[personX, 1.55, 0]}>
         {Ush > 40 ? '⚠ Опасное напряжение шага!' : '✓ Безопасно'}
       </Text>
 

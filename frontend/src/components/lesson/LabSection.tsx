@@ -116,6 +116,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const [l10Rho, setL10Rho] = useState(100);
   const [l10X, setL10X] = useState(5);
   const [l10A, setL10A] = useState(0.8);
+  const [l10Surface, setL10Surface] = useState<'earth' | 'sand' | 'stone'>('earth');
   const [trainingMode, setTrainingMode] = useState(false);
   const [manualTableOpen, setManualTableOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(() =>
@@ -824,7 +825,8 @@ export default function LabSection({ lesson }: LabSectionProps) {
     soilResistivityOhmM: l10Rho,
     distanceM: l10X,
     stepLengthM: l10A,
-  }), [l10Iz, l10Rho, l10X, l10A]);
+    surfaceType: l10Surface,
+  }), [l10Iz, l10Rho, l10X, l10A, l10Surface]);
 
   return (
     <Stack spacing={2}>
@@ -1519,6 +1521,19 @@ export default function LabSection({ lesson }: LabSectionProps) {
             <Slider value={l10X} min={1} max={30} step={0.5} onChange={(_, v) => setL10X(v as number)} />
             <Typography variant="caption">a (м): {l10A}</Typography>
             <Slider value={l10A} min={0.3} max={1.5} step={0.1} onChange={(_, v) => setL10A(v as number)} />
+            <Typography variant="caption" fontWeight={600}>Тип поверхности</Typography>
+            <Select size="small" value={l10Surface} onChange={(e) => {
+              const surface = e.target.value as 'earth' | 'sand' | 'stone';
+              setL10Surface(surface);
+              /* Adjust soil resistivity based on surface */
+              if (surface === 'sand') setL10Rho(300);
+              else if (surface === 'stone') setL10Rho(500);
+              else setL10Rho(100);
+            }}>
+              <MenuItem value="earth">Земля (ρ ≈ 100 Ом·м)</MenuItem>
+              <MenuItem value="sand">Песок (ρ ≈ 300 Ом·м)</MenuItem>
+              <MenuItem value="stone">Камень (ρ ≈ 500 Ом·м)</MenuItem>
+            </Select>
             {lesson10Calcs && (
               <Alert severity={lesson10Calcs.Ush < 36 ? 'success' : 'error'}>
                 φ(x) = {lesson10Calcs.phi.toFixed(2)} В; Uш = {lesson10Calcs.Ush.toFixed(2)} В {lesson10Calcs.Ush >= 36 ? '⚠ ОПАСНО' : '✓ безопасно'}

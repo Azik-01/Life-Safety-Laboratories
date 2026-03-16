@@ -22,6 +22,7 @@ import {
 } from '../../formulas/shielding';
 import {
   fieldStrengthShuleikin, attenuationFactorF, xParameter,
+  classifyWaveBand, xParameterDVSV, xParameterKV,
 } from '../../formulas/hfField';
 import {
   fieldStrengthUHF, distanceFromPhaseCenter, elevationAngleRad,
@@ -997,13 +998,32 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
 function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; timeScale: number }) {
   const waveRef = useRef<THREE.Group>(null);
   const timeR = useRef(0);
+  const [boostedIndices, setBoostedIndices] = useState<Set<number>>(new Set());
 
-  const results = state.distances.map((d) => {
-    const x = xParameter(d, state.wavelengthM, state.theta, state.sigma);
+  /* ── Explicit calculation cycle per requirements ── */
+  const band = classifyWaveBand(state.wavelengthM);
+  const results = state.distances.map((d, i) => {
+    /* Step 1: Formula 7.6 (KV) or 7.5 (DV/SV) — 5 times */
+    const x = (band === 'DV' || band === 'SV')
+      ? xParameterDVSV(d, state.wavelengthM, state.theta, state.sigma)
+      : xParameterKV(d, state.wavelengthM, state.theta, state.sigma);
+
+    /* Step 2: Formula 7.3 — attenuation factor F, 5 times */
     const F = attenuationFactorF(x);
-    const Estr = fieldStrengthShuleikin(state.powerKW, state.gainAntenna, d, F);
-    return { d, x, F, E: Estr };
+
+    /* Step 3: Formula 7.2 — field strength, 5 times */
+    const E = fieldStrengthShuleikin(state.powerKW, state.gainAntenna, d, F);
+
+    /* Apply booster: multiply E by 1.5 if booster is active at this index */
+    const boosted = boostedIndices.has(i);
+    const Efinal = boosted ? E * 1.5 : E;
+
+    return { d, x, F, E, Efinal, boosted };
   });
+
+  /* Signal weak threshold: if E < max(E)/3, signal is weak */
+  const maxE = Math.max(...results.map((r) => r.E), 1e-9);
+  const weakThreshold = maxE / 3;
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1018,6 +1038,15 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
     });
   });
 
+  const toggleBooster = (index: number) => {
+    setBoostedIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
@@ -1025,7 +1054,7 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
         <meshStandardMaterial color="#2d4a22" roughness={0.92} />
       </mesh>
 
-      {/* Antenna tower */}
+      {/* Antenna tower (base station) */}
       <mesh position={[0, 3, 0]} castShadow>
         <cylinderGeometry args={[0.08, 0.15, 6, 8]} />
         <meshStandardMaterial color="#999" metalness={0.6} />
@@ -1042,8 +1071,29 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
         {`P = ${state.powerKW} кВт | G = ${state.gainAntenna}`}
       </Text>
       <Text fontSize={0.12} color="#ffcc80" position={[0, 6.7, 0]}>
-        {`λ = ${state.wavelengthM.toFixed(0)} м`}
+        {`λ = ${state.wavelengthM.toFixed(0)} м | ${band}`}
       </Text>
+
+      {/* Obstacle buildings between stations */}
+      {[2.5, 5, 7].map((xPos, i) => (
+        <mesh key={`obstacle-${i}`} position={[xPos, 0.6 + i * 0.3, -1.5]} castShadow>
+          <boxGeometry args={[0.6, 1.2 + i * 0.6, 0.8]} />
+          <meshStandardMaterial color={['#78909c', '#607d8b', '#546e7a'][i]} roughness={0.8} />
+        </mesh>
+      ))}
+      {/* Trees as obstacles */}
+      {[3.5, 6.5].map((xPos, i) => (
+        <group key={`tree-${i}`} position={[xPos, 0, 1.5]}>
+          <mesh position={[0, 0.6, 0]} castShadow>
+            <cylinderGeometry args={[0.06, 0.08, 1.2, 6]} />
+            <meshStandardMaterial color="#5d4037" />
+          </mesh>
+          <mesh position={[0, 1.4, 0]} castShadow>
+            <coneGeometry args={[0.5, 1.2, 8]} />
+            <meshStandardMaterial color="#2e7d32" />
+          </mesh>
+        </group>
+      ))}
 
       {/* Expanding wave rings */}
       <group ref={waveRef}>
@@ -1055,24 +1105,58 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
         ))}
       </group>
 
-      {/* Distance markers with field strength */}
+      {/* Distance markers with field strength + signal bar graph + boosters */}
       {results.map((r, i) => {
         const scaledD = Math.min(10, r.d / (Math.max(...state.distances) / 10));
+        const barHeight = Math.max(0.1, (r.Efinal / maxE) * 3);
+        const isWeak = r.E < weakThreshold;
+        const barColor = r.boosted ? '#66bb6a' : isWeak ? '#f44336' : '#ff9800';
         return (
           <group key={`hf-pt-${i}`} position={[scaledD, 0, 0]}>
+            {/* Measurement post */}
             <mesh position={[0, 0.5, 0]} castShadow>
               <boxGeometry args={[0.15, 1, 0.15]} />
               <meshStandardMaterial color="#f44336" />
             </mesh>
             <Text fontSize={0.12} color="#fff" position={[0, 1.3, 0]}>
-              {`d=${r.d} км`}
+              {`d=${r.d} м`}
             </Text>
             <Text fontSize={0.11} color="#ffd54f" position={[0, 1.05, 0]}>
-              {`E = ${r.E.toFixed(3)} мВ/м`}
+              {`E = ${r.Efinal.toFixed(3)} мВ/м`}
             </Text>
             <Text fontSize={0.09} color="#bbb" position={[0, 0.85, 0]}>
-              {`F = ${r.F.toFixed(4)}`}
+              {`F = ${r.F.toFixed(4)}${r.boosted ? ' ⚡усилен' : ''}`}
             </Text>
+
+            {/* Signal strength bar graph */}
+            <mesh position={[0, barHeight / 2, 1.5]}>
+              <boxGeometry args={[0.3, barHeight, 0.3]} />
+              <meshStandardMaterial color={barColor} transparent opacity={0.8} />
+            </mesh>
+
+            {/* Booster indicator (click to toggle) — green glowing cylinder if weak signal */}
+            {isWeak && !r.boosted && (
+              <mesh position={[0, 0.15, -0.8]} onClick={() => toggleBooster(i)}>
+                <cylinderGeometry args={[0.12, 0.12, 0.3, 8]} />
+                <meshStandardMaterial color="#4caf50" emissive="#00e676" emissiveIntensity={1.5} transparent opacity={0.6} />
+              </mesh>
+            )}
+            {r.boosted && (
+              <mesh position={[0, 0.15, -0.8]} onClick={() => toggleBooster(i)}>
+                <cylinderGeometry args={[0.15, 0.15, 0.4, 8]} />
+                <meshStandardMaterial color="#00e676" emissive="#00e676" emissiveIntensity={2} />
+              </mesh>
+            )}
+            {(isWeak && !r.boosted) && (
+              <Text fontSize={0.08} color="#ff5252" position={[0, 0.5, -0.8]}>
+                {'⬆ усилитель'}
+              </Text>
+            )}
+            {r.boosted && (
+              <Text fontSize={0.08} color="#00e676" position={[0, 0.6, -0.8]}>
+                {'✓ усилен'}
+              </Text>
+            )}
           </group>
         );
       })}

@@ -53,7 +53,7 @@ import {
   powerFluxDensityFromH,
 } from '../../formulas/shielding';
 import { fieldStrengthShuleikin, attenuationFactorF, xParameter, classifyWaveBand } from '../../formulas/hfField';
-import { distanceFromPhaseCenter, normalizedPatternFactor, fieldStrengthUHF } from '../../formulas/uhfField';
+import { distanceFromPhaseCenter, normalizedPatternFactorFromR, fieldStrengthUHF } from '../../formulas/uhfField';
 import { bodyCurrentMA, totalBodyImpedance, skinImpedance, classifyCurrentDanger, currentDensity, groundPotential, stepVoltage as calcStepVoltage } from '../../formulas/electricSafety';
 import { useProgress } from '../../context/ProgressContext';
 
@@ -603,7 +603,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
     const results = distances.map((r) => {
       const R = distanceFromPhaseCenter(Hant, r);
       const delta = Math.atan(Hant / r);
-      const Fd = normalizedPatternFactor(delta);
+      const Fd = normalizedPatternFactorFromR(r);
       const Eimg = fieldStrengthUHF(Pimg, G, R, Fd, K);
       const Esnd = fieldStrengthUHF(Psnd, G, R, Fd, K);
       const Etotal = Math.sqrt(Eimg ** 2 + Esnd ** 2);

@@ -540,7 +540,7 @@ export function buildPracticeMethods(lessonId: LessonId): PracticeMethod[] {
           steps: [
             { label: 'R', formula: '√(H²+r²)', compute: (p) => Math.sqrt(p.Hant ** 2 + p.r ** 2), resultKey: 'R', resultUnit: 'м' },
             { label: 'Δ', formula: 'arctan(H/r)', compute: (p) => Math.atan(p.Hant / p.r), resultKey: 'delta', resultUnit: 'рад' },
-            { label: 'F(Δ)', formula: 'cos(Δ)', compute: (p) => Math.cos(p.delta), resultKey: 'Fd', resultUnit: '' },
+            { label: 'F(Δ)', formula: '1.41·(2+0.3r)/(2+r+0.6r²)', compute: (p) => 1.41 * (2 + 0.3 * p.r) / (2 + p.r + 0.6 * p.r ** 2), resultKey: 'Fd', resultUnit: '' },
             { label: 'E', formula: 'K·√(30PG)·F(Δ)/R', compute: (p) => p.K * Math.sqrt(30 * p.P * p.G) * p.Fd / p.R, resultKey: 'E', resultUnit: 'В/м' },
           ],
           conclusionFn: (r) => `E = ${r.E.toFixed(3)} В/м.`,

@@ -2544,7 +2544,8 @@ const lesson8: LessonTheme = {
       keywords: ['телецентр', 'передатчик', 'диаграмма направленности', 'F(Δ)'],
       definition: 'Напряжённость поля передатчика телецентра: E = K·√(30·P·G)·F(Δ)/R, где R = √(H²+r²), Δ = arctan(H/r).',
       formula: 'E = K·√(30·P·G)·F(Δ) / R',
-      formulaExplanation: 'P — мощность, Вт; G — коэффициент направленного действия; K = 1,41; F(Δ) — нормированный множитель ДН; H — высота антенны, м; r — расстояние по земле.',
+      formulaExplanation:
+        'P — мощность, Вт; G — коэффициент направленного действия; K = 1,41; F(Δ) = 1,41·(2+0,3r)/(2+r+0,6r²); R = √(H²+r²); r — расстояние по земле.',
       units: 'В/м',
       practicalMeaning: 'Суммарная E от всех передатчиков: E_сум = √(E₁² + E₂² + … + Eₙ²).',
       commonMistakes: ['Забывают K = 1,41', 'Путают r (по земле) и R (по прямой)'],
@@ -2570,7 +2571,7 @@ const lesson8: LessonTheme = {
     steps: [
       { id: 's8-1', type: 'instruction', title: 'Исходные данные', whatToDo: 'Запишите f, P_изобр, P_звук, G, H, K из табл. 8.2 и r1–r5 из табл. 8.3.', why: 'Данные для расчёта E.', sceneAction: 'Проверьте панель.', hint: 'Последняя цифра → табл. 8.2; предпоследняя → табл. 8.3.' },
       { id: 's8-2', type: 'calculation', title: 'R и Δ для каждого r', whatToDo: 'R = √(H²+r²); Δ = arctan(H/r).', why: 'Расстояние от фазового центра антенны.', sceneAction: 'Рассчитайте для r1–r5.', hint: 'H в метрах.', resultField: 'R' },
-      { id: 's8-3', type: 'calculation', title: 'F(Δ)', whatToDo: 'F(Δ) ≈ cos(Δ) для типовой антенны.', why: 'Нормированный множитель ДН в вертикальной плоскости.', sceneAction: 'Вычислите для каждого Δ.', hint: 'Δ в радианах для cos.', resultField: 'F' },
+      { id: 's8-3', type: 'calculation', title: 'F(Δ)', whatToDo: 'F(Δ) = 1,41·(2+0,3r)/(2+r+0,6r²).', why: 'Множитель ослабления поля (по формуле 8.5).', sceneAction: 'Вычислите для каждого r.', hint: 'Используйте r (по земле).', resultField: 'F' },
       { id: 's8-4', type: 'calculation', title: 'E для передатчика изображения', whatToDo: 'E_изобр = K·√(30·P_изобр·G)·F(Δ)/R для каждого r.', why: 'Напряжённость от передатчика изображения.', sceneAction: 'Подставьте P_изобр.', hint: 'P в Вт (переведите кВт→Вт).', resultField: 'E_img' },
       { id: 's8-5', type: 'calculation', title: 'E для передатчика звука', whatToDo: 'E_звук = K·√(30·P_звук·G)·F(Δ)/R.', why: 'Напряжённость от передатчика звука.', sceneAction: 'Аналогично.', hint: 'G и K одинаковые.', resultField: 'E_snd' },
       { id: 's8-6', type: 'calculation', title: 'Суммарное E', whatToDo: 'E_сум = √(E_изобр² + E_звук²).', why: 'Общая напряжённость.', sceneAction: 'Вычислите E_сум для каждого r.', hint: 'Корень из суммы квадратов.', resultField: 'E_sum' },

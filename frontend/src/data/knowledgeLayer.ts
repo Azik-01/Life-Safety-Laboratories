@@ -510,16 +510,15 @@ export function buildPracticeMethods(lessonId: LessonId): PracticeMethod[] {
           steps: [
             { label: 'f (частота)', formula: 'f = c/λ', compute: (p) => 299792458 / p.lambda, resultKey: 'freq', resultUnit: 'Гц' },
             {
-              label: 'x', formula: 'π·d / (λ·√(θ²+(18000δ/f)²))',
+              label: 'x', formula: 'π·d / (λ·√(θ²+(60·λ·δ)²))',
               compute: (p) => {
-                const f = 299792458 / p.lambda;
-                const term = Math.sqrt(p.theta ** 2 + (18000 * p.sigma / f) ** 2);
+                const term = Math.sqrt(p.theta ** 2 + (60 * p.lambda * p.sigma) ** 2);
                 return (Math.PI * p.d) / (p.lambda * term);
               },
               resultKey: 'x', resultUnit: '',
             },
-            { label: 'F', formula: '(2+0.3x)/(2+x+0.6x²)', compute: (p) => p.x === 0 ? 1 : (2 + 0.3 * p.x) / (2 + p.x + 0.6 * p.x ** 2), resultKey: 'F', resultUnit: '' },
-            { label: 'E', formula: '245·√(P·Ga)·F/d', compute: (p) => 245 * Math.sqrt(p.P * p.Ga) * p.F / p.d, resultKey: 'E', resultUnit: 'В/м' },
+            { label: 'F', formula: '1.41·(2+0.3x)/(2+x+0.6x²)', compute: (p) => 1.41 * (p.x === 0 ? 1 : (2 + 0.3 * p.x) / (2 + p.x + 0.6 * p.x ** 2)), resultKey: 'F', resultUnit: '' },
+            { label: 'E', formula: '7.750·√(P·Ga)·F/d', compute: (p) => 7.75 * Math.sqrt(p.P * p.Ga) * p.F / p.d, resultKey: 'E', resultUnit: 'В/м' },
           ],
           conclusionFn: (r) => `E = ${r.E.toFixed(4)} В/м на расстоянии d.`,
         },

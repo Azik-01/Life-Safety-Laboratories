@@ -16,9 +16,16 @@ import {
 import { classifyEmZone, wavelengthM } from '../../formulas/emi';
 import { realisticIlluminanceLux } from '../../formulas/illumination';
 import {
-  attenuationCoefficient, shieldThicknessM, requiredAttenuationDb, allowablePPE,
-  powerFluxDensity, magneticFieldStrengthH, electricFieldFromH,
-  waveguideAttenuationPerM, waveguideLengthM,
+  angularFrequencyOmega,
+  attenuationRatioL,
+  powerFluxDensityFromH,
+  shieldThicknessM,
+  waveguideAttenuationPerM,
+  waveguideLengthM,
+  allowablePPE,
+  magneticFieldStrengthH,
+  absolutePermeability,
+  electricFieldFromH,
 } from '../../formulas/shielding';
 import {
   fieldStrengthShuleikin, attenuationFactorF, xParameter,
@@ -903,16 +910,17 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
   const waveRef = useRef<THREE.Group>(null);
   const timeR = useRef(0);
 
-  const H = magneticFieldStrengthH(state.turns, state.currentA, state.distanceM, state.coilRadiusM);
+  const H = magneticFieldStrengthH(state.turns, state.currentA, state.distanceM, state.coilRadiusM, 1);
   const E = electricFieldFromH(H);
-  const ppe = powerFluxDensity(E, H);
+  const ppe = powerFluxDensityFromH(H);
   const ppeAllow = allowablePPE(state.exposureTimeH);
-  const reqDb = requiredAttenuationDb(ppe, ppeAllow);
-  const muAbs = state.muRelative * 4 * Math.PI * 1e-7;
-  const alpha = attenuationCoefficient(state.frequencyHz, muAbs, state.conductivitySpm);
-  const thickness = shieldThicknessM(reqDb, alpha);
+  const L = attenuationRatioL(ppe, ppeAllow);
+  const muAbs = absolutePermeability(state.muRelative);
+  const omega = angularFrequencyOmega(state.frequencyHz);
+  const thickness = shieldThicknessM(L, omega, muAbs, state.conductivitySpm);
   const wgAtt = waveguideAttenuationPerM(state.waveguideDiameterM, state.waveguideEpsilon);
-  const wgLen = waveguideLengthM(reqDb, wgAtt);
+  const wgLen = waveguideLengthM(L, wgAtt);
+  const alphaVis = Math.max(0.01, wgAtt / 200); // visual-only decay factor
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -923,7 +931,7 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
       const x = -6 + t * 3;
       mesh.position.x = x;
       const mat = mesh.material as THREE.MeshBasicMaterial;
-      mat.opacity = x < 0 ? 0.5 : Math.max(0.03, 0.5 * Math.exp(-(x * alpha * 0.3)));
+      mat.opacity = x < 0 ? 0.5 : Math.max(0.03, 0.5 * Math.exp(-(x * alphaVis * 0.3)));
     });
   });
 
@@ -947,7 +955,7 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
         {`H = ${H.toExponential(2)} А/м`}
       </Text>
       <Text fontSize={0.12} color="#ffd43b" position={[-5, 2.7, 0]}>
-        {`E = ${E.toExponential(2)} В/м | ППЭ = ${ppe.toExponential(2)} Вт/м²`}
+        {`E = ${E.toExponential(2)} В/м | ППЭδ = ${ppe.toExponential(2)} Вт/м²`}
       </Text>
 
       {/* Shield wall */}
@@ -956,10 +964,10 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
         <meshStandardMaterial color="#78909c" metalness={0.7} roughness={0.3} transparent opacity={0.85} />
       </mesh>
       <Text fontSize={0.14} color="#80cbc4" position={[0, 3.3, 0]}>
-        {`Экран: δ = ${(thickness * 1000).toFixed(2)} мм | α = ${alpha.toFixed(1)} 1/м`}
+        {`Экран: δ = ${(thickness * 1000).toFixed(2)} мм | ω = ${omega.toExponential(2)} 1/с`}
       </Text>
       <Text fontSize={0.11} color="#b0bec5" position={[0, 3.05, 0]}>
-        {`A₁ = ${reqDb.toFixed(1)} дБ | ППЭдоп = ${ppeAllow.toExponential(2)} Вт/м²`}
+        {`ППЭδдоп = ${ppeAllow.toExponential(2)} Вт/м² | L = ${L.toFixed(3)}`}
       </Text>
 
       {/* Waveguide (tube through shield) */}
@@ -968,7 +976,7 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
         <meshStandardMaterial color="#455a64" metalness={0.6} transparent opacity={0.7} />
       </mesh>
       <Text fontSize={0.11} color="#a5d6a7" position={[0, 1.3, 2.5]}>
-        {`Волновод: l = ${(wgLen * 100).toFixed(1)} см | d = ${(state.waveguideDiameterM * 100).toFixed(1)} см`}
+        {`Волновод: l = ${(wgLen * 100).toFixed(1)} см | α = ${wgAtt.toFixed(2)} дБ/м`}
       </Text>
 
       {/* Animated wave fronts */}
@@ -1919,13 +1927,19 @@ export default function LabScene3D(props: LabSceneProps) {
       };
     }
     if (props.lessonId === 6) {
-      const H = magneticFieldStrengthH(props.shieldState.turns, props.shieldState.currentA, props.shieldState.distanceM, props.shieldState.coilRadiusM);
-      const E = electricFieldFromH(H);
-      const ppe = powerFluxDensity(E, H);
-      const muAbs = props.shieldState.muRelative * 4 * Math.PI * 1e-7;
-      const alpha = attenuationCoefficient(props.shieldState.frequencyHz, muAbs, props.shieldState.conductivitySpm);
-      const thick = shieldThicknessM(requiredAttenuationDb(ppe, allowablePPE(props.shieldState.exposureTimeH)), alpha);
-      return { headline: `Экранирование: δ = ${(thick * 1000).toFixed(2)} мм | α = ${alpha.toFixed(1)} 1/м | ППЭ = ${ppe.toExponential(2)} Вт/м²` };
+      const H = magneticFieldStrengthH(
+        props.shieldState.turns,
+        props.shieldState.currentA,
+        props.shieldState.distanceM,
+        props.shieldState.coilRadiusM,
+        1,
+      );
+      const ppe = powerFluxDensityFromH(H);
+      const L = attenuationRatioL(ppe, allowablePPE(props.shieldState.exposureTimeH));
+      const muAbs = absolutePermeability(props.shieldState.muRelative);
+      const omega = angularFrequencyOmega(props.shieldState.frequencyHz);
+      const thick = shieldThicknessM(L, omega, muAbs, props.shieldState.conductivitySpm);
+      return { headline: `Экранирование: δ = ${(thick * 1000).toFixed(2)} мм | ω = ${omega.toExponential(2)} 1/с | ППЭδ = ${ppe.toExponential(2)} Вт/м²` };
     }
     if (props.lessonId === 7) {
       const d0 = props.hfState.distances[0] ?? 1;

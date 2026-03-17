@@ -42,15 +42,15 @@ import {
 } from '../../formulas/noise';
 import { classifyEmZone, powerFluxDensityWm2, wavelengthM } from '../../formulas/emi';
 import {
-  attenuationCoefficient,
   magneticFieldStrengthH,
-  electricFieldFromH,
   allowablePPE,
-  requiredAttenuationDb,
   shieldThicknessM,
   waveguideAttenuationPerM,
   waveguideLengthM,
   absolutePermeability,
+  angularFrequencyOmega,
+  attenuationRatioL,
+  powerFluxDensityFromH,
 } from '../../formulas/shielding';
 import { fieldStrengthShuleikin, attenuationFactorF, xParameter, classifyWaveBand } from '../../formulas/hfField';
 import { distanceFromPhaseCenter, normalizedPatternFactor, fieldStrengthUHF } from '../../formulas/uhfField';
@@ -531,46 +531,43 @@ export default function LabSection({ lesson }: LabSectionProps) {
     const f = v.f ?? 3e8;
     const T = v.T ?? 4;
     const R = v.R ?? 3;
-    const r = 0.1; // coil radius
+    const r = v.r ?? 0.25; // coil radius
     const mu = v.mu ?? 200;
     const gamma = v.gamma ?? 1e7;
     const D = v.D ?? 0.01;
     const eps = v.epsilon ?? 7;
 
-    /* Step 1: β_m coefficient — for lab conditions R/r is always > 10, so β_m = 1 (per methodology) */
-    const betaM = 1;
+    /* Step 1: βm coefficient — if not specified, keep 1 */
+    const betaM = v.betaM ?? 1;
 
-    /* Step 2: Formula 6.1 — H = β_m · W · I / R */
-    const H = magneticFieldStrengthH(W, I, R, r);
-
-    /* Formula 6.2 — E = H · 377 (implicit, used below) */
-    const E = electricFieldFromH(H);
-
-    /* Step 3: Formula 6.4 — PPE = E · H */
-    const PPE = E * H;
+    /* Step 2: Formula 6.1 — H = (w·I·r²·βm) / (4·R³) */
+    const H = magneticFieldStrengthH(W, I, R, r, betaM);
 
     /* Step 4: Formula 6.5 — PPE_allowed = N / T */
     const PPEmax = allowablePPE(T);
 
-    /* Step 5: Formula 6.6 — L = 10·lg(PPE / PPE_allowed) */
-    const Ldb = requiredAttenuationDb(PPE, PPEmax);
+    /* Step 3: Formula 6.4 — PPEδ = 377·H²/2 */
+    const PPE = powerFluxDensityFromH(H);
+
+    /* Step 5: Formula 6.6 — L = PPEδ / PPEδ_доп */
+    const L = attenuationRatioL(PPE, PPEmax);
 
     /* Formula 6.9 — μa = μ0 · μ */
     const muA = absolutePermeability(mu);
 
-    /* Step 6: Formula 6.8 — α = √(π·f·μa·γ) */
-    const alpha = attenuationCoefficient(f, muA, gamma);
+    /* Step 6: Formula 6.8 — ω = 2πf */
+    const omega = angularFrequencyOmega(f);
 
-    /* Formula 6.7 — M = L / (8.68 · α) (depends on 6.8) */
-    const M = shieldThicknessM(Ldb, alpha);
+    /* Formula 6.7 — M = ln(L) / (2·√(ω·μa·γ/2)) */
+    const M = shieldThicknessM(L, omega, muA, gamma);
 
-    /* Step 7: Formula 6.10 — waveguide attenuation per metre */
-    const A1 = waveguideAttenuationPerM(D, eps);
+    /* Step 7: Formula 6.10 — α (дБ/м) = 32 / (D·√ε) */
+    const alpha = waveguideAttenuationPerM(D, eps);
 
     /* Step 8: Formula 6.11 — waveguide length */
-    const wgLen = waveguideLengthM(Ldb, A1);
+    const wgLen = waveguideLengthM(L, alpha);
 
-    return { W, I, f, T, R, mu, muA, gamma, D, eps, betaM, H, E, PPE, PPEmax, Ldb, alpha, M, A1, wgLen };
+    return { W, I, f, T, R, r, mu, muA, gamma, D, eps, betaM, H, PPE, PPEmax, L, omega, alpha, M, wgLen };
   }, [lesson.id, lesson6Full]);
 
   /* ── Lesson 7 computed metrics ── */
@@ -1399,16 +1396,16 @@ export default function LabSection({ lesson }: LabSectionProps) {
           <Stack spacing={1}>
             <Typography variant="caption" fontWeight={600}>Параметры экрана ЭМИ (последовательная проверка)</Typography>
             <Alert severity="info">
-              Шаг 1: β_m = {lesson6Calcs.betaM} (R/r {'>'} 10 → β_m = 1)
+              Шаг 1: βm = {lesson6Calcs.betaM.toFixed(2)}
             </Alert>
             <Alert severity={lesson6Calcs.PPE <= lesson6Calcs.PPEmax ? 'success' : 'warning'}>
-              Ф. 6.1: H = {lesson6Calcs.H.toFixed(2)} А/м; Ф. 6.2: E = {lesson6Calcs.E.toFixed(1)} В/м; Ф. 6.4: ППЭ = {lesson6Calcs.PPE.toFixed(2)} Вт/м²
+              Ф. 6.1: H = {lesson6Calcs.H.toFixed(4)} А/м; Ф. 6.4: ППЭδ = {lesson6Calcs.PPE.toFixed(6)} Вт/м²
             </Alert>
             <Alert severity="info">
-              L = {lesson6Calcs.Ldb.toFixed(2)} дБ; α = {lesson6Calcs.alpha.toFixed(2)} 1/м
+              Ф. 6.5: ППЭδдоп = {lesson6Calcs.PPEmax.toFixed(6)} Вт/м²; Ф. 6.6: L = {lesson6Calcs.L.toFixed(3)}
             </Alert>
             <Alert severity="success">
-              M = {(lesson6Calcs.M * 1000).toFixed(3)} мм; l (волновод) = {(lesson6Calcs.wgLen * 1000).toFixed(1)} мм
+              Ф. 6.7: M = {(lesson6Calcs.M * 1000).toFixed(3)} мм; Ф. 6.10: α = {lesson6Calcs.alpha.toFixed(3)} дБ/м; Ф. 6.11: l = {(lesson6Calcs.wgLen * 1000).toFixed(1)} мм
             </Alert>
           </Stack>
         )}

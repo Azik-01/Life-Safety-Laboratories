@@ -610,7 +610,7 @@ export default function MiniSimulator({ type }: SimulatorProps) {
         const C_nF = Math.max(1, b);
         const Rv = Math.max(100, c);
         const freq = Math.max(1, d);
-        const Zn = skinImpedance(Rn, C_nF * 1e-9, freq);
+        const Zn = skinImpedance(Rn, freq, C_nF * 1e-9);
         const Zt = totalBodyImpedance(Zn, Rv);
         return {
           controls: (
@@ -633,7 +633,7 @@ export default function MiniSimulator({ type }: SimulatorProps) {
       }
       case 'electric-frequency-effect': {
         const freq = Math.max(1, a);
-        const Zn = skinImpedance(5000, 20e-9, freq);
+        const Zn = skinImpedance(5000, freq, 20e-9);
         const Zt = totalBodyImpedance(Zn, 500);
         return {
           controls: (

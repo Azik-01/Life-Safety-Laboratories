@@ -561,8 +561,7 @@ export function buildPracticeMethods(lessonId: LessonId): PracticeMethod[] {
             { key: 'U', label: 'U_пр', unit: 'В', defaultValue: 220 },
           ],
           steps: [
-            { label: 'Xc', formula: '1/(2πfC)', compute: (p) => 1 / (2 * Math.PI * p.f * p.C * 1e-9), resultKey: 'Xc', resultUnit: 'Ом' },
-            { label: 'Zн', formula: '√(Rн²+Xc²)', compute: (p) => Math.sqrt(p.Rn ** 2 + p.Xc ** 2), resultKey: 'Zn', resultUnit: 'Ом' },
+            { label: 'Zн', formula: 'Rн/√(1+(2πfCRн)²)', compute: (p) => p.Rn / Math.sqrt(1 + (2 * Math.PI * p.f * (p.C * 1e-9) * p.Rn) ** 2), resultKey: 'Zn', resultUnit: 'Ом' },
             { label: 'Z', formula: '2Zн+Rв', compute: (p) => 2 * p.Zn + p.Rv, resultKey: 'Z', resultUnit: 'Ом' },
             { label: 'I (мА)', formula: 'U/Z·1000', compute: (p) => (p.U / p.Z) * 1000, resultKey: 'ImA', resultUnit: 'мА' },
           ],

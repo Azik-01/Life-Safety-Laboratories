@@ -615,7 +615,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
   /* ── Lesson 9 computed metrics ── */
   const lesson9Calcs = useMemo(() => {
     if (lesson.id !== 9) return null;
-    const Zn = skinImpedance(l9Rn, l9C * 1e-9, l9Freq);
+    const Zn = skinImpedance(l9Rn, l9Freq, l9C * 1e-9);
     const Z = totalBodyImpedance(Zn, l9Rv);
     const ImA = bodyCurrentMA(l9Voltage, Z);
     const danger = classifyCurrentDanger(ImA);

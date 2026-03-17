@@ -134,6 +134,7 @@ interface LabSceneProps {
     skinResistanceOhm: number;
     capacitanceNF: number;
     internalResistanceOhm: number;
+    exposureTimeS?: number;
     touchType?: 'unipolar' | 'bipolar' | 'multipolar';
     damagedPhases?: [string, string];
   };
@@ -1478,6 +1479,7 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
 
   const touchType = state.touchType ?? 'unipolar';
   const damagedPhases = state.damagedPhases ?? ['A', 'B'];
+  const exposureTimeS = Math.max(0.1, Math.min(5, state.exposureTimeS ?? 1));
 
   /* Compute impedance and current based on touch type */
   const Zk = skinImpedance(state.skinResistanceOhm, state.frequencyHz, state.capacitanceNF * 1e-9);
@@ -1520,6 +1522,11 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
     { label: 'Неотпускающий', minMA: 10, maxMA: 100, color: '#f44336' },
     { label: 'Фибрилляция', minMA: 100, maxMA: 500, color: '#d50000' },
   ];
+
+  // Simple time-dependent effect boundaries to visualize fig. 9.4 conceptually
+  // (exact values are methodical-table dependent; this is a pedagogical approximation).
+  const nonReleasingBoundaryMA = exposureTimeS < 0.5 ? 20 : 10;
+  const fibrillationBoundaryMA = Math.max(30, Math.min(120, 60 * (1 / Math.sqrt(exposureTimeS))));
 
   return (
     <>
@@ -1675,32 +1682,67 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
         <Text fontSize={0.1} color="#fff" position={[0, 2.2, 0]}>
           {'Сравнение уровней тока (рис. 9.4)'}
         </Text>
-        {dangerLevels.map((level, li) => {
-          const barH = (level.maxMA - level.minMA) / 100;
-          const isActive = I >= level.minMA && I < level.maxMA;
-          return (
-            <group key={`danger-${li}`} position={[0, li * 0.6, 0]}>
-              <mesh position={[0, 0.15, 0]}>
-                <boxGeometry args={[1.2, 0.35, 0.05]} />
-                <meshStandardMaterial
-                  color={level.color}
-                  transparent
-                  opacity={isActive ? 0.9 : 0.3}
-                  emissive={isActive ? level.color : '#000'}
-                  emissiveIntensity={isActive ? 1 : 0}
-                />
-              </mesh>
-              <Text fontSize={0.08} color="#fff" position={[0, 0.15, 0.04]}>
-                {`${level.label}: ${level.minMA}–${level.maxMA} мА`}
-              </Text>
-              {isActive && (
-                <Text fontSize={0.07} color="#ffeb3b" position={[0, -0.05, 0.04]}>
-                  {'◄ текущий уровень'}
+        {/* I(t) plane: x=time (0..5s), y=current (0..150mA) */}
+        <group position={[0, 0.2, 0]}>
+          <mesh position={[0.75, 0.9, 0]} rotation={[0, 0, 0]}>
+            <planeGeometry args={[1.6, 1.6]} />
+            <meshStandardMaterial color="#111" transparent opacity={0.35} />
+          </mesh>
+
+          {/* bands */}
+          <mesh position={[0.75, 0.4, 0.01]}>
+            <planeGeometry args={[1.6, 0.55]} />
+            <meshStandardMaterial color="#ff9800" transparent opacity={0.25} />
+          </mesh>
+          <mesh position={[0.75, 0.95, 0.01]}>
+            <planeGeometry args={[1.6, 0.55]} />
+            <meshStandardMaterial color="#f44336" transparent opacity={0.22} />
+          </mesh>
+          <mesh position={[0.75, 1.5, 0.01]}>
+            <planeGeometry args={[1.6, 0.55]} />
+            <meshStandardMaterial color="#d50000" transparent opacity={0.18} />
+          </mesh>
+
+          {/* marker for current point (t, I) */}
+          {(() => {
+            const x = (exposureTimeS / 5) * 1.6; // 0..1.6
+            const y = Math.min(1.6, (Math.min(150, I) / 150) * 1.6);
+            const mx = 0.75 - 0.8 + x;
+            const my = 0.9 - 0.8 + y;
+            const zone = I < 0.5 ? 'безопасно' : I < nonReleasingBoundaryMA ? 'ощутимо' : I < fibrillationBoundaryMA ? 'неотпускающий' : 'фибрилляция';
+            const zoneColor = zone === 'безопасно' ? '#4caf50' : zone === 'ощутимо' ? '#ff9800' : zone === 'неотпускающий' ? '#f44336' : '#d50000';
+            return (
+              <group>
+                <mesh position={[mx, my, 0.03]}>
+                  <sphereGeometry args={[0.04, 12, 12]} />
+                  <meshStandardMaterial color={zoneColor} emissive={zoneColor} emissiveIntensity={1.2} />
+                </mesh>
+                <Text fontSize={0.075} color="#fff" position={[0.75, 1.75, 0.03]}>
+                  {`t=${exposureTimeS.toFixed(1)} c; I=${I.toFixed(1)} мА`}
                 </Text>
-              )}
-            </group>
-          );
-        })}
+                <Text fontSize={0.07} color={zoneColor} position={[0.75, 1.62, 0.03]}>
+                  {`зона: ${zone}`}
+                </Text>
+              </group>
+            );
+          })()}
+
+          <Text fontSize={0.07} color="#bbb" position={[0.0, 0.1, 0.03]}>
+            {'0 c'}
+          </Text>
+          <Text fontSize={0.07} color="#bbb" position={[1.6, 0.1, 0.03]}>
+            {'5 c'}
+          </Text>
+          <Text fontSize={0.07} color="#bbb" position={[-0.05, 0.9, 0.03]}>
+            {'I'}
+          </Text>
+          <Text fontSize={0.07} color="#bbb" position={[0.75, -0.02, 0.03]}>
+            {'t'}
+          </Text>
+          <Text fontSize={0.07} color="#bbb" position={[0.75, 0.25, 0.03]}>
+            {`границы: неотп.≈${nonReleasingBoundaryMA} мА; фибр.≈${fibrillationBoundaryMA.toFixed(0)} мА`}
+          </Text>
+        </group>
       </group>
 
       {/* Info panel */}
@@ -1728,8 +1770,11 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
   const Ush = stepVoltage(state.faultCurrentA, state.soilResistivityOhmM, state.distanceM, state.stepLengthM);
   const safeDist = safeDistance(state.faultCurrentA, state.soilResistivityOhmM, 40, state.stepLengthM);
 
-  /* Danger zone radius: 5–25 m based on voltage */
-  const dangerRadius = Math.min(25, Math.max(5, state.faultCurrentA * state.soilResistivityOhmM / 500));
+  /* Danger zone radius: 5–25 m based on voltage (Uш) */
+  const dangerRadius = (() => {
+    const u = Math.min(200, Math.max(0, Math.abs(Ush)));
+    return 5 + (u / 200) * 20;
+  })();
   const scaledDangerRadius = Math.min(10, dangerRadius);
 
   /* Surface properties */
@@ -1748,7 +1793,8 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
       const mesh = child as THREE.Mesh;
       const t = (timeR.current * 0.6 + i * 0.8) % 4;
       const s = 0.5 + t * 2.5;
-      mesh.scale.set(s, 1, s);
+      // Uniform scale keeps rings visually circular
+      mesh.scale.set(s, s, s);
       const mat = mesh.material as THREE.MeshBasicMaterial;
       mat.opacity = Math.max(0.02, 0.35 - t * 0.09);
     });
@@ -1835,14 +1881,14 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
         <meshBasicMaterial color="#ff5722" transparent opacity={0.5} />
       </mesh>
       <Text fontSize={0.12} color="#ff8a65" position={[scaledDangerRadius + 0.5, 0.1, 0]}>
-        {`Зона: ${dangerRadius.toFixed(1)} м`}
+        {`Зона: ${dangerRadius.toFixed(1)} м (по Uш)`}
       </Text>
 
       {/* Animated concentric rings (equipotential zones) */}
       <group ref={ringRef}>
         {Array.from({ length: 5 }).map((_, i) => (
           <mesh key={`eq-ring-${i}`} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[1, 0.04, 4, 48]} />
+            <ringGeometry args={[0.9, 1.0, 64]} />
             <meshBasicMaterial color="#ff9800" transparent opacity={0.3} />
           </mesh>
         ))}

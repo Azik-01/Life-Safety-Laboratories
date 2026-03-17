@@ -109,6 +109,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const [l9Rn, setL9Rn] = useState(5000);
   const [l9C, setL9C] = useState(20);
   const [l9Rv, setL9Rv] = useState(500);
+  const [l9TimeS, setL9TimeS] = useState(1);
   const [l9TouchType, setL9TouchType] = useState<'unipolar' | 'bipolar' | 'multipolar'>('unipolar');
   const [l9DamagedPhases, setL9DamagedPhases] = useState<[string, string]>(['A', 'B']);
   /* ── Lesson 10 (step voltage) state ── */
@@ -813,9 +814,10 @@ export default function LabSection({ lesson }: LabSectionProps) {
     skinResistanceOhm: l9Rn,
     capacitanceNF: l9C,
     internalResistanceOhm: l9Rv,
+    exposureTimeS: l9TimeS,
     touchType: l9TouchType,
     damagedPhases: l9DamagedPhases,
-  }), [l9Voltage, l9Freq, l9Rn, l9C, l9Rv, l9TouchType, l9DamagedPhases]);
+  }), [l9Voltage, l9Freq, l9Rn, l9C, l9Rv, l9TimeS, l9TouchType, l9DamagedPhases]);
 
   const groundStateMemo = useMemo(() => ({
     faultCurrentA: l10Iz,
@@ -1483,6 +1485,8 @@ export default function LabSection({ lesson }: LabSectionProps) {
             <Slider value={l9C} min={1} max={100} step={1} onChange={(_, v) => setL9C(v as number)} />
             <Typography variant="caption">Rв (Ом): {l9Rv}</Typography>
             <Slider value={l9Rv} min={100} max={1500} step={50} onChange={(_, v) => setL9Rv(v as number)} />
+            <Typography variant="caption">t (с): {l9TimeS.toFixed(1)}</Typography>
+            <Slider value={l9TimeS} min={0.1} max={5} step={0.1} onChange={(_, v) => setL9TimeS(v as number)} />
             <Typography variant="caption" fontWeight={600}>Тип прикосновения</Typography>
             <Select size="small" value={l9TouchType} onChange={(e) => setL9TouchType(e.target.value as 'unipolar' | 'bipolar' | 'multipolar')}>
               <MenuItem value="unipolar">Однополюсное (одна рука)</MenuItem>

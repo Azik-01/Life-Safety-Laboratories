@@ -28,8 +28,11 @@ import {
   electricFieldFromH,
 } from '../../formulas/shielding';
 import {
-  fieldStrengthShuleikin, attenuationFactorF, xParameter,
-  classifyWaveBand, xParameterDVSV, xParameterKV,
+  fieldStrengthShuleikin,
+  attenuationFactorF,
+  classifyWaveBand,
+  xParameterVariant1,
+  xParameterFull,
 } from '../../formulas/hfField';
 import {
   fieldStrengthUHF, distanceFromPhaseCenter, elevationAngleRad,
@@ -140,6 +143,30 @@ interface LabSceneProps {
     surfaceType?: 'earth' | 'sand' | 'stone';
   };
 }
+
+type CellularStation = {
+  id: number;
+  label: string;
+  xM: number;
+  boosted: boolean;
+};
+
+type CellularObstacle = {
+  id: string;
+  kind: 'building' | 'trees';
+  xM: number;
+  widthM: number;
+  attenuation: number; // multiplier 0..1
+};
+
+type CellularPoint = {
+  dM: number;
+  stationId: number;
+  stationLabel: string;
+  rawE: number;
+  eFinal: number;
+  loss: number;
+};
 
 /* ─────────────── Reusable room furniture ─────────────── */
 
@@ -1006,35 +1033,27 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
 
 /* ─────────────── Lesson 7: HF Field (Shuleikin-VdPol) ─────────────── */
 
-function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; timeScale: number }) {
+function CellularSignalScene({
+  state,
+  timeScale,
+  points,
+  stations,
+  obstacles,
+  onToggleStation,
+}: {
+  state: LabSceneProps['hfState'];
+  timeScale: number;
+  points: CellularPoint[];
+  stations: CellularStation[];
+  obstacles: CellularObstacle[];
+  onToggleStation: (stationId: number) => void;
+}) {
   const waveRef = useRef<THREE.Group>(null);
   const timeR = useRef(0);
-  const [boostedIndices, setBoostedIndices] = useState<Set<number>>(new Set());
-
-  /* ── Explicit calculation cycle per requirements ── */
-  const band = classifyWaveBand(state.wavelengthM);
-  const results = state.distances.map((d, i) => {
-    /* Step 1: Formula 7.6 (KV) or 7.5 (DV/SV) — 5 times */
-    const x = (band === 'DV' || band === 'SV')
-      ? xParameterDVSV(d, state.wavelengthM, state.theta, state.sigma)
-      : xParameterKV(d, state.wavelengthM, state.theta, state.sigma);
-
-    /* Step 2: Formula 7.3 — attenuation factor F, 5 times */
-    const F = attenuationFactorF(x);
-
-    /* Step 3: Formula 7.2 — field strength, 5 times */
-    const E = fieldStrengthShuleikin(state.powerKW, state.gainAntenna, d, F);
-
-    /* Apply booster: multiply E by 1.5 if booster is active at this index */
-    const boosted = boostedIndices.has(i);
-    const Efinal = boosted ? E * 1.5 : E;
-
-    return { d, x, F, E, Efinal, boosted };
-  });
-
-  /* Signal weak threshold: if E < max(E)/3, signal is weak */
-  const maxE = Math.max(...results.map((r) => r.E), 1e-9);
+  const maxE = Math.max(...points.map((p) => p.eFinal), 1e-9);
   const weakThreshold = maxE / 3;
+  const maxD = Math.max(...state.distances, 100);
+  const scaleX = (m: number) => Math.min(10, m / (maxD / 10));
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1049,15 +1068,6 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
     });
   });
 
-  const toggleBooster = (index: number) => {
-    setBoostedIndices((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
-  };
-
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
@@ -1065,63 +1075,88 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
         <meshStandardMaterial color="#2d4a22" roughness={0.92} />
       </mesh>
 
-      {/* Antenna tower (base station) */}
-      <mesh position={[0, 3, 0]} castShadow>
-        <cylinderGeometry args={[0.08, 0.15, 6, 8]} />
-        <meshStandardMaterial color="#999" metalness={0.6} />
-      </mesh>
-      <mesh position={[0, 6.2, 0]}>
-        <boxGeometry args={[2.4, 0.06, 0.06]} />
-        <meshStandardMaterial color="#bbb" metalness={0.5} />
-      </mesh>
-      <mesh position={[0, 6.5, 0]}>
-        <sphereGeometry args={[0.1, 8, 8]} />
-        <meshStandardMaterial color="#ff5722" emissive="#ff3300" emissiveIntensity={1.2} />
-      </mesh>
-      <Text fontSize={0.16} color="#ff9800" position={[0, 7.0, 0]}>
-        {`P = ${state.powerKW} кВт | G = ${state.gainAntenna}`}
-      </Text>
-      <Text fontSize={0.12} color="#ffcc80" position={[0, 6.7, 0]}>
-        {`λ = ${state.wavelengthM.toFixed(0)} м | ${band}`}
-      </Text>
+      {/* Cellular base stations (click to toggle booster) */}
+      {stations.map((s) => (
+        <group key={s.id} position={[scaleX(s.xM), 0, 0]}>
+          {/* Big clickable halo (makes interaction obvious) */}
+          <mesh position={[0, 0.02, -2]} rotation={[-Math.PI / 2, 0, 0]} onClick={() => onToggleStation(s.id)}>
+            <ringGeometry args={[0.25, 0.45, 48]} />
+            <meshBasicMaterial color={s.boosted ? '#00e676' : '#ffd54f'} transparent opacity={0.65} />
+          </mesh>
+          <Text fontSize={0.10} color={s.boosted ? '#00e676' : '#ffd54f'} position={[0, 0.45, -2]}>
+            {s.boosted ? 'клик: снять усилитель' : 'клик: поставить усилитель'}
+          </Text>
 
-      {/* Obstacle buildings between stations */}
-      {[2.5, 5, 7].map((xPos, i) => (
-        <mesh key={`obstacle-${i}`} position={[xPos, 0.6 + i * 0.3, -1.5]} castShadow>
-          <boxGeometry args={[0.6, 1.2 + i * 0.6, 0.8]} />
-          <meshStandardMaterial color={['#78909c', '#607d8b', '#546e7a'][i]} roughness={0.8} />
-        </mesh>
-      ))}
-      {/* Trees as obstacles */}
-      {[3.5, 6.5].map((xPos, i) => (
-        <group key={`tree-${i}`} position={[xPos, 0, 1.5]}>
-          <mesh position={[0, 0.6, 0]} castShadow>
-            <cylinderGeometry args={[0.06, 0.08, 1.2, 6]} />
-            <meshStandardMaterial color="#5d4037" />
+          <mesh position={[0, 2.2, -2]} castShadow onClick={() => onToggleStation(s.id)}>
+            <cylinderGeometry args={[0.08, 0.14, 4.4, 8]} />
+            <meshStandardMaterial color={s.boosted ? '#00e676' : '#b0bec5'} metalness={0.6} />
           </mesh>
-          <mesh position={[0, 1.4, 0]} castShadow>
-            <coneGeometry args={[0.5, 1.2, 8]} />
-            <meshStandardMaterial color="#2e7d32" />
+          <mesh position={[0, 4.5, -2]} onClick={() => onToggleStation(s.id)}>
+            <sphereGeometry args={[0.12, 8, 8]} />
+            <meshStandardMaterial
+              color={s.boosted ? '#00e676' : '#ff5722'}
+              emissive={s.boosted ? '#00e676' : '#ff3300'}
+              emissiveIntensity={s.boosted ? 1.8 : 1.2}
+            />
           </mesh>
+          <Text fontSize={0.11} color={s.boosted ? '#00e676' : '#ffcc80'} position={[0, 5.0, -2]}>
+            {`${s.label}${s.boosted ? ' (усил.)' : ''}`}
+          </Text>
         </group>
       ))}
 
+      <Text fontSize={0.14} color="#ffd54f" position={[0, 6.9, 0]}>
+        {`Сотовая связь (упрощ.): P=${state.powerKW} кВт, Ga=${state.gainAntenna}, препятствия → потери`}
+      </Text>
+
+      {/* Obstacles (buildings + trees) */}
+      {obstacles.map((o) => {
+        const xPos = scaleX(o.xM);
+        if (o.kind === 'building') {
+          return (
+            <mesh key={o.id} position={[xPos, 1.3, -0.8]} castShadow>
+              <boxGeometry args={[0.7, 2.6, 1.2]} />
+              <meshStandardMaterial color="#607d8b" roughness={0.85} />
+            </mesh>
+          );
+        }
+        return (
+          <group key={o.id} position={[xPos, 0, 1.4]}>
+            <mesh position={[0, 0.8, 0]} castShadow>
+              <cylinderGeometry args={[0.06, 0.08, 1.6, 6]} />
+              <meshStandardMaterial color="#5d4037" />
+            </mesh>
+            <mesh position={[0, 1.8, 0]} castShadow>
+              <coneGeometry args={[0.6, 1.5, 8]} />
+              <meshStandardMaterial color="#2e7d32" />
+            </mesh>
+          </group>
+        );
+      })}
+
       {/* Expanding wave rings */}
       <group ref={waveRef}>
-        {Array.from({ length: 5 }).map((_, i) => (
-          <mesh key={`hf-ring-${i}`} position={[0, 3, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[1, 0.03, 6, 32]} />
-            <meshBasicMaterial color="#ff9800" transparent opacity={0.3} />
-          </mesh>
-        ))}
+        {/* Rings originate from each base station (no "floating" waves) */}
+        {stations.flatMap((s) =>
+          Array.from({ length: 4 }).map((_, i) => (
+            <mesh
+              key={`cell-ring-${s.id}-${i}`}
+              position={[scaleX(s.xM), 0.12, -2]}
+              rotation={[-Math.PI / 2, 0, 0]}
+            >
+              <torusGeometry args={[1, 0.03, 6, 32]} />
+              <meshBasicMaterial color={s.boosted ? '#00e676' : '#ff9800'} transparent opacity={0.25} />
+            </mesh>
+          )),
+        )}
       </group>
 
-      {/* Distance markers with field strength + signal bar graph + boosters */}
-      {results.map((r, i) => {
-        const scaledD = Math.min(10, r.d / (Math.max(...state.distances) / 10));
-        const barHeight = Math.max(0.1, (r.Efinal / maxE) * 3);
-        const isWeak = r.E < weakThreshold;
-        const barColor = r.boosted ? '#66bb6a' : isWeak ? '#f44336' : '#ff9800';
+      {/* Measurement points + signal bars */}
+      {points.map((p, i) => {
+        const scaledD = scaleX(p.dM);
+        const barHeight = Math.max(0.1, (p.eFinal / maxE) * 3);
+        const isWeak = p.eFinal < weakThreshold;
+        const barColor = isWeak ? '#f44336' : '#ff9800';
         return (
           <group key={`hf-pt-${i}`} position={[scaledD, 0, 0]}>
             {/* Measurement post */}
@@ -1130,13 +1165,13 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
               <meshStandardMaterial color="#f44336" />
             </mesh>
             <Text fontSize={0.12} color="#fff" position={[0, 1.3, 0]}>
-              {`d=${r.d} м`}
+              {`d=${p.dM} м`}
             </Text>
             <Text fontSize={0.11} color="#ffd54f" position={[0, 1.05, 0]}>
-              {`E = ${r.Efinal.toFixed(3)} мВ/м`}
+              {`S = ${p.eFinal.toFixed(3)} усл.`}
             </Text>
             <Text fontSize={0.09} color="#bbb" position={[0, 0.85, 0]}>
-              {`F = ${r.F.toFixed(4)}${r.boosted ? ' ⚡усилен' : ''}`}
+              {`${p.stationLabel} | потери×${p.loss.toFixed(2)}`}
             </Text>
 
             {/* Signal strength bar graph */}
@@ -1144,28 +1179,9 @@ function HfFieldScene({ state, timeScale }: { state: LabSceneProps['hfState']; t
               <boxGeometry args={[0.3, barHeight, 0.3]} />
               <meshStandardMaterial color={barColor} transparent opacity={0.8} />
             </mesh>
-
-            {/* Booster indicator (click to toggle) — green glowing cylinder if weak signal */}
-            {isWeak && !r.boosted && (
-              <mesh position={[0, 0.15, -0.8]} onClick={() => toggleBooster(i)}>
-                <cylinderGeometry args={[0.12, 0.12, 0.3, 8]} />
-                <meshStandardMaterial color="#4caf50" emissive="#00e676" emissiveIntensity={1.5} transparent opacity={0.6} />
-              </mesh>
-            )}
-            {r.boosted && (
-              <mesh position={[0, 0.15, -0.8]} onClick={() => toggleBooster(i)}>
-                <cylinderGeometry args={[0.15, 0.15, 0.4, 8]} />
-                <meshStandardMaterial color="#00e676" emissive="#00e676" emissiveIntensity={2} />
-              </mesh>
-            )}
-            {(isWeak && !r.boosted) && (
+            {isWeak && (
               <Text fontSize={0.08} color="#ff5252" position={[0, 0.5, -0.8]}>
-                {'⬆ усилитель'}
-              </Text>
-            )}
-            {r.boosted && (
-              <Text fontSize={0.08} color="#00e676" position={[0, 0.6, -0.8]}>
-                {'✓ усилен'}
+                {'Сигнал слабый'}
               </Text>
             )}
           </group>
@@ -1864,6 +1880,74 @@ export default function LabScene3D(props: LabSceneProps) {
   const [timeScale, setTimeScale] = useState(1);
   const [showExplain, setShowExplain] = useState(false);
   const [comparisonMode, setComparisonMode] = useState(false);
+  const [cellBoostedStations, setCellBoostedStations] = useState<Set<number>>(new Set());
+
+  const onToggleStation = (stationId: number) => {
+    setCellBoostedStations((prev) => {
+      const next = new Set(prev);
+      if (next.has(stationId)) next.delete(stationId);
+      else next.add(stationId);
+      return next;
+    });
+  };
+
+  const cellularModel = useMemo(() => {
+    if (props.lessonId !== 7) return null;
+    const maxD = Math.max(...props.hfState.distances, 100);
+    const stations: CellularStation[] = [
+      { id: 0, label: 'BS-1', xM: 0, boosted: cellBoostedStations.has(0) },
+      { id: 1, label: 'BS-2', xM: maxD * 0.55, boosted: cellBoostedStations.has(1) },
+      { id: 2, label: 'BS-3', xM: maxD, boosted: cellBoostedStations.has(2) },
+    ];
+    const obstacles: CellularObstacle[] = [
+      { id: 'b1', kind: 'building', xM: maxD * 0.25, widthM: maxD * 0.04, attenuation: 0.55 },
+      { id: 't1', kind: 'trees', xM: maxD * 0.40, widthM: maxD * 0.03, attenuation: 0.78 },
+      { id: 'b2', kind: 'building', xM: maxD * 0.72, widthM: maxD * 0.05, attenuation: 0.5 },
+    ];
+
+    // Under-the-hood explicit cycle before chart update:
+    // - 7.6 OR 7.5 chosen by wavelength (5 times)
+    // - 7.3 (5 times)
+    // - 7.2 (5 times)
+    const band = classifyWaveBand(props.hfState.wavelengthM);
+    const useVariant1 = band === 'DV' || band === 'SV';
+    const distances5 = props.hfState.distances.slice(0, 5);
+
+    const points: CellularPoint[] = distances5.map((dM) => {
+      let best: CellularPoint | null = null;
+      for (const s of stations) {
+        const linkD = Math.max(1, Math.abs(dM - s.xM));
+        // 7.5 or 7.6 (chosen by wavelength) — exactly once per point
+        const x = useVariant1
+          ? xParameterVariant1(linkD, props.hfState.wavelengthM, props.hfState.sigma)
+          : xParameterFull(linkD, props.hfState.wavelengthM, props.hfState.theta, props.hfState.sigma);
+        // 7.3
+        const F = attenuationFactorF(x);
+        // 7.2
+        const base = fieldStrengthShuleikin(props.hfState.powerKW, props.hfState.gainAntenna, linkD, F);
+        const boosterMult = s.boosted ? 1.8 : 1;
+        const loss = obstacles.reduce((acc, o) => {
+          const left = Math.min(dM, s.xM);
+          const right = Math.max(dM, s.xM);
+          const inBetween = o.xM >= left && o.xM <= right;
+          return inBetween ? acc * o.attenuation : acc;
+        }, 1);
+        const eFinal = base * boosterMult * loss;
+        const candidate: CellularPoint = {
+          dM,
+          stationId: s.id,
+          stationLabel: s.label,
+          rawE: base,
+          eFinal,
+          loss,
+        };
+        if (!best || candidate.eFinal > best.eFinal) best = candidate;
+      }
+      return best!;
+    });
+
+    return { stations, obstacles, points };
+  }, [props.lessonId, props.hfState, cellBoostedStations]);
 
   const sceneInfo = useMemo(() => {
     if (props.lessonId === 1) {
@@ -1942,11 +2026,11 @@ export default function LabScene3D(props: LabSceneProps) {
       return { headline: `Экранирование: δ = ${(thick * 1000).toFixed(2)} мм | ω = ${omega.toExponential(2)} 1/с | ППЭδ = ${ppe.toExponential(2)} Вт/м²` };
     }
     if (props.lessonId === 7) {
-      const d0 = props.hfState.distances[0] ?? 1;
-      const x = xParameter(d0, props.hfState.wavelengthM, props.hfState.theta, props.hfState.sigma);
-      const F = attenuationFactorF(x);
-      const Estr = fieldStrengthShuleikin(props.hfState.powerKW, props.hfState.gainAntenna, d0, F);
-      return { headline: `ВЧ-поле (Шулейкин): E = ${Estr.toFixed(3)} мВ/м | F = ${F.toFixed(4)} | d = ${d0} км` };
+      const p0 = cellularModel?.points[0];
+      if (!p0) return { headline: 'Сотовая связь: выберите точки измерения.' };
+      return {
+        headline: `Сотовая связь: S(d₁) = ${p0.eFinal.toFixed(3)} усл. | лучшая станция: ${p0.stationLabel} | препятствия учитываются`,
+      };
     }
     if (props.lessonId === 8) {
       const gd0 = props.uhfState.distances[0] ?? 100;
@@ -1967,6 +2051,38 @@ export default function LabScene3D(props: LabSceneProps) {
     const phi = groundPotential(props.groundState.faultCurrentA, props.groundState.soilResistivityOhmM, props.groundState.distanceM);
     return { headline: `Напряжение шага: Uш = ${Ush.toFixed(1)} В | φ = ${phi.toFixed(1)} В | x = ${props.groundState.distanceM} м` };
   }, [props]);
+
+  const signalChart = useMemo(() => {
+    if (props.lessonId !== 7 || !cellularModel) return null;
+    const pts = cellularModel.points;
+    const maxE = Math.max(...pts.map((p) => p.eFinal), 1e-9);
+    const minD = Math.min(...pts.map((p) => p.dM));
+    const maxD = Math.max(...pts.map((p) => p.dM), minD + 1);
+
+    const W = 320;
+    const H = 90;
+    const pad = 10;
+    const toX = (d: number) => pad + ((d - minD) / (maxD - minD)) * (W - pad * 2);
+    const toY = (e: number) => H - pad - (e / maxE) * (H - pad * 2);
+    const poly = pts.map((p) => `${toX(p.dM).toFixed(1)},${toY(p.eFinal).toFixed(1)}`).join(' ');
+
+    return (
+      <Box sx={{ mt: 1, p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+        <Typography variant="caption" fontWeight={600}>
+          График уровня сигнала (перестраивается при усилении)
+        </Typography>
+        <Box component="svg" viewBox={`0 0 ${W} ${H}`} sx={{ width: '100%', height: 90, mt: 0.5, display: 'block' }}>
+          <polyline points={poly} fill="none" stroke="#ff9800" strokeWidth="2" />
+          {pts.map((p, i) => (
+            <circle key={i} cx={toX(p.dM)} cy={toY(p.eFinal)} r="2.5" fill={p.eFinal < maxE / 3 ? '#f44336' : '#ff9800'} />
+          ))}
+        </Box>
+        <Typography variant="caption" color="text.secondary">
+          Подсказка: кликай по базовым станциям, чтобы включать/выключать «усилитель».
+        </Typography>
+      </Box>
+    );
+  }, [props.lessonId, cellularModel]);
 
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }}>
@@ -1995,6 +2111,7 @@ export default function LabScene3D(props: LabSceneProps) {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         {sceneInfo.headline}
       </Typography>
+      {signalChart}
       {comparisonMode && (sceneInfo as { compareText?: string }).compareText && (
         <Alert severity="info" sx={{ mb: 1 }}>
           {(sceneInfo as { compareText?: string }).compareText}
@@ -2008,7 +2125,7 @@ export default function LabScene3D(props: LabSceneProps) {
           {props.lessonId === 4 && 'Сцена иллюстрирует пошаговый расчет по трем источникам: LR на расстоянии, снижение N преградой и corrected уровень L′R в рабочей точке.'}
           {props.lessonId === 5 && 'Сцена показывает перпендикулярность электрического и магнитного полей, зоны ЭМИ по отношению r/λ и упрощенную классификацию диапазонов.'}
           {props.lessonId === 6 && 'Сцена показывает источник ЭМИ, экранирующую стенку с рассчитанной толщиной δ и волновод. Волновые фронты затухают при прохождении экрана.'}
-          {props.lessonId === 7 && 'Сцена визуализирует распространение ВЧ-поля по формуле Шулейкина-Ван-дер-Поля с маркерами расстояния и значениями E на каждом.'}
+          {props.lessonId === 7 && 'Сцена визуализирует сигнал сотовой связи: несколько базовых станций, преграды (высотки/деревья), выбор лучшей станции в точке и усилители на станциях. График сверху перестраивается динамически.'}
           {props.lessonId === 8 && 'Сцена показывает УВЧ-вышку и точки замера напряжённости на различных расстояниях с учётом диаграммы направленности F(Δ).'}
           {props.lessonId === 9 && 'Сцена демонстрирует эквивалентную схему «напряжение → тело → земля» с визуализацией опасности тока через человека.'}
           {props.lessonId === 10 && 'Сцена показывает растекание тока замыкания в грунте, эквипотенциальные зоны и напряжение шага между ногами человека.'}
@@ -2024,7 +2141,16 @@ export default function LabScene3D(props: LabSceneProps) {
           {props.lessonId === 4 && <NoiseCalculationScene state={props.noiseState} timeScale={timeScale} />}
           {props.lessonId === 5 && <EmiScene state={props.emiState} timeScale={timeScale} />}
           {props.lessonId === 6 && <ShieldingScene state={props.shieldState} timeScale={timeScale} />}
-          {props.lessonId === 7 && <HfFieldScene state={props.hfState} timeScale={timeScale} />}
+          {props.lessonId === 7 && cellularModel && (
+            <CellularSignalScene
+              state={props.hfState}
+              timeScale={timeScale}
+              points={cellularModel.points}
+              stations={cellularModel.stations}
+              obstacles={cellularModel.obstacles}
+              onToggleStation={onToggleStation}
+            />
+          )}
           {props.lessonId === 8 && <UhfFieldScene state={props.uhfState} timeScale={timeScale} />}
           {props.lessonId === 9 && <BodyElectricScene state={props.bodyElecState} timeScale={timeScale} />}
           {props.lessonId === 10 && <StepVoltageScene state={props.groundState} timeScale={timeScale} />}

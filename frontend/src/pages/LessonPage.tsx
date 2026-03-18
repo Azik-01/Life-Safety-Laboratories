@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -36,6 +36,22 @@ export default function LessonPage() {
   const activeSection = normalizeSection(section);
   const [search, setSearch] = useState('');
   const knowledgeLayer = lesson ? getKnowledgeLayer(lesson.id as LessonId) : undefined;
+
+  const goHome = () => {
+    // Primary SPA navigation
+    navigate('/', { replace: true });
+
+    // Fallback: some WebViews (or misconfigured hosting) can update the URL
+    // without React Router reliably re-rendering. If we're at "/" but still
+    // not seeing the home screen, a one-time hard reload fixes it.
+    window.setTimeout(() => {
+      const isAtHomePath = window.location.pathname === '/';
+      const homeMounted = Boolean(document.querySelector('[data-testid="home-page"]'));
+      if (isAtHomePath && !homeMounted) {
+        window.location.reload();
+      }
+    }, 50);
+  };
 
   const query = search.trim().toLowerCase();
   const theoryBlocks = useMemo(
@@ -76,7 +92,7 @@ export default function LessonPage() {
     return (
       <Box>
         <Typography variant="h5">Занятие не найдено</Typography>
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/')}>
+        <Button sx={{ mt: 2 }} onClick={goHome}>
           К списку занятий
         </Button>
       </Box>
@@ -84,8 +100,8 @@ export default function LessonPage() {
   }
 
   return (
-    <Box>
-      <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/')} sx={{ mb: 1 }}>
+    <Box data-testid="lesson-page">
+      <Button startIcon={<ArrowBackIcon />} onClick={goHome} sx={{ mb: 1 }}>
         На главную
       </Button>
 

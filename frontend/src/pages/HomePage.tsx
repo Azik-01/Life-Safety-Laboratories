@@ -1,4 +1,4 @@
-﻿import { Box, Button, Card, CardActions, CardContent, Chip, Grid, Stack, Typography } from '@mui/material';
+import { Box, Button, Card, CardActions, CardContent, Chip, Grid, Stack, Typography } from '@mui/material';
 import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import ScienceIcon from '@mui/icons-material/Science';
 import QuizIcon from '@mui/icons-material/Quiz';
@@ -14,7 +14,7 @@ export default function HomePage() {
   const progress = useProgress();
 
   return (
-    <Box>
+    <Box data-testid="home-page">
       <Typography variant="h3" gutterBottom>
         Life-Safety Laboratories
       </Typography>

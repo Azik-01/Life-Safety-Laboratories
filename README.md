@@ -73,11 +73,7 @@ Life-Safety-Laboratories/
 
 Варианты для `lesson.variants` в `frontend/src/data/variants.ts` сверяются с исходными таблицами из:
 
-- `files/labs doc/lab txt 1.txt`
-- `files/labs doc/lab txt 2.txt`
-- `files/labs doc/lab txt 3.txt`
-- `files/labs doc/lab txt 4.txt`
-- `files/labs doc/lab txt 5.txt`
+- `files/labs doc/lab txt N.txt` (N = 1..10)
 - при спорных местах — `files/labs doc/БЖД_новая_практика_с_содержанием.pdf`
 
 Рекомендуемый порядок:

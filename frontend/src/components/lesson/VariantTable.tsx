@@ -1,5 +1,4 @@
 import {
-  Chip,
   Paper,
   Table,
   TableBody,
@@ -50,21 +49,97 @@ const LABELS: Record<string, [string, string]> = {
   barrierIdB:       ['№ преграды B',         ''],
   barrierIdC:       ['№ преграды C',         ''],
   // Lesson 5 — EMI
-  frequencyHz:      ['Частота (f)',          'Гц'],
+  frequencyHz:      ['f',                    'Гц'],
   electricFieldVpm: ['Электр. поле (E)',     'В/м'],
   magneticFieldApm: ['Магн. поле (H)',       'А/м'],
   sourcePowerW:     ['Мощность источника',   'Вт'],
   sourceGain:       ['Коэф. усиления',      ''],
   reflectance:      ['Коэф. отражения',      ''],
   luminaireCount:   ['Кол-во светильников',  'шт'],
+  // Lesson 6 — табл. 6.1 (короткие подписи, чтобы таблица помещалась по ширине)
+  W:                ['W',                    'витк.'],
+  I:                ['I',                    'мА'],
+  f:                ['f',                    'Гц'],
+  T:                ['T',                    'ч'],
+  D:                ['D',                    'м'],
+  R:                ['R',                    'м'],
+  r:                ['r',                    'м'],
+  // Lesson 6 — табл. 6.2 (отображение)
+  l6_mu:            ['μ (относит. проницаемость)', ''],
+  l6_muA:           ['μₐ',                   'Гн/м'],
+  l6_gamma:         ['γ (удельн. проводимость)', 'См/м'],
+  l6_epsilon:       ['ε (диэл. проницаемость)', ''],
+  // Lesson 7 — табл. 7.1 / 7.2 (стиль как у табл. 6.1: краткий символ + единица)
+  lambda:           ['λ',                    'м'],
+  powerKW:          ['P',                    'кВт'],
+  Ga:               ['Ga',                   ''],
+  theta:            ['θ',                    ''],
+  sigma:            ['σ',                    'См/м'],
+  d1:               ['d₁',                   'м'],
+  d2:               ['d₂',                   'м'],
+  d3:               ['d₃',                   'м'],
+  d4:               ['d₄',                   'м'],
+  d5:               ['d₅',                   'м'],
+  // Lesson 8 — табл. 8.2 / 8.3 (подписи с индексом — в разметке TableCell)
+  pImageKW:         ['', 'кВт'],
+  pSoundKW:         ['', 'кВт'],
+  fRangeMHz:        ['f',                    'МГц'],
+  G:                ['G',                    ''],
+  H:                ['H',                    'м'],
+  K:                ['K',                    ''],
+  r1:               ['r₁',                   'м'],
+  r2:               ['r₂',                   'м'],
+  r3:               ['r₃',                   'м'],
+  r4:               ['r₄',                   'м'],
+  r5:               ['r₅',                   'м'],
+  // Lesson 9 — исходные данные (схема замещения тела)
+  voltageV:         ['U',                    'В'],
+  internalResistanceOhm: ['Rв', 'Ом'],
+  skinCapacitanceNF: ['C',                   'нФ'],
+  // Lesson 10 — заземление / шаговое напряжение
+  faultCurrentA:    ['Iз',                   'А'],
+  soilResistivityOhmM: ['ρ',                 'Ом·м'],
+  stepLengthM:      ['a',                    'м'],
 };
 
-function formatValue(key: string, val: number): string {
+/** Значение f без «Гц» — единица указана в подписи параметра. */
+const SUPERSCRIPT_DIGITS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+
+function toSuperscriptInt(n: number): string {
+  return String(Math.abs(Math.round(n)))
+    .split('')
+    .map((d) => SUPERSCRIPT_DIGITS[Number(d)] ?? d)
+    .join('');
+}
+
+function formatFrequencyScientificHz(val: number): string {
+  if (val === 0 || !Number.isFinite(val)) return String(val);
+  const exp = Math.floor(Math.log10(Math.abs(val)));
+  const mantissa = val / 10 ** exp;
+  const mStr = Number.isInteger(mantissa)
+    ? String(mantissa)
+    : mantissa.toFixed(2).replace(/\.?0+$/, '');
+  return `${mStr}×10${toSuperscriptInt(exp)}`;
+}
+
+function formatValue(key: string, val: number | string): string {
+  if (typeof val === 'string') return val;
+  if (key === 'l6_muA' || key === 'l6_gamma') {
+    if (val === 0 || !Number.isFinite(val)) return String(val);
+    const exp = Math.floor(Math.log10(Math.abs(val)));
+    const mantissa = val / 10 ** exp;
+    const mStr = mantissa.toFixed(2).replace(/\.?0+$/, '');
+    return `${mStr}×10${toSuperscriptInt(exp)}`;
+  }
+  if (key === 'f') {
+    return formatFrequencyScientificHz(val);
+  }
   if (key === 'frequencyHz') {
     if (val >= 1e9) return `${(val / 1e9).toFixed(2)} ГГц`;
     if (val >= 1e6) return `${(val / 1e6).toFixed(2)} МГц`;
     if (val >= 1e3) return `${(val / 1e3).toFixed(1)} кГц`;
-    return `${val} Гц`;
+    /* Единица «Гц» только в заголовке строки, в ячейках — число (напр. 50). */
+    return String(val);
   }
   if (Number.isInteger(val)) return String(val);
   return val.toFixed(2);
@@ -84,13 +159,39 @@ export default function VariantTable({ variants, activeVariant }: Props) {
   if (variants.length === 0) return null;
 
   const keys = Object.keys(variants[0].values);
+  const n = variants.length;
+  /** Узкая колонка параметров — иначе после коротких подписей остаётся огромный зазор до вариантов */
+  const paramColPct = 15;
+  const variantColPct = (100 - paramColPct) / n;
+  const firstColSx = {
+    whiteSpace: 'normal' as const,
+    wordBreak: 'break-word' as const,
+    pr: 0.75,
+  };
 
   return (
-    <TableContainer component={Paper} variant="outlined">
-      <Table size="small">
+    <TableContainer
+      component={Paper}
+      variant="outlined"
+      sx={{
+        width: '100%',
+        maxWidth: '100%',
+        overflowX: 'hidden',
+        '& .MuiTable-root': { tableLayout: 'fixed', width: '100%' },
+      }}
+    >
+      <Table size="small" sx={{ minWidth: 0 }}>
         <TableHead>
           <TableRow>
-            <TableCell sx={{ fontWeight: 700, bgcolor: 'primary.main', color: 'primary.contrastText', whiteSpace: 'nowrap' }}>
+            <TableCell
+              sx={{
+                fontWeight: 700,
+                width: `${paramColPct}%`,
+                bgcolor: 'primary.main',
+                color: 'primary.contrastText',
+                ...firstColSx,
+              }}
+            >
               Параметр
             </TableCell>
             {variants.map((v) => (
@@ -99,9 +200,13 @@ export default function VariantTable({ variants, activeVariant }: Props) {
                 align="center"
                 sx={{
                   fontWeight: 700,
+                  width: `${variantColPct}%`,
+                  minWidth: 0,
+                  pl: 0.5,
                   bgcolor: v.variant === activeVariant ? 'primary.light' : 'primary.main',
                   color: 'primary.contrastText',
-                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >
                 {v.variant === 0 ? '0' : v.variant}
@@ -112,32 +217,57 @@ export default function VariantTable({ variants, activeVariant }: Props) {
         <TableBody>
           {keys.map((key) => {
             const [label, unit] = LABELS[key] ?? [key, ''];
+            const unitSuffix = unit ? `\u00a0(${unit})` : '';
             return (
               <TableRow key={key} sx={{ '&:nth-of-type(odd)': { bgcolor: 'action.hover' } }}>
-                <TableCell sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                  {label}{unit ? ` (${unit})` : ''}
+                <TableCell
+                  sx={{
+                    fontWeight: 600,
+                    width: `${paramColPct}%`,
+                    ...firstColSx,
+                  }}
+                >
+                  {key === 'pImageKW' ? (
+                    <>
+                      P<sub style={{ fontSize: '0.72em' }}>изобр</sub>
+                      {unitSuffix}
+                    </>
+                  ) : key === 'pSoundKW' ? (
+                    <>
+                      P<sub style={{ fontSize: '0.72em' }}>звук</sub>
+                      {unitSuffix}
+                    </>
+                  ) : (
+                    <>
+                      {label}
+                      {unitSuffix}
+                    </>
+                  )}
                 </TableCell>
-                {variants.map((v) => (
-                  <TableCell
-                    key={`${key}-${v.variant}`}
-                    align="center"
-                    sx={{
-                      bgcolor: v.variant === activeVariant ? 'action.selected' : undefined,
-                      fontWeight: v.variant === activeVariant ? 700 : 400,
-                    }}
-                  >
-                    {v.variant === activeVariant ? (
-                      <Chip
-                        size="small"
-                        label={formatValue(key, v.values[key])}
-                        color="primary"
-                        variant="filled"
-                      />
-                    ) : (
-                      formatValue(key, v.values[key])
-                    )}
-                  </TableCell>
-                ))}
+                {variants.map((v) => {
+                  const text = formatValue(key, v.values[key]);
+                  const active = v.variant === activeVariant;
+                  return (
+                    <TableCell
+                      key={`${key}-${v.variant}`}
+                      align="center"
+                      title={text}
+                      sx={{
+                        minWidth: 0,
+                        maxWidth: 0,
+                        pl: 0.5,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        bgcolor: active ? 'action.selected' : undefined,
+                        fontWeight: active ? 700 : 400,
+                        color: active ? 'primary.dark' : 'text.primary',
+                      }}
+                    >
+                      {text}
+                    </TableCell>
+                  );
+                })}
               </TableRow>
             );
           })}

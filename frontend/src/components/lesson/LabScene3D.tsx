@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { Alert, Box, Chip, IconButton, Paper, Slider, Stack, Tooltip, Typography } from '@mui/material';
-import { OrbitControls, Text as DreiText } from '@react-three/drei';
+import { Billboard, OrbitControls, Text as DreiText } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh } from 'three';
 import * as THREE from 'three';
@@ -48,18 +48,29 @@ import FastForwardIcon from '@mui/icons-material/FastForward';
 import SlowMotionVideoIcon from '@mui/icons-material/SlowMotionVideo';
 import type { ComponentProps } from 'react';
 
-/** Wrap drei Text with bold weight + dark outline so every label is legible */
+/** Billboarded drei Text: always faces camera + strong outline for legibility */
 function Text(props: ComponentProps<typeof DreiText>) {
-  const size = (props.fontSize as number | undefined) ?? 0.14;
+  const { position: posIn, fontSize: fontSizeProp, ...rest } = props;
+  const position: [number, number, number] = Array.isArray(posIn)
+    ? [posIn[0], posIn[1], posIn[2]]
+    : posIn && typeof posIn === 'object' && 'x' in posIn
+      ? [posIn.x, posIn.y, posIn.z]
+      : [0, 0, 0];
+  const raw = (fontSizeProp as number | undefined) ?? 0.15;
+  const size = Math.max(raw * 1.06, 0.11);
   return (
-    <DreiText
-      fontWeight={700}
-      outlineWidth={size * 0.14}
-      outlineColor="#111111"
-      anchorX="center"
-      anchorY="middle"
-      {...props}
-    />
+    <Billboard position={position} follow>
+      <DreiText
+        fontWeight={700}
+        outlineWidth={size * 0.16}
+        outlineColor="#141414"
+        anchorX="center"
+        anchorY="middle"
+        position={[0, 0, 0]}
+        fontSize={size}
+        {...rest}
+      />
+    </Billboard>
   );
 }
 
@@ -362,7 +373,7 @@ function LightInvestigationScene({ state, timeScale }: { state: LabSceneProps['l
       <Text fontSize={0.14} color="#42a5f5" position={[state.sensorOffsetM, 1.1, 1]}>
         {`E = ${illuminance.toFixed(0)} лк`}
       </Text>
-      <Text fontSize={0.1} color="#aaa" position={[state.sensorOffsetM, 0.95, 1]}>
+      <Text fontSize={0.1} color="#1976d2" position={[state.sensorOffsetM, 0.95, 1]}>
         {`r = ${distance.toFixed(2)} м | ρ = ${state.reflectance.toFixed(2)}`}
       </Text>
       <Text fontSize={0.1} color="#9fe6ff" position={[state.sensorOffsetM, 0.8, 1]}>
@@ -468,14 +479,14 @@ function LightCalculationScene({ state, timeScale }: { state: LabSceneProps['lig
         <planeGeometry args={[roomL / 2, 0.03]} />
         <meshBasicMaterial color="#2b2b2b" />
       </mesh>
-      <Text fontSize={0.13} color="#2b2b2b" position={[-roomL / 4, 0.18, -lineOffset - 0.28]}>
+      <Text fontSize={0.13} color="#1565c0" position={[-roomL / 4, 0.18, -lineOffset - 0.28]}>
         {`L' = ${lPrime.toFixed(2)}`}
       </Text>
       <mesh position={[0, 0.03, -lineOffset / 2]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}>
         <planeGeometry args={[lineOffset, 0.03]} />
         <meshBasicMaterial color="#2b2b2b" />
       </mesh>
-      <Text fontSize={0.13} color="#2b2b2b" position={[0.3, 0.18, -lineOffset / 2]}>
+      <Text fontSize={0.13} color="#1565c0" position={[0.3, 0.18, -lineOffset / 2]}>
         {`l = ${lineOffset.toFixed(2)} м`}
       </Text>
 
@@ -490,7 +501,7 @@ function LightCalculationScene({ state, timeScale }: { state: LabSceneProps['lig
       <Text fontSize={0.16} color="#ffd43b" position={[0, 0.65, 0]}>
         {`i = ${idx.toFixed(3)} | P = ${(state.chosenLampPowerW ?? 60).toFixed(0)} Вт`}
       </Text>
-      <Text fontSize={0.1} color="#f5f5f5" position={[0, state.heightM + 0.8, 0]}>
+      <Text fontSize={0.1} color="#00695c" position={[0, state.heightM + 0.8, 0]}>
         {`Две светящиеся линии, ${fixturesPerRow} светильников в каждом ряду`}
       </Text>
     </>
@@ -621,7 +632,7 @@ function NoiseInvestigationScene({ state, timeScale }: { state: LabSceneProps['n
         <Text fontSize={0.18} color={total > 80 ? '#ff6b6b' : '#9be37d'} position={[0, 2.1, 0]}>
           {`LΣ = ${total.toFixed(1)} дБ`}
         </Text>
-        <Text fontSize={0.1} color="#aaa" position={[0, 1.95, 0]}>
+        <Text fontSize={0.1} color="#1976d2" position={[0, 1.95, 0]}>
           {total > 80 ? '⚠ Превышение ПДУ!' : '✓ В норме'}
         </Text>
       </group>
@@ -879,7 +890,7 @@ function EmiScene({ state, timeScale }: { state: LabSceneProps['emiState']; time
       <Text fontSize={0.15} color="#4dabf7" position={[-4.7, 1.65, 1.55]}>
         Магнитное поле H
       </Text>
-      <Text fontSize={0.12} color="#333333" position={[0, 3.0, 0]}>
+      <Text fontSize={0.12} color="#0d47a1" position={[0, 3.0, 0]}>
         Поля взаимно перпендикулярны и распространяются вдоль оси волны
       </Text>
 
@@ -899,7 +910,7 @@ function EmiScene({ state, timeScale }: { state: LabSceneProps['emiState']; time
         <Text fontSize={0.15} color="#fff" position={[0, 2.3, 0]}>
           {zone === 'near' ? 'Ближняя зона' : zone === 'intermediate' ? 'Промежуточная' : 'Дальняя зона'}
         </Text>
-        <Text fontSize={0.11} color="#bbb" position={[0, 2.1, 0]}>
+        <Text fontSize={0.11} color="#eceff1" position={[0, 2.1, 0]}>
           {`r = ${state.distanceM.toFixed(2)} м`}
         </Text>
         <Text fontSize={0.11} color="#ffd43b" position={[0, 0.8, 0]}>
@@ -982,7 +993,7 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[18, 12]} />
-        <meshStandardMaterial color="#3a3e44" roughness={0.9} />
+        <meshStandardMaterial color="#dfe3e8" roughness={0.94} metalness={0.02} />
       </mesh>
 
       {/* EMI source (coil/transmitter) */}
@@ -1006,10 +1017,10 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
         <boxGeometry args={[Math.max(0.05, thickness * 800), 3, 6]} />
         <meshStandardMaterial color="#78909c" metalness={0.7} roughness={0.3} transparent opacity={0.85} />
       </mesh>
-      <Text fontSize={0.14} color="#80cbc4" position={[0, 3.3, 0]}>
+      <Text fontSize={0.14} color="#80cbc4" position={[0, 3.58, 0]}>
         {`Экран: δ = ${(thickness * 1000).toFixed(2)} мм | ω = ${omega.toExponential(2)} 1/с`}
       </Text>
-      <Text fontSize={0.11} color="#b0bec5" position={[0, 3.05, 0]}>
+      <Text fontSize={0.11} color="#01579b" position={[0, 3.28, 0]}>
         {`ППЭδдоп = ${ppeAllow.toExponential(2)} Вт/м² | L = ${L.toFixed(3)}`}
       </Text>
 
@@ -1018,7 +1029,8 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
         <cylinderGeometry args={[state.waveguideDiameterM * 5, state.waveguideDiameterM * 5, Math.max(0.1, wgLen * 2), 16]} />
         <meshStandardMaterial color="#455a64" metalness={0.6} transparent opacity={0.7} />
       </mesh>
-      <Text fontSize={0.11} color="#a5d6a7" position={[0, 1.3, 2.5]}>
+      {/* Подпись вынесена над верхней гранью экрана и ближе к камере по Z, чтобы не оказывалась внутри полупрозрачной стенки */}
+      <Text fontSize={0.11} color="#a5d6a7" position={[0, 3.14, 3.42]}>
         {`Волновод: l = ${(wgLen * 100).toFixed(1)} см | α = ${wgAtt.toFixed(2)} дБ/м`}
       </Text>
 
@@ -1035,7 +1047,7 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
       {/* Protected zone */}
       <mesh position={[4, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[6, 6]} />
-        <meshBasicMaterial color="#4caf50" transparent opacity={0.12} />
+        <meshBasicMaterial color="#4caf50" transparent opacity={0.32} depthWrite={false} />
       </mesh>
       <Text fontSize={0.16} color="#66bb6a" position={[4, 0.3, 0]}>
         Защищённая зона
@@ -1048,6 +1060,9 @@ function ShieldingScene({ state, timeScale }: { state: LabSceneProps['shieldStat
 }
 
 /* ─────────────── Lesson 7: HF Field (Shuleikin-VdPol) ─────────────── */
+
+/** Ниже этой доли от max S по пяти точкам — «Сигнал слабый» (не ⅓: при разных d иначе почти всегда красное). */
+const HF_CELL_WEAK_VS_PEAK = 0.1;
 
 function CellularSignalScene({
   state,
@@ -1067,9 +1082,23 @@ function CellularSignalScene({
   const waveRef = useRef<THREE.Group>(null);
   const timeR = useRef(0);
   const maxE = Math.max(...points.map((p) => p.eFinal), 1e-9);
-  const weakThreshold = maxE / 3;
+  const weakThreshold = maxE * HF_CELL_WEAK_VS_PEAK;
   const maxD = Math.max(...state.distances, 100);
   const scaleX = (m: number) => Math.min(10, m / (maxD / 10));
+
+  const maxScaledX = Math.max(
+    ...stations.map((s) => scaleX(s.xM)),
+    ...points.map((p) => scaleX(p.dM)),
+    ...obstacles.map((o) => scaleX(o.xM)),
+    1,
+  );
+  const scenePadX = 1.6;
+  const scenePadZ = 1.4;
+  const planeW = maxScaledX + 2 * scenePadX;
+  const planeD = Math.max(8.5, Math.min(12, maxScaledX * 0.95 + 2 * scenePadZ));
+  const contentCenterX = maxScaledX / 2;
+  const sceneShiftX = -contentCenterX;
+  const ringOuter = Math.min(planeW / 2 - 0.15, contentCenterX + scenePadX + 0.3);
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1085,44 +1114,69 @@ function CellularSignalScene({
   });
 
   return (
-    <>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[24, 16]} />
-        <meshStandardMaterial color="#2d4a22" roughness={0.92} />
+    <group position={[sceneShiftX, 0, 0]}>
+      <mesh position={[contentCenterX, 0, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[planeW, planeD]} />
+        <meshStandardMaterial color="#8bad78" roughness={0.92} />
       </mesh>
 
-      {/* Cellular base stations (click to toggle booster) */}
-      {stations.map((s) => (
-        <group key={s.id} position={[scaleX(s.xM), 0, 0]}>
-          {/* Big clickable halo (makes interaction obvious) */}
-          <mesh position={[0, 0.02, -2]} rotation={[-Math.PI / 2, 0, 0]} onClick={() => onToggleStation(s.id)}>
-            <ringGeometry args={[0.25, 0.45, 48]} />
-            <meshBasicMaterial color={s.boosted ? '#00e676' : '#ffd54f'} transparent opacity={0.65} />
-          </mesh>
-          <Text fontSize={0.10} color={s.boosted ? '#00e676' : '#ffd54f'} position={[0, 0.45, -2]}>
-            {s.boosted ? 'клик: снять усилитель' : 'клик: поставить усилитель'}
-          </Text>
+      {/* БС: в центре (x=0) — главная радиостанция/передатчик; по краям — ретрансляторы с усилителем */}
+      {stations.map((s) => {
+        const isMain = s.id === 0;
+        const mastH = isMain ? 5.8 : 4.4;
+        const mastY = isMain ? 2.9 : 2.2;
+        const topY = isMain ? mastH + 0.35 : 4.5;
+        const labelY = isMain ? mastH + 0.95 : 5.0;
+        return (
+          <group key={s.id} position={[scaleX(s.xM), 0, 0]}>
+            {!isMain && (
+              <>
+                <mesh position={[0, 0.02, -2]} rotation={[-Math.PI / 2, 0, 0]} onClick={() => onToggleStation(s.id)}>
+                  <ringGeometry args={[0.25, 0.45, 48]} />
+                  <meshBasicMaterial color={s.boosted ? '#00e676' : '#ffd54f'} transparent opacity={0.65} />
+                </mesh>
+                <Text fontSize={0.10} color={s.boosted ? '#00e676' : '#ffd54f'} position={[0, 0.45, -1.35]}>
+                  {s.boosted ? 'клик: снять усилитель' : 'клик: поставить усилитель'}
+                </Text>
+              </>
+            )}
+            {isMain && (
+              <mesh position={[0, 0.02, -2]} rotation={[-Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[0.35, 0.58, 48]} />
+                <meshBasicMaterial color="#ff7043" transparent opacity={0.45} />
+              </mesh>
+            )}
 
-          <mesh position={[0, 2.2, -2]} castShadow onClick={() => onToggleStation(s.id)}>
-            <cylinderGeometry args={[0.08, 0.14, 4.4, 8]} />
-            <meshStandardMaterial color={s.boosted ? '#00e676' : '#b0bec5'} metalness={0.6} />
-          </mesh>
-          <mesh position={[0, 4.5, -2]} onClick={() => onToggleStation(s.id)}>
-            <sphereGeometry args={[0.12, 8, 8]} />
-            <meshStandardMaterial
-              color={s.boosted ? '#00e676' : '#ff5722'}
-              emissive={s.boosted ? '#00e676' : '#ff3300'}
-              emissiveIntensity={s.boosted ? 1.8 : 1.2}
-            />
-          </mesh>
-          <Text fontSize={0.11} color={s.boosted ? '#00e676' : '#ffcc80'} position={[0, 5.0, -2]}>
-            {`${s.label}${s.boosted ? ' (усил.)' : ''}`}
-          </Text>
-        </group>
-      ))}
+            <mesh position={[0, mastY, -2]} castShadow={!isMain} onClick={isMain ? undefined : () => onToggleStation(s.id)}>
+              <cylinderGeometry args={isMain ? [0.12, 0.2, mastH, 10] : [0.08, 0.14, mastH, 8]} />
+              <meshStandardMaterial
+                color={isMain ? '#eceff1' : s.boosted ? '#00e676' : '#b0bec5'}
+                metalness={isMain ? 0.45 : 0.6}
+                roughness={isMain ? 0.35 : 0.5}
+              />
+            </mesh>
+            <mesh position={[0, topY, -2]} onClick={isMain ? undefined : () => onToggleStation(s.id)}>
+              <sphereGeometry args={[isMain ? 0.18 : 0.12, 10, 10]} />
+              <meshStandardMaterial
+                color={isMain ? '#ff7043' : s.boosted ? '#00e676' : '#ff5722'}
+                emissive={isMain ? '#ff5722' : s.boosted ? '#00e676' : '#ff3300'}
+                emissiveIntensity={isMain ? 1.4 : s.boosted ? 1.8 : 1.2}
+              />
+            </mesh>
+            <Text fontSize={isMain ? 0.12 : 0.11} color={isMain ? '#ffe0b2' : s.boosted ? '#00e676' : '#ffcc80'} position={[0, labelY, -2]}>
+              {isMain ? 'Главная радиостанция (передатчик)' : `${s.label}${s.boosted ? ' (усил.)' : ''}`}
+            </Text>
+            {isMain && (
+              <Text fontSize={0.085} color="#b0bec5" position={[0, mastY - 1.2, -0.85]}>
+                {'релейные БС по оси — с усилителем'}
+              </Text>
+            )}
+          </group>
+        );
+      })}
 
-      <Text fontSize={0.14} color="#ffd54f" position={[0, 6.9, 0]}>
-        {`Сотовая связь (упрощ.): P=${state.powerKW} кВт, Ga=${state.gainAntenna}, препятствия → потери`}
+      <Text fontSize={0.14} color="#ffd54f" position={[contentCenterX, 6.9, 0]}>
+        {`Главная станция + ретрансляторы (упрощ.): P=${state.powerKW} кВт, Ga=${state.gainAntenna}, препятствия → потери`}
       </Text>
 
       {/* Obstacles (buildings + trees) */}
@@ -1186,7 +1240,7 @@ function CellularSignalScene({
             <Text fontSize={0.11} color="#ffd54f" position={[0, 1.05, 0]}>
               {`S = ${p.eFinal.toFixed(3)} усл.`}
             </Text>
-            <Text fontSize={0.09} color="#bbb" position={[0, 0.85, 0]}>
+            <Text fontSize={0.09} color="#00695c" position={[0, 0.85, 0]}>
               {`${p.stationLabel} | потери×${p.loss.toFixed(2)}`}
             </Text>
 
@@ -1205,14 +1259,14 @@ function CellularSignalScene({
       })}
 
       {/* Ground plane texture */}
-      <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.5, 11, 64]} />
+      <mesh position={[contentCenterX, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.45, ringOuter, 64]} />
         <meshBasicMaterial color="#4caf50" transparent opacity={0.08} />
       </mesh>
 
-      <pointLight position={[0, 8, 4]} color="#fff5e0" intensity={1} distance={15} decay={2} />
-      <pointLight position={[8, 4, -4]} color="#ffeedd" intensity={0.5} distance={12} decay={2} />
-    </>
+      <pointLight position={[contentCenterX, 8, 4]} color="#fff5e0" intensity={1} distance={15} decay={2} />
+      <pointLight position={[contentCenterX + 5, 4, -4]} color="#ffeedd" intensity={0.5} distance={12} decay={2} />
+    </group>
   );
 }
 
@@ -1459,7 +1513,7 @@ function TvBroadcastScene({
             {`E_из=${p.EimgFinal.toFixed(2)} | E_зв=${p.EsndFinal.toFixed(2)} В/м`}
           </Text>
 
-          <Text fontSize={0.09} color="#cfd8dc" position={[0, 2.2, 0]}>
+          <Text fontSize={0.09} color="#00695c" position={[0, 2.2, 0]}>
             {'Усилители ставятся на точках r1..r5'}
           </Text>
         </group>
@@ -1574,7 +1628,7 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
         <boxGeometry args={[0.8, 1.0, 0.6]} />
         <meshStandardMaterial color="#455a64" metalness={0.4} />
       </mesh>
-      <Text fontSize={0.1} color="#ccc" position={[0, 1.8, 0.35]}>
+      <Text fontSize={0.1} color="#eceff1" position={[0, 1.8, 0.35]}>
         {'ЭО'}
       </Text>
 
@@ -1727,19 +1781,19 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
             );
           })()}
 
-          <Text fontSize={0.07} color="#bbb" position={[0.0, 0.1, 0.03]}>
+          <Text fontSize={0.105} color="#e65100" position={[0.0, 0.1, 0.03]}>
             {'0 c'}
           </Text>
-          <Text fontSize={0.07} color="#bbb" position={[1.6, 0.1, 0.03]}>
+          <Text fontSize={0.085} color="#e65100" position={[1.6, 0.1, 0.03]}>
             {'5 c'}
           </Text>
-          <Text fontSize={0.07} color="#bbb" position={[-0.05, 0.9, 0.03]}>
+          <Text fontSize={0.085} color="#e65100" position={[-0.05, 0.9, 0.03]}>
             {'I'}
           </Text>
-          <Text fontSize={0.07} color="#bbb" position={[0.75, -0.02, 0.03]}>
+          <Text fontSize={0.085} color="#e65100" position={[0.75, -0.02, 0.03]}>
             {'t'}
           </Text>
-          <Text fontSize={0.07} color="#bbb" position={[0.75, 0.25, 0.03]}>
+          <Text fontSize={0.085} color="#e65100" position={[0.75, 0.25, 0.03]}>
             {`границы: неотп.≈${nonReleasingBoundaryMA} мА; фибр.≈${fibrillationBoundaryMA.toFixed(0)} мА`}
           </Text>
         </group>
@@ -1752,7 +1806,7 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
       <Text fontSize={0.11} color="#90caf9" position={[1.5, 1.95, 0]}>
         {`Z = ${Zt.toFixed(0)} Ом | ${touchLabel}`}
       </Text>
-      <Text fontSize={0.1} color="#bbb" position={[1.5, 1.8, 0]}>
+      <Text fontSize={0.1} color="#1976d2" position={[1.5, 1.8, 0]}>
         {`Повреждение: ${damagedPhases[0]}↔${damagedPhases[1]} | U = ${state.voltageV} В`}
       </Text>
     </>
@@ -1960,7 +2014,7 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
       <Text fontSize={0.12} color="#fff176" position={[personX, 1.75, 0]}>
         {`φ = ${phi.toFixed(1)} В`}
       </Text>
-      <Text fontSize={0.1} color="#aaa" position={[personX, 1.55, 0]}>
+      <Text fontSize={0.1} color="#1976d2" position={[personX, 1.55, 0]}>
         {Ush > 40 ? '⚠ Опасное напряжение шага!' : '✓ Безопасно'}
       </Text>
 
@@ -2037,7 +2091,7 @@ export default function LabScene3D(props: LabSceneProps) {
         const F = attenuationFactorF(x);
         // 7.2
         const base = fieldStrengthShuleikin(props.hfState.powerKW, props.hfState.gainAntenna, linkD, F);
-        const boosterMult = s.boosted ? 1.8 : 1;
+        const boosterMult = s.id === 0 ? 1 : s.boosted ? 1.8 : 1;
         const loss = obstacles.reduce((acc, o) => {
           const left = Math.min(dM, s.xM);
           const right = Math.max(dM, s.xM);
@@ -2221,7 +2275,7 @@ export default function LabScene3D(props: LabSceneProps) {
         <Box component="svg" viewBox={`0 0 ${W} ${H}`} sx={{ width: '100%', height: 90, mt: 0.5, display: 'block' }}>
           <polyline points={poly} fill="none" stroke="#ff9800" strokeWidth="2" />
           {pts.map((p, i) => (
-            <circle key={i} cx={toX(p.dM)} cy={toY(p.eFinal)} r="2.5" fill={p.eFinal < maxE / 3 ? '#f44336' : '#ff9800'} />
+            <circle key={i} cx={toX(p.dM)} cy={toY(p.eFinal)} r="2.5" fill={p.eFinal < maxE * HF_CELL_WEAK_VS_PEAK ? '#f44336' : '#ff9800'} />
           ))}
         </Box>
         <Typography variant="caption" color="text.secondary">
@@ -2321,7 +2375,8 @@ export default function LabScene3D(props: LabSceneProps) {
           {props.lessonId === 4 && 'Сцена иллюстрирует пошаговый расчет по трем источникам: LR на расстоянии, снижение N преградой и corrected уровень L′R в рабочей точке.'}
           {props.lessonId === 5 && 'Сцена показывает перпендикулярность электрического и магнитного полей, зоны ЭМИ по отношению r/λ и упрощенную классификацию диапазонов.'}
           {props.lessonId === 6 && 'Сцена показывает источник ЭМИ, экранирующую стенку с рассчитанной толщиной δ и волновод. Волновые фронты затухают при прохождении экрана.'}
-          {props.lessonId === 7 && 'Сцена визуализирует сигнал сотовой связи: несколько базовых станций, преграды (высотки/деревья), выбор лучшей станции в точке и усилители на станциях. График сверху перестраивается динамически.'}
+          {props.lessonId === 7 &&
+            'Сцена — упрощённая модель: в центре главная радиостанция (передатчик), по оси — релейные базовые станции с опциональным усилителем (клик), преграды на пути луча, в каждой точке измерения выбирается лучший сигнал. График сверху перестраивается динамически.'}
           {props.lessonId === 8 && 'Сцена симулирует телевещание: отдельно видео и звук. При слабом сигнале появляются помехи/рассинхрон, усилители включаются отдельно для видео и для звука. График строится после цикла 8.6→8.5→8.4.'}
           {props.lessonId === 9 && 'Сцена демонстрирует эквивалентную схему «напряжение → тело → земля» с визуализацией опасности тока через человека.'}
           {props.lessonId === 10 && 'Сцена показывает растекание тока замыкания в грунте, эквипотенциальные зоны и напряжение шага между ногами человека.'}

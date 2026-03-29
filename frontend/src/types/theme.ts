@@ -67,7 +67,8 @@ export interface LabStep {
   id: string;
   type: LabStepType;
   title: string;
-  whatToDo: string;
+  /** Один абзац или несколько пунктов маркированного списка под «Что делаем:». */
+  whatToDo: string | string[];
   why: string;
   sceneAction: string;
   hint: string;
@@ -77,7 +78,8 @@ export interface LabStep {
 export interface LabVariant {
   variant: number;
   ticketLastDigits: number[];
-  values: Record<string, number>;
+  /** Числа и, при необходимости, строковые поля (например диапазон f для табл. 8.2). */
+  values: Record<string, number | string>;
   sourceNote: string;
   validated: boolean;
 }

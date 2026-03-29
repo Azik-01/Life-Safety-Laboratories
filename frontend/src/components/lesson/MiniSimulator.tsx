@@ -94,6 +94,15 @@ function getDefaults(type: TheorySimulatorType) {
   switch (type) {
     case 'light-multi-source':
       return { a: 80, b: 80, c: 80, d: 80 };
+    case 'emi-waveguide':
+      /* D мм, ε, L дБ — согласовано с ползунками (D max 50 мм) */
+      return { a: 15, b: 7, c: 30, d: 120 };
+    case 'hf-field-strength':
+      /* λ, P кВт, Ga, d м — согласовано с TheoryScene3D SceneContent */
+      return { a: 500, b: 250, c: 1.05, d: 2000 };
+    case 'hf-soil-attenuation':
+      /* σ (слайдер ×10⁻³), λ, d */
+      return { a: 5, b: 500, c: 2000, d: 120 };
     default:
       return { a: 500, b: 1.2, c: 2.5, d: 120 };
   }
@@ -454,7 +463,7 @@ export default function MiniSimulator({ type }: SimulatorProps) {
         const P = Math.max(0.1, b);
         const Ga = Math.max(0.1, c);
         const dist = Math.max(100, d);
-        const x = xParameter(lambdaVal, dist, 7, 0.005);
+        const x = xParameter(dist, lambdaVal, 7, 0.005);
         const F = attenuationFactorF(x);
         const E = fieldStrengthShuleikin(P, Ga, dist, F);
         return {
@@ -481,7 +490,7 @@ export default function MiniSimulator({ type }: SimulatorProps) {
         const lambdaVal = Math.max(10, a);
         const dist = Math.max(100, b);
         const sigma = Math.max(0.001, c / 1000);
-        const x = xParameter(lambdaVal, dist, 7, sigma);
+        const x = xParameter(dist, lambdaVal, 7, sigma);
         const F = attenuationFactorF(x);
         return {
           controls: (
@@ -504,7 +513,7 @@ export default function MiniSimulator({ type }: SimulatorProps) {
         const sigma = Math.max(0.001, a / 1000);
         const lambdaVal = Math.max(10, b);
         const dist = Math.max(100, c);
-        const x = xParameter(lambdaVal, dist, 7, sigma);
+        const x = xParameter(dist, lambdaVal, 7, sigma);
         const F = attenuationFactorF(x);
         return {
           controls: (

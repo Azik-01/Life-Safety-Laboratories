@@ -16,7 +16,7 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getLessonById } from '../data/lessons';
-import { getKnowledgeLayer } from '../data/knowledgeLayer';
+import { getKnowledgeLayer, theoryBlocksWithGoal } from '../data/knowledgeLayer';
 import TheorySection from '../components/lesson/TheorySection';
 import LabSection from '../components/lesson/LabSection';
 import TestSection from '../components/lesson/TestSection';
@@ -54,16 +54,15 @@ export default function LessonPage() {
   };
 
   const query = search.trim().toLowerCase();
-  const theoryBlocks = useMemo(
-    () =>
-      knowledgeLayer?.theory.map((block) => ({
+  const theoryBlocks = useMemo(() => {
+      if (!lesson || !knowledgeLayer) return [];
+      return theoryBlocksWithGoal(knowledgeLayer, lesson.id as LessonId).map((block) => ({
         id: block.id,
         title: block.heading,
         keywords: block.keywords,
         text: block.text,
-      })) ?? [],
-    [knowledgeLayer],
-  );
+      }));
+    }, [knowledgeLayer, lesson]);
   const filteredTheoryBlocks = theoryBlocks.filter((block) => {
     if (!query) return true;
     const inTitle = block.title.toLowerCase().includes(query);
@@ -108,9 +107,11 @@ export default function LessonPage() {
       <Typography variant="h4" sx={{ mb: 1 }}>
         {lesson.title}
       </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-        {lesson.goal}
-      </Typography>
+      {!(lesson.id >= 6 && lesson.id <= 10) && (
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+          {lesson.goal}
+        </Typography>
+      )}
 
       <Tabs
         value={activeSection}

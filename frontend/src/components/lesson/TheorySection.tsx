@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
@@ -15,7 +15,13 @@ import FormulaBlock from './FormulaBlock';
 import FigureZoom from './FigureZoom';
 import TermHighlight from './TermHighlight';
 import MiniSimulator from './MiniSimulator';
-import { getKnowledgeLayer, toFormulaBlockProps, buildGlossary } from '../../data/knowledgeLayer';
+import {
+  getKnowledgeLayer,
+  toFormulaBlockProps,
+  buildGlossary,
+  shouldInlineGoalInTheory,
+  theoryBlocksWithGoal,
+} from '../../data/knowledgeLayer';
 import { useProgress } from '../../context/ProgressContext';
 import { getLessonById } from '../../data/lessons';
 
@@ -33,7 +39,11 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
 
   /* ─── Build interleaved content list ─── */
   const interleavedContent = useMemo(() => {
-    if (!knowledgeLayer) return [];
+    if (!knowledgeLayer || !lessonId) return [];
+
+    const theoryBlocks = theoryBlocksWithGoal(knowledgeLayer, lessonId);
+    const goalShift =
+      shouldInlineGoalInTheory(lessonId) && knowledgeLayer.goal?.trim() ? 1 : 0;
 
     const items: Array<{
       type: 'theory' | 'formula' | 'figure' | 'scene';
@@ -60,7 +70,7 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
     );
 
     /* ── Assign each formula to the LAST (most specific) block that references it ── */
-    const formulaOwner = new Map<string, number>(); // formulaNumber → blockIndex
+    const formulaOwner = new Map<string, number>(); // formulaNumber → blockIndex (в исходном theory без цели)
     blockFormulaRefs.forEach((refs, blockIndex) => {
       refs.forEach((num) => {
         // Later blocks override earlier ones (overview block loses to specific method blocks)
@@ -76,13 +86,14 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
       if (!match || !assignedNumbers.has(match[1])) unassigned.push(f);
     });
 
-    /* ── Build a formulaNumber→formula map indexed by block ── */
+    /* ── Build a formulaNumber→formula map indexed by block (индекс с учётом блока «Цель») ── */
     const formulasForBlock = new Map<number, typeof formulas>();
     formulaOwner.forEach((blockIdx, num) => {
       const f = formulaByNumber.get(num);
       if (!f) return;
-      if (!formulasForBlock.has(blockIdx)) formulasForBlock.set(blockIdx, []);
-      formulasForBlock.get(blockIdx)!.push(f);
+      const displayIdx = blockIdx + goalShift;
+      if (!formulasForBlock.has(displayIdx)) formulasForBlock.set(displayIdx, []);
+      formulasForBlock.get(displayIdx)!.push(f);
     });
     // Sort each block's formulas by their label number
     formulasForBlock.forEach((arr) => {
@@ -95,20 +106,21 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
 
     /* ── Distribute unassigned formulas evenly across non-first blocks ── */
     if (unassigned.length > 0 && knowledgeLayer.theory.length > 1) {
-      const startBlock = 1; // skip overview block
+      const startBlock = 1; // skip overview block (в исходных индексах theory)
       const blocks = knowledgeLayer.theory.length - startBlock;
       const perBlock = Math.ceil(unassigned.length / blocks);
       let uIdx = 0;
       for (let bi = startBlock; bi < knowledgeLayer.theory.length && uIdx < unassigned.length; bi++) {
-        if (!formulasForBlock.has(bi)) formulasForBlock.set(bi, []);
+        const displayIdx = bi + goalShift;
+        if (!formulasForBlock.has(displayIdx)) formulasForBlock.set(displayIdx, []);
         for (let j = 0; j < perBlock && uIdx < unassigned.length; j++, uIdx++) {
-          formulasForBlock.get(bi)!.push(unassigned[uIdx]);
+          formulasForBlock.get(displayIdx)!.push(unassigned[uIdx]);
         }
       }
     } else if (unassigned.length > 0) {
-      // Single theory block or no blocks — assign all formulas to the first/only block
-      if (!formulasForBlock.has(0)) formulasForBlock.set(0, []);
-      unassigned.forEach((f) => formulasForBlock.get(0)!.push(f));
+      const displayIdx = goalShift; // первый содержательный блок теории
+      if (!formulasForBlock.has(displayIdx)) formulasForBlock.set(displayIdx, []);
+      unassigned.forEach((f) => formulasForBlock.get(displayIdx)!.push(f));
     }
 
     /* ── Build simulator lookup: distribute theoryModules across blocks ── */
@@ -117,16 +129,16 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
     const moduleCount = theoryModules.length;
     if (moduleCount > 0 && theoryBlockCount > 0) {
       const ratio = moduleCount / theoryBlockCount;
-      for (let blockIdx = 0; blockIdx < theoryBlockCount; blockIdx++) {
-        const moduleIdx = Math.min(Math.floor(blockIdx * ratio), moduleCount - 1);
-        if (!moduleByIndex.has(blockIdx)) {
-          moduleByIndex.set(blockIdx, theoryModules[moduleIdx]);
-        }
+      for (let blockIdx = 0; blockIdx < theoryBlocks.length; blockIdx++) {
+        if (goalShift && blockIdx === 0) continue;
+        const logicalIdx = blockIdx - goalShift;
+        const moduleIdx = Math.min(Math.floor(logicalIdx * ratio), moduleCount - 1);
+        moduleByIndex.set(blockIdx, theoryModules[moduleIdx]);
       }
     }
 
     /* ── Interleave: theory → formulas → scene → figure ── */
-    knowledgeLayer.theory.forEach((block, blockIndex) => {
+    theoryBlocks.forEach((block, blockIndex) => {
       items.push({ type: 'theory', data: block });
 
       // Formulas owned by this block
@@ -144,8 +156,9 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
         usedSimulators.add(matchedModule.simulator);
       }
 
-      // Figure every 2 blocks
-      if ((blockIndex + 1) % 2 === 0 && figureIndex < figures.length) {
+      // Figure every 2 blocks (как раньше — по порядку содержательных блоков)
+      const logicalIdx = blockIndex - goalShift;
+      if (logicalIdx >= 0 && (logicalIdx + 1) % 2 === 0 && figureIndex < figures.length) {
         items.push({ type: 'figure', data: figures[figureIndex++] });
       }
     });
@@ -171,7 +184,7 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
     });
 
     return items;
-  }, [knowledgeLayer, theoryModules]);
+  }, [knowledgeLayer, theoryModules, lessonId]);
 
   const visibleContent = useMemo(
     () => (detailedMode ? interleavedContent : interleavedContent.filter((item) => item.type !== 'figure')),
@@ -180,7 +193,9 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
 
   useEffect(() => {
     if (!lessonId || !knowledgeLayer) return;
-    knowledgeLayer.theory.forEach((block) => progress.markTheoryRead(lessonId, block.id));
+    theoryBlocksWithGoal(knowledgeLayer, lessonId).forEach((block) =>
+      progress.markTheoryRead(lessonId, block.id),
+    );
   }, [knowledgeLayer, lessonId, progress]);
 
   if (!knowledgeLayer) {

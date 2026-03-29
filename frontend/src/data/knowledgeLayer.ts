@@ -84,6 +84,22 @@ export function getKnowledgeLayer(lessonId: LessonId): KnowledgeLayer | undefine
   return layers[lessonId];
 }
 
+/** Занятия 6–10: цель из методички показывается первым блоком теории, а не отдельным абзацем над вкладками. */
+export function shouldInlineGoalInTheory(lessonId: LessonId): boolean {
+  return lessonId >= 6 && lessonId <= 10;
+}
+
+export function theoryBlocksWithGoal(layer: KnowledgeLayer, lessonId: LessonId): KnowledgeTheoryBlock[] {
+  if (!shouldInlineGoalInTheory(lessonId) || !layer.goal?.trim()) return layer.theory;
+  const goalBlock: KnowledgeTheoryBlock = {
+    id: `${layer.id}-goal`,
+    heading: 'Цель работы',
+    text: layer.goal.trim(),
+    keywords: ['цель работы'],
+  };
+  return [goalBlock, ...layer.theory];
+}
+
 /** Convert knowledge formula into FormulaBlock props */
 export function toFormulaBlockProps(formula: KnowledgeFormula): FormulaBlockProps {
   return {

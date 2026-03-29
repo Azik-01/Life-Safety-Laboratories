@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Box,
   Button,
   Checkbox,
   Chip,
@@ -27,7 +28,17 @@ import {
   Typography,
 } from '@mui/material';
 import type { LessonTheme } from '../../types/theme';
-import { lesson2MergedValues, lesson4MergedValues, lesson6MergedValues, lesson7MergedValues, lesson8MergedValues, pickVariantByTicketDigits } from '../../data/variants';
+import {
+  lesson2MergedValues,
+  lesson4MergedValues,
+  lesson6MergedValues,
+  lesson6Table2Variants,
+  lesson7MergedValues,
+  lesson7Table2Variants,
+  lesson8MergedValues,
+  lesson8Table3Variants,
+  pickVariantByTicketDigits,
+} from '../../data/variants';
 import Lab4TablesPanel from './Lab4TablesPanel';
 import VariantTable from './VariantTable';
 import { mean, realisticIlluminanceLux } from '../../formulas/illumination';
@@ -40,7 +51,12 @@ import {
   sumLevelsEnergyDb,
   sumTwoLevelsByDeltaDb,
 } from '../../formulas/noise';
-import { classifyEmZone, powerFluxDensityWm2, wavelengthM } from '../../formulas/emi';
+import {
+  classifyEmZone,
+  electricFieldStrengthVpm,
+  powerFluxDensityWm2,
+  wavelengthM,
+} from '../../formulas/emi';
 import {
   magneticFieldStrengthH,
   allowablePPE,
@@ -53,8 +69,22 @@ import {
   powerFluxDensityFromH,
 } from '../../formulas/shielding';
 import { fieldStrengthShuleikin, attenuationFactorF, xParameter, classifyWaveBand } from '../../formulas/hfField';
-import { distanceFromPhaseCenter, normalizedPatternFactorFromR, fieldStrengthUHF } from '../../formulas/uhfField';
-import { bodyCurrentMA, totalBodyImpedance, skinImpedance, classifyCurrentDanger, currentDensity, groundPotential, stepVoltage as calcStepVoltage } from '../../formulas/electricSafety';
+import {
+  distanceFromPhaseCenter,
+  normalizedPatternFactorFromR,
+  fieldStrengthUHF,
+  pduForFrequencyVpm,
+} from '../../formulas/uhfField';
+import {
+  bodyCurrentMA,
+  totalBodyImpedance,
+  skinImpedance,
+  classifyCurrentDanger,
+  currentDensity,
+  groundPotential,
+  stepVoltage as calcStepVoltage,
+  safeDistance,
+} from '../../formulas/electricSafety';
 import { useProgress } from '../../context/ProgressContext';
 
 const LabScene3D = lazy(() => import('./LabScene3D'));
@@ -70,6 +100,20 @@ interface ResultRow {
   metric: string;
   value: string;
 }
+
+const EMI_ZONE_LABEL: Record<'near' | 'intermediate' | 'far', string> = {
+  near: 'ближняя (индукция)',
+  intermediate: 'промежуточная',
+  far: 'дальняя (излучение)',
+};
+
+const WAVE_BAND_LABEL: Record<'DV' | 'SV' | 'KV' | 'UKV' | 'SVCh', string> = {
+  DV: 'ДВ',
+  SV: 'СВ',
+  KV: 'КВ',
+  UKV: 'УКВ',
+  SVCh: 'СВЧ',
+};
 
 export default function LabSection({ lesson }: LabSectionProps) {
   const progress = useProgress();
@@ -99,8 +143,12 @@ export default function LabSection({ lesson }: LabSectionProps) {
   );
   const [lesson7Penultimate, setLesson7Penultimate] = useState(0);
   /* ── Lesson 8 (UHF field) state ── */
-  const [lesson8Full, setLesson8Full] = useState<Record<string, number>>(
-    () => lesson.id === 8 ? lesson8MergedValues(0, 0) : {}
+  const [lesson8Full, setLesson8Full] = useState<Record<string, number>>(() =>
+    lesson.id === 8
+      ? (Object.fromEntries(
+          Object.entries(lesson8MergedValues(0, 0)).filter(([, v]) => typeof v === 'number'),
+        ) as Record<string, number>)
+      : {},
   );
   const [lesson8Penultimate, setLesson8Penultimate] = useState(0);
   /* ── Lesson 9 (body resistance) state ── */
@@ -179,7 +227,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
     return () => window.removeEventListener('lesson-lab-step-request', handleLabStepRequest as EventListener);
   }, [lesson.labWizard.steps]);
 
-  function applyVariantValues(values: Record<string, number>) {
+  function applyVariantValues(values: Record<string, number | string>) {
     if (lesson.id === 2) {
       setLesson2Full(values);
     }
@@ -212,7 +260,13 @@ export default function LabSection({ lesson }: LabSectionProps) {
     }
     if (lesson.id === 6) { setLesson6Full(values); }
     if (lesson.id === 7) { setLesson7Full(values); }
-    if (lesson.id === 8) { setLesson8Full(values); }
+    if (lesson.id === 8) {
+      setLesson8Full(
+        Object.fromEntries(
+          Object.entries(values).filter(([, v]) => typeof v === 'number'),
+        ) as Record<string, number>,
+      );
+    }
     if (lesson.id === 9) {
       setL9Voltage(values.voltage ?? 220);
       setL9Freq(values.frequency ?? 50);
@@ -595,8 +649,10 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const lesson8Calcs = useMemo(() => {
     if (lesson.id !== 8) return null;
     const v = lesson8Full;
-    const Pimg = v.pImg ?? 80000;
-    const Psnd = v.pSnd ?? 80000;
+    const kwImg = typeof v.pImageKW === 'number' ? v.pImageKW : undefined;
+    const kwSnd = typeof v.pSoundKW === 'number' ? v.pSoundKW : undefined;
+    const Pimg = (kwImg !== undefined ? kwImg * 1000 : (v.pImg ?? 94_000));
+    const Psnd = (kwSnd !== undefined ? kwSnd * 1000 : (v.pSnd ?? 23_000));
     const G = v.G ?? 12;
     const Hant = v.H ?? 300;
     const K = v.K ?? 1.41;
@@ -635,31 +691,280 @@ export default function LabSection({ lesson }: LabSectionProps) {
   function addResultRow() {
     if (stepIndex === 0) return;
     const currentStep = lesson.labWizard.steps[stepIndex - 1];
-    let value = '—';
-    if (lesson.id === 2 && lesson2Calcs) {
-      const { N1, N2, Ntotal } = lesson2Calcs;
-      value = `N₁(η)=${N1 ?? 'н/д'} св.; N₂(W)=${N2 ?? 'н/д'} св.; NΣ(линии)=${Ntotal ?? 'н/д'} св.`;
-    } else if (lesson.id === 1) {
-      value = `E=${lightingMetrics.eLux.toFixed(1)} лк; Eср=${lightingMetrics.eAvg.toFixed(1)} лк`;
-    } else if (lesson.id === 3) {
-      value = `LΣ=${noiseMetrics.total.toFixed(1)} дБ; G=${barrierMassA.toFixed(0)} кг/м²`;
-    } else if (lesson.id === 4 && lesson4Calcs) {
-      value = `LΣ=${lesson4Calcs.totalWithBarrier.toFixed(1)} дБ; L′Σ=${lesson4Calcs.totalAfterTreatment.toFixed(1)} дБ`;
-    } else if (lesson.id === 6 && lesson6Calcs) {
-      value = `M=${(lesson6Calcs.M * 1000).toFixed(3)} мм; l=${(lesson6Calcs.wgLen * 1000).toFixed(1)} мм`;
-    } else if (lesson.id === 7 && lesson7Calcs) {
-      const r0 = lesson7Calcs.results[0];
-      value = r0 ? `E(d₁)=${r0.E.toFixed(4)} В/м; F=${r0.F.toFixed(4)}` : '—';
-    } else if (lesson.id === 8 && lesson8Calcs) {
-      const r0 = lesson8Calcs.results[0];
-      value = r0 ? `E_сум=${r0.Etotal.toFixed(3)} В/м` : '—';
-    } else if (lesson.id === 9 && lesson9Calcs) {
-      value = `I=${lesson9Calcs.ImA.toFixed(2)} мА; Z=${lesson9Calcs.Z.toFixed(0)} Ом; ${lesson9Calcs.danger}`;
-    } else if (lesson.id === 10 && lesson10Calcs) {
-      value = `Uш=${lesson10Calcs.Ush.toFixed(2)} В; φ=${lesson10Calcs.phi.toFixed(2)} В`;
-    } else {
-      value = `λ=${emiMetrics.lambda.toExponential(2)} м; ППЭ=${emiMetrics.ppe.toFixed(3)} Вт/м²; зона=${emiMetrics.zone}`;
+    const sid = currentStep.id;
+
+    /* Для вводных/таблиц/итогов не подставляем расчётные величины — иначе совпадает с последним расчётным шагом. */
+    if (
+      currentStep.type === 'instruction' ||
+      currentStep.type === 'tableFill' ||
+      currentStep.type === 'quizCheck'
+    ) {
+      setResultRows((prev) => [
+        ...prev,
+        {
+          step: currentStep.title,
+          metric: currentStep.resultField ?? currentStep.type,
+          value: '—',
+        },
+      ]);
+      return;
     }
+
+    let value = '—';
+
+    const lampName =
+      lampType === 'incandescent' ? 'накаливание' : lampType === 'fluorescent' ? 'люминесцентная' : 'LED';
+    const l2sum = lesson2Calcs
+      ? `N₁(η)=${lesson2Calcs.N1 ?? 'н/д'} св.; N₂(W)=${lesson2Calcs.N2 ?? 'н/д'} св.; NΣ=${lesson2Calcs.Ntotal ?? 'н/д'} св.`
+      : '—';
+
+    if (lesson.id === 1) {
+      if (sid === 's1-3' || sid === 's1-5' || sid === 's1-7') {
+        value = `E=${lightingMetrics.eLux.toFixed(1)} лк (лампа: ${lampName})`;
+      } else if (sid === 's1-8') {
+        value = `E=${lightingMetrics.eLux.toFixed(1)} лк; Eср=${lightingMetrics.eAvg.toFixed(1)} лк; лампа: ${lampName}`;
+      } else if (sid === 's1-2' || sid === 's1-4' || sid === 's1-6') {
+        value = `Лампа в панели: ${lampName}; E≈${lightingMetrics.eLux.toFixed(1)} лк`;
+      } else {
+        value = `E=${lightingMetrics.eLux.toFixed(1)} лк; Eср=${lightingMetrics.eAvg.toFixed(1)} лк`;
+      }
+    } else if (lesson.id === 2 && lesson2Calcs) {
+      const c = lesson2Calcs;
+      switch (sid) {
+        case 's2-3':
+          value = `Hp=${c.Hp} м`;
+          break;
+        case 's2-4':
+          value = `i=${c.i ?? 'н/д'}`;
+          break;
+        case 's2-5':
+          value = `η=${(c.etaPct / 100).toFixed(3)} (доли)`;
+          break;
+        case 's2-6':
+          value = `Φсв=${c.PhiSv} лм`;
+          break;
+        case 's2-7':
+          value = `N₁=${c.N1 ?? 'н/д'} св.`;
+          break;
+        case 's2-9':
+          value = `αKз=${c.alphaKz}`;
+          break;
+        case 's2-10':
+          value = `αZ=${c.alphaZ}`;
+          break;
+        case 's2-11':
+          value = `αE=${(c.En / 100).toFixed(3)}`;
+          break;
+        case 's2-12':
+          value = `Wp=${c.Wp} Вт/м²`;
+          break;
+        case 's2-13':
+          value = `N₂=${c.N2 ?? 'н/д'} св.`;
+          break;
+        case 's2-15':
+          value = `H′=${c.Hprime} м; l=${c.lLine ?? 'н/д'} м`;
+          break;
+        case 's2-16':
+          value = `P′=${c.Pprime ?? 'н/д'}; L′=${c.Lprime ?? 'н/д'}`;
+          break;
+        case 's2-17':
+          value = `μ=${c.mu} (Σe — по таблице приложения)`;
+          break;
+        case 's2-18':
+          value = `Φл′=${c.PhiLprime ?? 'н/д'} лм`;
+          break;
+        case 's2-19':
+          value = `N₁(в ряду)=${c.N1row ?? 'н/д'}`;
+          break;
+        case 's2-20':
+          value = `NΣ=${c.Ntotal ?? 'н/д'} св.`;
+          break;
+        default:
+          value = l2sum;
+      }
+    } else if (lesson.id === 3) {
+      const barrierN =
+        barrierMassA > 0 ? (14.5 + 15 * Math.log10(barrierMassA)).toFixed(2) : '—';
+      if (sid === 's3-3' || sid === 's3-5' || sid === 's3-7') {
+        value = `LΣ=${noiseMetrics.total.toFixed(2)} дБ`;
+      } else if (sid === 's3-4') {
+        value = `N=${barrierN} дБ (G=${barrierMassA.toFixed(0)} кг/м²)`;
+      } else {
+        value = `LΣ=${noiseMetrics.total.toFixed(1)} дБ; G=${barrierMassA.toFixed(0)} кг/м²`;
+      }
+    } else if (lesson.id === 4 && lesson4Calcs) {
+      const L4 = lesson4Calcs;
+      if (sid === 's4-2') {
+        value = L4.perSource
+          .filter((s) => s.enabled)
+          .map((s) => `${s.id}: LR=${s.LR?.toFixed(2) ?? '—'} дБ`)
+          .join('; ');
+      } else if (sid === 's4-3') {
+        const n = 14.5 + 15 * Math.log10(Math.max(1e-6, barrierMassA));
+        value = `N=${n.toFixed(2)} дБ (G=${barrierMassA.toFixed(0)} кг/м²)`;
+      } else if (sid === 's4-4') {
+        value = L4.perSource
+          .filter((s) => s.enabled)
+          .map((s) => `${s.id}: L′R=${s.LRp?.toFixed(2) ?? '—'} дБ`)
+          .join('; ');
+      } else if (sid === 's4-5') {
+        const s = L4.pairABC?.sum ?? L4.pairAB?.sum;
+        value = s !== undefined ? `LΣ (LA+ΔL)=${s.toFixed(2)} дБ` : '—';
+      } else if (sid === 's4-6') {
+        const levels = L4.perSource.filter((s) => s.enabled && s.LRp != null).map((s) => s.LRp as number);
+        const e =
+          levels.length > 0
+            ? 10 * Math.log10(levels.reduce((acc, L) => acc + 10 ** (L / 10), 0))
+            : null;
+        value = e !== null ? `LΣ (энерг.)=${e.toFixed(2)} дБ` : '—';
+      } else {
+        value = `LΣ=${L4.totalWithBarrier.toFixed(1)} дБ; L′Σ=${L4.totalAfterTreatment.toFixed(1)} дБ`;
+      }
+    } else if (lesson.id === 5) {
+      const z = EMI_ZONE_LABEL[emiMetrics.zone];
+      const v5 = variant.values;
+      const pW = typeof v5.sourcePowerW === 'number' ? v5.sourcePowerW : 0;
+      const gA = typeof v5.sourceGain === 'number' ? v5.sourceGain : 0;
+      let eAnt = 0;
+      try {
+        eAnt = electricFieldStrengthVpm(pW, gA, Math.max(0.01, distanceM));
+      } catch {
+        eAnt = 0;
+      }
+      if (sid === 's5-2') {
+        value = `λ=${emiMetrics.lambda.toExponential(2)} м`;
+      } else if (sid === 's5-3') {
+        value = `Зона: ${z}; r=${distanceM.toFixed(2)} м; λ/(2π)=${(emiMetrics.lambda / (2 * Math.PI)).toFixed(2)} м`;
+      } else if (sid === 's5-4') {
+        value = `ППЭ=${emiMetrics.ppe.toFixed(4)} Вт/м²`;
+      } else if (sid === 's5-5') {
+        value = `E=${eAnt.toFixed(3)} В/м (√30PG/R, P=${pW} Вт, G=${gA})`;
+      } else {
+        value = `λ=${emiMetrics.lambda.toExponential(2)} м; ППЭ=${emiMetrics.ppe.toFixed(3)} Вт/м²; зона: ${z}`;
+      }
+    } else if (lesson.id === 6 && lesson6Calcs) {
+      const c6 = lesson6Calcs;
+      switch (sid) {
+        case 's6-2':
+          value = `H=${c6.H.toExponential(3)} А/м`;
+          break;
+        case 's6-3':
+          value = `ППЭδ=${c6.PPE.toExponential(3)} Вт/м²`;
+          break;
+        case 's6-4':
+          value = `ППЭδдоп=${c6.PPEmax.toExponential(3)} Вт/м²`;
+          break;
+        case 's6-5':
+          value = `L=${c6.L.toFixed(3)}`;
+          break;
+        case 's6-6':
+          value = `ω=${c6.omega.toFixed(1)} с⁻¹; M=${(c6.M * 1000).toFixed(3)} мм`;
+          break;
+        case 's6-7':
+          value = `α=${c6.alpha.toFixed(2)} дБ/м; l=${(c6.wgLen * 1000).toFixed(1)} мм`;
+          break;
+        default:
+          value = `M=${(c6.M * 1000).toFixed(3)} мм; l=${(c6.wgLen * 1000).toFixed(1)} мм`;
+      }
+    } else if (lesson.id === 7 && lesson7Calcs) {
+      const c7 = lesson7Calcs;
+      const fmt = (rows: typeof c7.results, key: 'x' | 'F' | 'E') =>
+        rows.map((row, i) => `d${i + 1}=${row[key].toFixed(4)}`).join('; ');
+      const fMHz = 299_792_458 / Math.max(c7.lambda, 1e-9) / 1e6;
+      const pdu = pduForFrequencyVpm(Math.max(0.01, fMHz));
+      if (sid === 's7-2') {
+        value = `Диапазон: ${WAVE_BAND_LABEL[c7.band]} (λ=${c7.lambda} м)`;
+      } else if (sid === 's7-3') {
+        value = `x: ${fmt(c7.results, 'x')}`;
+      } else if (sid === 's7-4') {
+        value = `F: ${fmt(c7.results, 'F')}`;
+      } else if (sid === 's7-5' || sid === 's7-6') {
+        value = `E, В/м: ${fmt(c7.results, 'E')}`;
+      } else if (sid === 's7-7') {
+        const maxE = Math.max(...c7.results.map((r) => r.E));
+        value = `max E=${maxE.toFixed(4)} В/м; ПДУ≈${pdu} В/м (f≈${fMHz.toFixed(2)} МГц)`;
+      } else {
+        const r0 = c7.results[0];
+        value = r0 ? `E(d₁)=${r0.E.toFixed(4)} В/м` : '—';
+      }
+    } else if (lesson.id === 8 && lesson8Calcs) {
+      const c8 = lesson8Calcs;
+      const rowStr = (fn: (row: (typeof c8.results)[number]) => string) =>
+        c8.results.map((row, i) => `r${i + 1}: ${fn(row)}`).join('; ');
+      if (sid === 's8-2') {
+        value = rowStr((row) => `R=${row.R.toFixed(1)} м, Δ=${((row.delta * 180) / Math.PI).toFixed(2)}°`);
+      } else if (sid === 's8-3') {
+        value = rowStr((row) => `F=${row.Fd.toFixed(4)}`);
+      } else if (sid === 's8-4') {
+        value = rowStr((row) => `E_изобр=${row.Eimg.toFixed(3)} В/м`);
+      } else if (sid === 's8-5') {
+        value = rowStr((row) => `E_звук=${row.Esnd.toFixed(3)} В/м`);
+      } else if (sid === 's8-6' || sid === 's8-7') {
+        value = rowStr((row) => `E_сум=${row.Etotal.toFixed(3)} В/м`);
+      } else if (sid === 's8-8') {
+        const maxE = Math.max(...c8.results.map((r) => r.Etotal));
+        value = `max E_сум=${maxE.toFixed(3)} В/м (сравните с ПДУ методички)`;
+      } else {
+        const r0 = c8.results[0];
+        value = r0 ? `E_сум(d₁)=${r0.Etotal.toFixed(3)} В/м` : '—';
+      }
+    } else if (lesson.id === 9) {
+      const Cfarad = l9C * 1e-9;
+      const Z50 = totalBodyImpedance(skinImpedance(l9Rn, 50, Cfarad), l9Rv);
+      const Z10k = totalBodyImpedance(skinImpedance(l9Rn, 10_000, Cfarad), l9Rv);
+      const RnSkin = Math.max(0, (Z50 - Z10k) / 2);
+      const Zn50 =
+        RnSkin > 0
+          ? RnSkin / Math.sqrt(1 + (2 * Math.PI * 50 * Cfarad * RnSkin) ** 2)
+          : 0;
+      const I220 = bodyCurrentMA(220, Math.max(Z50, 1e-6));
+      const danger220 = classifyCurrentDanger(I220);
+
+      if (sid === 's9-2') {
+        value = `Z(50 Hz)=${Z50.toFixed(0)} Ом`;
+      } else if (sid === 's9-3') {
+        value = `Z(10 кГц)=${Z10k.toFixed(0)} Ом`;
+      } else if (sid === 's9-4') {
+        value = `Rн=${RnSkin.toFixed(0)} Ом`;
+      } else if (sid === 's9-5') {
+        value = `Zн(50 Гц)=${Zn50.toFixed(0)} Ом`;
+      } else if (sid === 's9-6') {
+        value = `Iч(U=220 В)=${I220.toFixed(2)} мА (${danger220})`;
+      } else if (lesson9Calcs) {
+        value = `I=${lesson9Calcs.ImA.toFixed(2)} мА; Z=${lesson9Calcs.Z.toFixed(0)} Ом; ${lesson9Calcs.danger}`;
+      } else {
+        value = `Z=${Z50.toFixed(0)} Ом (модель)`;
+      }
+    } else if (lesson.id === 10) {
+      const xs = [1, 2, 5, 10, 20];
+      if (sid === 's10-2') {
+        value = xs
+          .map((x) => `x=${x} м: j=${currentDensity(l10Iz, x).toExponential(2)} А/м²`)
+          .join('; ');
+      } else if (sid === 's10-3') {
+        value = xs
+          .map((x) => `x=${x} м: U=${groundPotential(l10Iz, l10Rho, x).toFixed(2)} В`)
+          .join('; ');
+      } else if (sid === 's10-4') {
+        value = xs
+          .map(
+            (x) =>
+              `x=${x} м: Uш=${calcStepVoltage(l10Iz, l10Rho, x, l10A).toFixed(2)} В`,
+          )
+          .join('; ');
+      } else if (sid === 's10-6') {
+        const xSafe = safeDistance(l10Iz, l10Rho, 36, l10A);
+        value = `x(Uш<36 В)≈${xSafe.toFixed(1)} м (a=${l10A} м)`;
+      } else if (lesson10Calcs) {
+        value = `Uш=${lesson10Calcs.Ush.toFixed(2)} В; φ=${lesson10Calcs.phi.toFixed(2)} В (x=${l10X} м)`;
+      } else {
+        value = '—';
+      }
+    } else {
+      const zz = EMI_ZONE_LABEL[emiMetrics.zone];
+      value = `λ=${emiMetrics.lambda.toExponential(2)} м; ППЭ=${emiMetrics.ppe.toFixed(3)} Вт/м²; зона: ${zz}`;
+    }
+
     setResultRows((prev) => [
       ...prev,
       {
@@ -1025,9 +1330,25 @@ export default function LabSection({ lesson }: LabSectionProps) {
         ) : (
           <Paper id={`lab-step-${lesson.labWizard.steps[stepIndex - 1].id}`} variant="outlined" sx={{ p: 2, mt: 2 }}>
             <Typography variant="subtitle1">{lesson.labWizard.steps[stepIndex - 1].title}</Typography>
-            <Typography variant="body2" sx={{ mt: 0.8 }}>
-              Что делаем: {lesson.labWizard.steps[stepIndex - 1].whatToDo}
-            </Typography>
+            {(() => {
+              const wtd = lesson.labWizard.steps[stepIndex - 1].whatToDo;
+              return Array.isArray(wtd) ? (
+                <Box sx={{ mt: 0.8 }}>
+                  <Typography variant="body2">Что делаем:</Typography>
+                  <Box component="ul" sx={{ mt: 0.5, mb: 0, pl: 2.5, listStyleType: 'disc' }}>
+                    {wtd.map((item, i) => (
+                      <Typography component="li" variant="body2" key={i} sx={{ display: 'list-item', mt: i ? 0.5 : 0 }}>
+                        {item}
+                      </Typography>
+                    ))}
+                  </Box>
+                </Box>
+              ) : (
+                <Typography variant="body2" sx={{ mt: 0.8 }}>
+                  Что делаем: {wtd}
+                </Typography>
+              );
+            })()}
             <Typography variant="body2" sx={{ mt: 0.8 }}>
               Почему: {lesson.labWizard.steps[stepIndex - 1].why}
             </Typography>
@@ -1593,7 +1914,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
       <Dialog
         open={manualTableOpen}
         onClose={() => setManualTableOpen(false)}
-        maxWidth={lesson.id === 4 ? 'xl' : 'md'}
+        maxWidth={lesson.id === 4 || lesson.id === 6 || lesson.id === 7 || lesson.id === 8 ? 'xl' : 'md'}
         fullWidth
       >
         <DialogTitle>
@@ -1601,9 +1922,42 @@ export default function LabSection({ lesson }: LabSectionProps) {
             ? 'Таблицы 4.1–4.4 — Исходные данные (Занятие №4)'
             : lesson.labWizard.manualTableName}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={lesson.id === 6 || lesson.id === 7 || lesson.id === 8 ? { overflowX: 'hidden' } : undefined}>
           {lesson.id === 4 ? (
             <Lab4TablesPanel lastDigit={variantNumber} penultimateDigit={lesson4Penultimate} />
+          ) : lesson.id === 6 ? (
+            <Stack spacing={3}>
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 6.1 — по последней цифре студбилета
+              </Typography>
+              <VariantTable variants={lesson.variants} activeVariant={variantNumber} />
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 6.2 — по предпоследней цифре (ваша: <strong>{lesson6Penultimate}</strong>)
+              </Typography>
+              <VariantTable variants={lesson6Table2Variants} activeVariant={lesson6Penultimate} />
+            </Stack>
+          ) : lesson.id === 7 ? (
+            <Stack spacing={3}>
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 7.1 — по последней цифре студбилета
+              </Typography>
+              <VariantTable variants={lesson.variants} activeVariant={variantNumber} />
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 7.2 — по предпоследней цифре (ваша: <strong>{lesson7Penultimate}</strong>)
+              </Typography>
+              <VariantTable variants={lesson7Table2Variants} activeVariant={lesson7Penultimate} />
+            </Stack>
+          ) : lesson.id === 8 ? (
+            <Stack spacing={3}>
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 8.2 — по последней цифре студбилета
+              </Typography>
+              <VariantTable variants={lesson.variants} activeVariant={variantNumber} />
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 8.3 — по предпоследней цифре (ваша: <strong>{lesson8Penultimate}</strong>)
+              </Typography>
+              <VariantTable variants={lesson8Table3Variants} activeVariant={lesson8Penultimate} />
+            </Stack>
           ) : lesson.id === 2 ? (
             <Stack spacing={3}>
               <Typography variant="subtitle2" fontWeight={700}>

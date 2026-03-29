@@ -1,4 +1,4 @@
-﻿import type { LabVariant, LessonId } from '../types/theme';
+import type { LabVariant, LessonId } from '../types/theme';
 
 const T2_1_L = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20] as const;
 const T2_1_B = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const;
@@ -170,7 +170,7 @@ function lesson5Values(base: number): Record<string, number> {
 
 function makeVariants(
   sourceNote: string,
-  valuesFactory: (base: number) => Record<string, number>,
+  valuesFactory: (base: number) => Record<string, number | string>,
   validated = false,
 ): LabVariant[] {
   return Array.from({ length: 10 }, (_, variant) => ({
@@ -304,19 +304,63 @@ const L8_R3 = [300, 300, 270, 280, 290, 300, 290, 310, 280, 300] as const;
 const L8_R4 = [450, 450, 480, 420, 460, 450, 440, 460, 470, 480] as const;
 const L8_R5 = [550, 550, 580, 600, 590, 500, 550, 560, 570, 580] as const;
 
-function lesson8Table2Values(digit: number): Record<string, number> {
+function lesson8Table2Values(digit: number): Record<string, number | string> {
   return {
-    fRange: 0, // placeholder; text-based range stored in sourceNote
-    pImageKW: L8_P_IMG[digit], pSoundKW: L8_P_SND[digit],
-    G: L8_G[digit], H: L8_H[digit], K: L8_K[digit],
+    pImageKW: L8_P_IMG[digit],
+    pSoundKW: L8_P_SND[digit],
+    G: L8_G[digit],
+    H: L8_H[digit],
+    K: L8_K[digit],
+    fRangeMHz: L8_F_RANGE[digit],
   };
 }
 
-export function lesson8MergedValues(lastDigit: number, penultimateDigit: number): Record<string, number> {
+/** Таблица 6.2 — только предпоследняя цифра (для отображения в Лабораторной). */
+export const lesson6Table2Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: {
+    l6_mu: L6_MU[digit],
+    l6_muA: L6_MU_A[digit],
+    l6_gamma: L6_GAMMA[digit],
+    l6_epsilon: L6_EPS[digit],
+  },
+  sourceNote: 'Таблица 6.2 методички',
+  validated: true,
+}));
+
+/** Таблица 7.2 — только предпоследняя цифра. */
+export const lesson7Table2Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: {
+    d1: L7_D1[digit], d2: L7_D2[digit], d3: L7_D3[digit], d4: L7_D4[digit], d5: L7_D5[digit],
+  },
+  sourceNote: 'Таблица 7.2 методички',
+  validated: true,
+}));
+
+/** Таблица 8.3 — только предпоследняя цифра. */
+export const lesson8Table3Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: {
+    r1: L8_R1[digit], r2: L8_R2[digit], r3: L8_R3[digit], r4: L8_R4[digit], r5: L8_R5[digit],
+  },
+  sourceNote: 'Таблица 8.3 методички',
+  validated: true,
+}));
+
+export function lesson8MergedValues(
+  lastDigit: number,
+  penultimateDigit: number,
+): Record<string, number | string> {
   return {
     ...lesson8Table2Values(lastDigit),
-    r1: L8_R1[penultimateDigit], r2: L8_R2[penultimateDigit],
-    r3: L8_R3[penultimateDigit], r4: L8_R4[penultimateDigit],
+    r1: L8_R1[penultimateDigit],
+    r2: L8_R2[penultimateDigit],
+    r3: L8_R3[penultimateDigit],
+    r4: L8_R4[penultimateDigit],
     r5: L8_R5[penultimateDigit],
   };
 }

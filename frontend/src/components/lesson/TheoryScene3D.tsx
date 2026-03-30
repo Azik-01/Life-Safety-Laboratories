@@ -1983,6 +1983,70 @@ function RadiationDoseScene({ frequencyMHz }: { frequencyMHz: number }) {
   );
 }
 
+/* ─────────────── Стилизованная фигура человека (теория, ОТ) ─────────────── */
+
+/** Как в сцене «Путь тока»: обувь, брюки, рубашка, кожа; шаг задаётся половиной расстояния между стопами. */
+function TheoryStylizedPerson({
+  footHalfSep = 0.11,
+  torsoPath,
+}: {
+  footHalfSep?: number;
+  torsoPath?: { color: string; opacity: number };
+}) {
+  const skin = '#deb897';
+  const shirt = '#5c6d8c';
+  const pants = '#455a64';
+  const h = footHalfSep;
+  const refHalf = 0.11;
+  const armX = 0.22 * (h / refHalf);
+  return (
+    <group position={[0, 0, 0]}>
+      <mesh position={[-h, 0.04, 0]} castShadow>
+        <boxGeometry args={[0.12, 0.06, 0.22]} />
+        <meshStandardMaterial color="#37474f" roughness={0.65} />
+      </mesh>
+      <mesh position={[h, 0.04, 0]} castShadow>
+        <boxGeometry args={[0.12, 0.06, 0.22]} />
+        <meshStandardMaterial color="#37474f" roughness={0.65} />
+      </mesh>
+      <mesh position={[-h, 0.42, 0]} castShadow>
+        <capsuleGeometry args={[0.065, 0.58, 6, 10]} />
+        <meshStandardMaterial color={pants} roughness={0.82} />
+      </mesh>
+      <mesh position={[h, 0.42, 0]} castShadow>
+        <capsuleGeometry args={[0.065, 0.58, 6, 10]} />
+        <meshStandardMaterial color={pants} roughness={0.82} />
+      </mesh>
+      <mesh position={[0, 1.05, 0]} castShadow>
+        <capsuleGeometry args={[0.15, 0.38, 8, 16]} />
+        <meshStandardMaterial color={shirt} roughness={0.7} metalness={0.05} />
+      </mesh>
+      <mesh position={[0, 1.33, 0]} castShadow>
+        <cylinderGeometry args={[0.1, 0.12, 0.14, 10]} />
+        <meshStandardMaterial color={skin} roughness={0.65} />
+      </mesh>
+      <mesh position={[0, 1.52, 0]} castShadow>
+        <sphereGeometry args={[0.17, 20, 20]} />
+        <meshStandardMaterial color={skin} roughness={0.55} />
+      </mesh>
+      <mesh position={[-armX, 1.14, 0]} rotation={[0, 0, Math.PI / 4.2]} castShadow>
+        <capsuleGeometry args={[0.05, 0.52, 6, 10]} />
+        <meshStandardMaterial color={skin} roughness={0.65} />
+      </mesh>
+      <mesh position={[armX, 1.14, 0]} rotation={[0, 0, -Math.PI / 4.2]} castShadow>
+        <capsuleGeometry args={[0.05, 0.52, 6, 10]} />
+        <meshStandardMaterial color={skin} roughness={0.65} />
+      </mesh>
+      {torsoPath ? (
+        <mesh position={[0, 1.05, 0.04]}>
+          <capsuleGeometry args={[0.07, 0.32, 6, 12]} />
+          <meshBasicMaterial color={torsoPath.color} transparent opacity={torsoPath.opacity} depthWrite={false} />
+        </mesh>
+      ) : null}
+    </group>
+  );
+}
+
 /* ─────────────── Electric Current Body Scene (Lab 9) ─────────────── */
 
 function ElectricCurrentBodyScene({ current }: { current: number }) {
@@ -1991,9 +2055,6 @@ function ElectricCurrentBodyScene({ current }: { current: number }) {
   const pathColor = mA < 1 ? '#43a047' : mA < 10 ? '#fdd835' : mA < 100 ? '#ff9800' : '#ef5350';
   const meterFill = mA < 1 ? '#c8e6c9' : mA < 10 ? '#fff9c4' : mA < 100 ? '#ffe0b2' : '#ffcdd2';
   const statusFill = mA < 1 ? '#e8f5e9' : mA < 10 ? '#fffde7' : mA < 100 ? '#fff3e0' : '#ffebee';
-  const skin = '#deb897';
-  const shirt = '#5c6d8c';
-  const pants = '#455a64';
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
@@ -2001,48 +2062,7 @@ function ElectricCurrentBodyScene({ current }: { current: number }) {
         <meshStandardMaterial color="#a89888" roughness={0.88} />
       </mesh>
       {/* Силуэт на полу: ноги → торс → шея → голова; кожа и одежда согласованы */}
-      <group position={[0, 0, 0]}>
-        <mesh position={[-0.11, 0.04, 0]} castShadow>
-          <boxGeometry args={[0.12, 0.06, 0.22]} />
-          <meshStandardMaterial color="#37474f" roughness={0.65} />
-        </mesh>
-        <mesh position={[0.11, 0.04, 0]} castShadow>
-          <boxGeometry args={[0.12, 0.06, 0.22]} />
-          <meshStandardMaterial color="#37474f" roughness={0.65} />
-        </mesh>
-        <mesh position={[-0.11, 0.42, 0]} castShadow>
-          <capsuleGeometry args={[0.065, 0.58, 6, 10]} />
-          <meshStandardMaterial color={pants} roughness={0.82} />
-        </mesh>
-        <mesh position={[0.11, 0.42, 0]} castShadow>
-          <capsuleGeometry args={[0.065, 0.58, 6, 10]} />
-          <meshStandardMaterial color={pants} roughness={0.82} />
-        </mesh>
-        <mesh position={[0, 1.05, 0]} castShadow>
-          <capsuleGeometry args={[0.15, 0.38, 8, 16]} />
-          <meshStandardMaterial color={shirt} roughness={0.7} metalness={0.05} />
-        </mesh>
-        <mesh position={[0, 1.33, 0]} castShadow>
-          <cylinderGeometry args={[0.1, 0.12, 0.14, 10]} />
-          <meshStandardMaterial color={skin} roughness={0.65} />
-        </mesh>
-        <mesh position={[0, 1.52, 0]} castShadow>
-          <sphereGeometry args={[0.17, 20, 20]} />
-          <meshStandardMaterial color={skin} roughness={0.55} />
-        </mesh>
-        <mesh position={[-0.22, 1.14, 0]} rotation={[0, 0, Math.PI / 4.2]} castShadow>
-          <capsuleGeometry args={[0.05, 0.52, 6, 10]} />
-          <meshStandardMaterial color={skin} roughness={0.65} />
-        </mesh>
-        <mesh position={[0.22, 1.14, 0]} rotation={[0, 0, -Math.PI / 4.2]} castShadow>
-          <capsuleGeometry args={[0.05, 0.52, 6, 10]} />
-          <meshStandardMaterial color={skin} roughness={0.65} />
-        </mesh>
-        <mesh position={[0, 1.05, 0.04]}>
-          <capsuleGeometry args={[0.07, 0.32, 6, 12]} />
-          <meshBasicMaterial color={pathColor} transparent opacity={pathOpacity} depthWrite={false} />
-        </mesh>
-      </group>
+      <TheoryStylizedPerson footHalfSep={0.11} torsoPath={{ color: pathColor, opacity: pathOpacity }} />
       <Label position={[0, 1.88, 0]} color={meterFill} size={0.16} outlineColor="#263238" depthOffset={-2}>{`I = ${mA.toFixed(1)} мА`}</Label>
       <Label position={[0, 0.2, 0.58]} color={statusFill} size={0.115} outlineColor="#37474f" depthOffset={-2}>
         {mA < 1 ? 'Безопасно' : mA < 10 ? 'Ощутимый ток' : mA < 100 ? 'Неотпускающий!' : 'Фибрилляция!'}
@@ -2372,7 +2392,6 @@ function StepVoltageScene({
   // Визуальная “шкала” для позиции человека
   const personX = Math.min(4, x * 0.18);
   const footSep = Math.max(0.06, Math.min(0.28, a * 0.18));
-  const bodyColor = danger ? '#cc0000' : '#4466aa';
 
   // Колечки (условные “эквипотенциалы”): чем больше Ush, тем ярче/контрастнее
   const baseR = 0.5;
@@ -2410,25 +2429,9 @@ function StepVoltageScene({
         );
       })}
 
-      {/* Person at distance */}
+      {/* Person at distance — та же стилизация, что в «Путь тока через тело человека» */}
       <group position={[personX, 0, 0]}>
-        <mesh position={[0, 1.5, 0]}>
-          <sphereGeometry args={[0.15, 12, 12]} />
-          <meshStandardMaterial color="#e0c8a0" />
-        </mesh>
-        <mesh position={[0, 0.9, 0]}>
-          <cylinderGeometry args={[0.12, 0.15, 0.8, 8]} />
-          <meshStandardMaterial color={bodyColor} />
-        </mesh>
-        {/* Feet showing step */}
-        <mesh position={[-footSep / 2, 0.15, 0]}>
-          <boxGeometry args={[0.1, 0.3, 0.1]} />
-          <meshStandardMaterial color={bodyColor} />
-        </mesh>
-        <mesh position={[footSep / 2, 0.15, 0]}>
-          <boxGeometry args={[0.1, 0.3, 0.1]} />
-          <meshStandardMaterial color={bodyColor} />
-        </mesh>
+        <TheoryStylizedPerson footHalfSep={footSep / 2} />
       </group>
 
       <Label position={[personX, 2, 0]} color={danger ? '#cc0000' : '#006600'} size={0.14}>

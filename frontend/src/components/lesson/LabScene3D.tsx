@@ -133,7 +133,10 @@ interface LabSceneProps {
     distances: number[];
   };
   uhfState: {
+    /** Суммарная/запасная мощность (Вт); если заданы powerVideoW/powerAudioW, для формул берутся они */
     powerW: number;
+    powerVideoW?: number;
+    powerAudioW?: number;
     gain: number;
     heightM: number;
     distances: number[];
@@ -1295,11 +1298,19 @@ function TvBroadcastScene({
   const maxSnd = Math.max(...points.map((p) => p.EsndFinal), 1e-9);
   const imgWeakThreshold = maxImg / 3;
   const sndWeakThreshold = maxSnd / 3;
-  const maxR = Math.max(...state.distances, 1);
-  const scaleX = (m: number) => Math.min(9, m / (maxR / 9));
   const idx = Math.min(Math.max(0, selectedIndex), Math.max(0, points.length - 1));
   const p = points[idx];
-  const houseX = 9.6;
+  /* r1…r5 по оси X с равным шагом; дом ставим у выбранной точки — усилители «своей» r рядом с домом. */
+  const rxStartX = 0.95;
+  const rxEndX = 8.55;
+  const rxSpan = Math.max(0.01, rxEndX - rxStartX);
+  const nRx = Math.max(1, points.length);
+  const rxLayoutX = (i: number) => rxStartX + (nRx > 1 ? (i / (nRx - 1)) * rxSpan : rxSpan * 0.5);
+  const housePosX = rxLayoutX(idx) + 0.62;
+  const boosterW = 0.64;
+  const boosterSep = 0.46;
+  /* Высота антенны в метрах для формул (H); для мешей — ограниченный масштаб */
+  const towerVisH = Math.max(3.2, Math.min(5.2, state.heightM * 0.18));
 
   useFrame((_, delta) => {
     timeR.current += delta * timeScale;
@@ -1315,46 +1326,43 @@ function TvBroadcastScene({
   });
 
   const imgWeak = p ? p.EimgFinal < imgWeakThreshold && !p.imgBoost : false;
-  const sndWeak = p ? p.EsndFinal < sndWeakThreshold && !p.sndBoost : false;
 
   const flicker = 0.5 + 0.5 * Math.sin(timeR.current * 10 + idx * 2);
   const videoNoiseOpacity = imgWeak ? Math.max(0.25, 0.35 + 0.35 * flicker) : 0.04;
-  const audioNoiseOpacity = sndWeak ? Math.max(0.2, 0.35 + 0.45 * flicker) : 0.04;
 
   return (
     <>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[22, 14]} />
+      {/* Пол сдвинут к содержимому сцены — меньше пустой травы по краям */}
+      <mesh position={[3.9, 0, -0.85]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[14, 8.2]} />
         <meshStandardMaterial color="#bfe3c0" roughness={0.95} />
       </mesh>
 
-      {/* Road */}
-      <mesh position={[5.3, 0.01, -2.4]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[12, 1.6]} />
+      {/* Road — по длине около r1…r5 */}
+      <mesh position={[4.75, 0.01, -2.25]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[9.8, 1.45]} />
         <meshStandardMaterial color="#8d6e63" roughness={0.98} />
       </mesh>
-      <mesh position={[5.3, 0.012, -2.4]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[12, 0.06]} />
+      <mesh position={[4.75, 0.012, -2.25]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[9.8, 0.06]} />
         <meshStandardMaterial color="#fff59d" emissive="#fff59d" emissiveIntensity={0.18} />
       </mesh>
 
-      {/* Obstacles in order: buildings -> trees -> house */}
+      {/* Дом / r1…r5 / вышка — у z≈0; небоскрёбы и деревья — за дорогой (дорога ~ z=-1.6…-3.2, дальше — сильнее -Z) */}
       {[
-        // buildings first (closer to tower)
-        { x: 2.3, z: 0.1, w: 1.8, d: 1.9, h: 3.6, c: '#90a4ae' },
-        { x: 3.9, z: -0.1, w: 2.6, d: 2.0, h: 4.4, c: '#78909c' },
-        { x: 4.9, z: 0.2, w: 1.4, d: 1.6, h: 3.0, c: '#b0bec5' },
+        { x: 2.3, z: -3.65, w: 1.8, d: 1.9, h: 3.6, c: '#90a4ae' },
+        { x: 3.9, z: -3.95, w: 2.6, d: 2.0, h: 4.4, c: '#78909c' },
+        { x: 4.9, z: -3.72, w: 1.4, d: 1.6, h: 3.0, c: '#b0bec5' },
       ].map((b, i) => (
         <mesh key={`bld-${i}`} position={[b.x, b.h / 2, b.z]} castShadow receiveShadow>
           <boxGeometry args={[b.w, b.h, b.d]} />
           <meshStandardMaterial color={b.c} roughness={0.9} />
         </mesh>
       ))}
-      {/* a lot of trees after buildings */}
       {[
-        { x: 5.7, z: 0.9 }, { x: 6.1, z: 0.1 }, { x: 6.5, z: -0.8 },
-        { x: 6.9, z: 0.6 }, { x: 7.3, z: -0.2 }, { x: 7.7, z: 0.9 },
-        { x: 8.1, z: 0.2 }, { x: 8.4, z: -0.7 },
+        { x: 5.7, z: -3.48 }, { x: 6.1, z: -3.98 }, { x: 6.5, z: -3.42 },
+        { x: 6.9, z: -3.82 }, { x: 7.3, z: -3.58 }, { x: 7.7, z: -4.08 },
+        { x: 8.1, z: -3.52 }, { x: 8.4, z: -3.92 },
       ].map((t, i) => (
         <group key={`tree-${i}`} position={[t.x, 0, t.z]} >
           <mesh position={[0, 0.6, 0]} castShadow>
@@ -1368,36 +1376,32 @@ function TvBroadcastScene({
         </group>
       ))}
 
-      {/* TV Tower (visual scale only; calculations use real h) */}
-      {(() => {
-        const towerH = Math.max(3.2, Math.min(5.2, state.heightM * 0.18));
-        return (
-          <group>
-            <mesh position={[0, towerH / 2, 0]} castShadow>
-              <boxGeometry args={[0.3, towerH, 0.3]} />
-              <meshStandardMaterial color="#78909c" metalness={0.5} />
-            </mesh>
-            {/* Antenna array */}
-            {[-0.4, 0, 0.4].map((z, i) => (
-              <mesh key={`ant-${i}`} position={[0, towerH - 0.3, z]} castShadow>
-                <boxGeometry args={[0.8, 0.08, 0.04]} />
-                <meshStandardMaterial color="#e65100" metalness={0.4} />
-              </mesh>
-            ))}
-            <Text fontSize={0.16} color="#ff7043" position={[0, towerH + 0.6, 0]}>
-              {`Телевышка: P = ${state.powerW} Вт | G = ${state.gain}`}
-            </Text>
-            <Text fontSize={0.12} color="#ffab91" position={[0, towerH + 0.3, 0]}>
-              {`h = ${state.heightM} м | f = ${state.frequencyMHz} МГц`}
-            </Text>
-          </group>
-        );
-      })()}
+      {/* TV Tower (visual scale only; расчёты — по state.heightM) */}
+      <group>
+        <mesh position={[0, towerVisH / 2, 0]} castShadow>
+          <boxGeometry args={[0.3, towerVisH, 0.3]} />
+          <meshStandardMaterial color="#78909c" metalness={0.5} />
+        </mesh>
+        {[-0.4, 0, 0.4].map((z, i) => (
+          <mesh key={`ant-${i}`} position={[0, towerVisH - 0.3, z]} castShadow>
+            <boxGeometry args={[0.8, 0.08, 0.04]} />
+            <meshStandardMaterial color="#e65100" metalness={0.4} />
+          </mesh>
+        ))}
+        <Text fontSize={0.16} color="#ff7043" position={[0, towerVisH + 0.6, 0]}>
+          {state.powerVideoW != null && state.powerAudioW != null
+            ? `Телевышка: P_из≈${(state.powerVideoW / 1000).toFixed(0)} кВт; P_зв≈${(state.powerAudioW / 1000).toFixed(0)} кВт | G = ${state.gain}`
+            : `Телевышка: P = ${state.powerW} Вт | G = ${state.gain}`}
+        </Text>
+        <Text fontSize={0.12} color="#ffab91" position={[0, towerVisH + 0.3, 0]}>
+          {`h = ${state.heightM} м | f = ${state.frequencyMHz} МГц`}
+        </Text>
+      </group>
 
       {/* Animated radiation pulses */}
       <group ref={pulseRef}>
         {Array.from({ length: 4 }).map((_, i) => (
-          <mesh key={`uhf-pulse-${i}`} position={[0, state.heightM - 0.5, 0]} rotation={[Math.PI / 4, 0, 0]}>
+          <mesh key={`uhf-pulse-${i}`} position={[0, towerVisH - 0.5, 0]} rotation={[Math.PI / 4, 0, 0]}>
             <torusGeometry args={[1, 0.02, 6, 24]} />
             <meshBasicMaterial color="#ff7043" transparent opacity={0.3} />
           </mesh>
@@ -1405,15 +1409,21 @@ function TvBroadcastScene({
       </group>
 
       {/* Receiver positions (click markers to move house) */}
-      {points.map((pt, i) => {
-        const x = scaleX(pt.rM);
+      {points.map((_pt, i) => {
+        const x = rxLayoutX(i);
         const active = i === idx;
         const pI = points[i];
         const imgWeakI = pI.EimgFinal < imgWeakThreshold && !pI.imgBoost;
         const sndWeakI = pI.EsndFinal < sndWeakThreshold && !pI.sndBoost;
         return (
           <group key={`rx-${i}`} position={[x, 0, 0]}>
-            <mesh position={[0, 0.05, 0]} onClick={() => onSelectIndex(i)}>
+            <mesh
+              position={[0, 0.05, 0]}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectIndex(i);
+              }}
+            >
               <cylinderGeometry args={[active ? 0.16 : 0.13, active ? 0.16 : 0.13, 0.10, 18]} />
               <meshStandardMaterial
                 color={active ? '#ffeb3b' : '#90a4ae'}
@@ -1425,10 +1435,15 @@ function TvBroadcastScene({
               {`r${i + 1}`}
             </Text>
 
-            {/* Big boosters in front (towards camera) */}
-            <group position={[-0.55, 0.22, 2.0]}>
-              <mesh onClick={() => onToggleImg(i)}>
-                <boxGeometry args={[0.75, 0.32, 0.34]} />
+            {/* Усилители: компактнее, чтобы при равном шаге r1…r5 не пересекались */}
+            <group position={[-boosterSep, 0.22, 2.0]}>
+              <mesh
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleImg(i);
+                }}
+              >
+                <boxGeometry args={[boosterW, 0.32, 0.34]} />
                 <meshStandardMaterial
                   color={pI.imgBoost ? '#00e676' : imgWeakI ? '#ef5350' : '#607d8b'}
                   emissive={pI.imgBoost ? '#00e676' : imgWeakI ? '#ef5350' : '#000000'}
@@ -1439,9 +1454,14 @@ function TvBroadcastScene({
                 {pI.imgBoost ? '✓ видео' : '⬆ видео'}
               </Text>
             </group>
-            <group position={[0.55, 0.22, 2.0]}>
-              <mesh onClick={() => onToggleSnd(i)}>
-                <boxGeometry args={[0.75, 0.32, 0.34]} />
+            <group position={[boosterSep, 0.22, 2.0]}>
+              <mesh
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSnd(i);
+                }}
+              >
+                <boxGeometry args={[boosterW, 0.32, 0.34]} />
                 <meshStandardMaterial
                   color={pI.sndBoost ? '#00b0ff' : sndWeakI ? '#ffa726' : '#607d8b'}
                   emissive={pI.sndBoost ? '#00b0ff' : sndWeakI ? '#ffa726' : '#000000'}
@@ -1458,14 +1478,14 @@ function TvBroadcastScene({
 
       {/* House with TV at selected position */}
       {p && (
-        <group position={[houseX, 0, 0]}>
+        <group position={[housePosX, 0, -0.28]}>
           {/* house base */}
           <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
             <boxGeometry args={[1.1, 1.0, 1.0]} />
             <meshStandardMaterial color="#d7ccc8" roughness={0.95} />
           </mesh>
           {/* roof (raised - no collisions with walls) */}
-          <mesh position={[0, 1.55, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+          <mesh position={[0, 1.43, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
             <coneGeometry args={[0.92, 0.9, 4]} />
             <meshStandardMaterial color="#8d6e63" roughness={0.9} />
           </mesh>
@@ -1475,10 +1495,6 @@ function TvBroadcastScene({
             <boxGeometry args={[0.52, 0.36, 0.12]} />
             <meshStandardMaterial color="#111" roughness={0.9} />
           </mesh>
-          <mesh position={[0.70, 0.65, 0]}>
-            <planeGeometry args={[0.44, 0.28]} />
-            <meshBasicMaterial color={imgWeak ? '#ffffff' : '#1de9b6'} transparent opacity={imgWeak ? 0.6 : 0.85} />
-          </mesh>
           {/* video noise overlay */}
           <mesh position={[0.705, 0.65, 0.002]}>
             <planeGeometry args={[0.44, 0.28]} />
@@ -1487,21 +1503,6 @@ function TvBroadcastScene({
           {imgWeak && (
             <Text fontSize={0.12} color="#ff1744" position={[0.70, 0.8, 0.02]}>
               {'✕'}
-            </Text>
-          )}
-
-          {/* Audio indicator panel */}
-          <mesh position={[0.62, 0.25, -0.45]}>
-            <boxGeometry args={[0.55, 0.18, 0.05]} />
-            <meshBasicMaterial color={sndWeak ? '#ff5252' : '#2196f3'} transparent opacity={0.9} />
-          </mesh>
-          <mesh position={[0.62, 0.25, -0.445]}>
-            <boxGeometry args={[0.55, 0.18, 0.05]} />
-            <meshBasicMaterial color="#000" transparent opacity={audioNoiseOpacity} />
-          </mesh>
-          {sndWeak && (
-            <Text fontSize={0.1} color="#ff9100" position={[0.62, 0.25, -0.41]}>
-              {'▲'}
             </Text>
           )}
 
@@ -1519,8 +1520,8 @@ function TvBroadcastScene({
         </group>
       )}
 
-      <pointLight position={[0, state.heightM + 3, 4]} color="#fff5e0" intensity={1} distance={18} decay={2} />
-      <pointLight position={[8, 3, -3]} color="#ffeedd" intensity={0.5} distance={12} decay={2} />
+      <pointLight position={[2, towerVisH + 3, 3.5]} color="#fff5e0" intensity={1} distance={14} decay={2} />
+      <pointLight position={[6, 3.2, -1.8]} color="#ffeedd" intensity={0.55} distance={11} decay={2} />
     </>
   );
 }
@@ -2124,8 +2125,8 @@ export default function LabScene3D(props: LabSceneProps) {
     // - 8.4 — 10 times (video + audio)
     const distances5 = props.uhfState.distances.slice(0, 5);
     const K = 1.41;
-    const videoPower = props.uhfState.powerW * 0.8;
-    const audioPower = props.uhfState.powerW * 0.2;
+    const videoPower = props.uhfState.powerVideoW ?? props.uhfState.powerW * 0.8;
+    const audioPower = props.uhfState.powerAudioW ?? props.uhfState.powerW * 0.2;
 
     const points: TvPoint[] = distances5.map((rM, i) => {
       // 8.6
@@ -2233,12 +2234,14 @@ export default function LabScene3D(props: LabSceneProps) {
       };
     }
     if (props.lessonId === 8) {
-      const p0 = tvModel?.points[0];
-      if (!p0) return { headline: 'Телевещание: нет данных.' };
+      const pts = tvModel?.points;
+      if (!pts?.length) return { headline: 'Телевещание: нет данных.' };
+      const iSel = Math.min(Math.max(0, tvSelectedIndex), pts.length - 1);
+      const pSel = pts[iSel];
       return {
-        headline: `Телевещание: E_из=${p0.EimgFinal.toFixed(2)} В/м; E_зв=${p0.EsndFinal.toFixed(2)} В/м | R=${p0.Rm.toFixed(
+        headline: `Телевещание: ${iSel + 1}-я точка (r = ${pSel.rM} м) | E_из=${pSel.EimgFinal.toFixed(2)} В/м; E_зв=${pSel.EsndFinal.toFixed(2)} В/м | R=${pSel.Rm.toFixed(
           1,
-        )} м | F(Δ)=${p0.Fd.toFixed(3)}`,
+        )} м | F(Δ)=${pSel.Fd.toFixed(3)}`,
       };
     }
     if (props.lessonId === 9) {
@@ -2251,7 +2254,7 @@ export default function LabScene3D(props: LabSceneProps) {
     const Ush = stepVoltage(props.groundState.faultCurrentA, props.groundState.soilResistivityOhmM, props.groundState.distanceM, props.groundState.stepLengthM);
     const phi = groundPotential(props.groundState.faultCurrentA, props.groundState.soilResistivityOhmM, props.groundState.distanceM);
     return { headline: `Напряжение шага: Uш = ${Ush.toFixed(1)} В | φ = ${phi.toFixed(1)} В | x = ${props.groundState.distanceM} м` };
-  }, [props]);
+  }, [props, tvModel, tvSelectedIndex]);
 
   const signalChart = useMemo(() => {
     if (props.lessonId !== 7 || !cellularModel) return null;
@@ -2383,7 +2386,19 @@ export default function LabScene3D(props: LabSceneProps) {
         </Alert>
       )}
       <Box sx={{ height: { xs: 320, md: 420 }, borderRadius: 1, overflow: 'hidden' }}>
-        <SafeCanvas shadows camera={{ position: [5, 6, 7].includes(props.lessonId) ? [8, 5, 10] : props.lessonId === 10 ? [10, 6, 10] : [8, 5, 8], fov: 46 }}>
+        <SafeCanvas
+          shadows
+          camera={{
+            position: [5, 6, 7].includes(props.lessonId)
+              ? [8, 5, 10]
+              : props.lessonId === 10
+                ? [10, 6, 10]
+                : props.lessonId === 8
+                  ? [6.8, 5, 8.2]
+                  : [8, 5, 8],
+            fov: 46,
+          }}
+        >
           <ambientLight intensity={0.2} />
           <directionalLight position={[5, 10, 3]} intensity={0.7} castShadow shadow-mapSize-width={512} shadow-mapSize-height={512} />
           {props.lessonId === 1 && <LightInvestigationScene state={props.lightState} timeScale={timeScale} />}

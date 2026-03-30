@@ -1099,19 +1099,29 @@ export default function LabSection({ lesson }: LabSectionProps) {
     ],
   }), [lesson7Full]);
 
-  const uhfStateMemo = useMemo(() => ({
-    powerW: lesson8Full.P ?? 100,
-    gain: lesson8Full.G ?? 4,
-    heightM: lesson8Full.h ?? 25,
-    frequencyMHz: lesson8Full.f ?? 900,
-    distances: [
-      lesson8Full.r1 ?? 50,
-      lesson8Full.r2 ?? 100,
-      lesson8Full.r3 ?? 200,
-      lesson8Full.r4 ?? 500,
-      lesson8Full.r5 ?? 1000,
-    ],
-  }), [lesson8Full]);
+  const uhfStateMemo = useMemo(() => {
+    const v = lesson8Full;
+    const kwImg = typeof v.pImageKW === 'number' ? v.pImageKW : undefined;
+    const kwSnd = typeof v.pSoundKW === 'number' ? v.pSoundKW : undefined;
+    const powerVideoW = kwImg !== undefined ? kwImg * 1000 : (typeof v.P === 'number' ? v.P * 0.8 : 94_000);
+    const powerAudioW = kwSnd !== undefined ? kwSnd * 1000 : (typeof v.P === 'number' ? v.P * 0.2 : 23_000);
+    const heightM = typeof v.H === 'number' ? v.H : (typeof v.h === 'number' ? v.h : 25);
+    return {
+      powerW: (powerVideoW + powerAudioW) / 2,
+      powerVideoW,
+      powerAudioW,
+      gain: v.G ?? 4,
+      heightM,
+      frequencyMHz: typeof v.f === 'number' ? v.f : 900,
+      distances: [
+        v.r1 ?? 50,
+        v.r2 ?? 100,
+        v.r3 ?? 200,
+        v.r4 ?? 500,
+        v.r5 ?? 1000,
+      ],
+    };
+  }, [lesson8Full]);
 
   const bodyElecStateMemo = useMemo(() => ({
     voltageV: l9Voltage,

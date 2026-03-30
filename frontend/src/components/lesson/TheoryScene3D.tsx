@@ -7,6 +7,8 @@ import SafeCanvas from '../SafeCanvas';
 import type { TheorySimulatorType } from '../../types/theme';
 import { waveguideAttenuationPerM } from '../../formulas/shielding';
 import { attenuationFactorF, xParameter } from '../../formulas/hfField';
+import { pduForFrequencyVpm, RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, normalizedPatternFactor } from '../../formulas/uhfField';
+import { bodyCurrentMA, skinImpedance, totalBodyImpedance, groundPotential, stepVoltage } from '../../formulas/electricSafety';
 
 /* ─── Scene title map ─── */
 export const sceneTitle: Record<TheorySimulatorType, string> = {
@@ -49,6 +51,7 @@ function Label({
   size = 0.2,
   depthOffset,
   renderOrder,
+  outlineColor = '#0d0d0d',
 }: {
   children: string;
   position: [number, number, number];
@@ -57,6 +60,7 @@ function Label({
   /** Troika: сдвиг по глубине, чтобы текст не терялся за полупрозрачными мешами */
   depthOffset?: number;
   renderOrder?: number;
+  outlineColor?: string;
 }) {
   const outlineW = size * 0.18;
   return (
@@ -66,7 +70,7 @@ function Label({
         color={color}
         position={[0, 0, 0]}
         outlineWidth={outlineW}
-        outlineColor="#0d0d0d"
+        outlineColor={outlineColor}
         fontWeight={700}
         anchorX="center"
         anchorY="middle"
@@ -1671,38 +1675,119 @@ function HfSoilAttenuationScene({
 
 /* ─────────────── UHF Field Strength Scene (Lab 8) ─────────────── */
 
-function UhfFieldStrengthScene({ power, height, radius }: { power: number; height: number; radius: number }) {
-  const h = Math.max(1, height / 50);
-  const r = Math.max(0.5, radius / 100);
+function UhfFieldStrengthScene({
+  power,
+  gain,
+  height,
+  radius,
+}: {
+  power: number;
+  gain: number;
+  height: number;
+  radius: number;
+}) {
+  /* Высота мачты и горизонталь r визуально развязаны: H → только hVis, r → только rVis (как в формулах). */
+  const hVis = Math.max(1.35, Math.min(5.2, 0.75 + (height / 520) * 4.45));
+  const rVis = Math.max(1.65, Math.min(9.2, 1.5 + (radius / 1950) * 7.7));
+
+  const phaseY = hVis + 0.15;
+  const rxH = 0.45;
+  const beam = useMemo(() => {
+    const start = new THREE.Vector3(0, phaseY, 0);
+    const end = new THREE.Vector3(rVis, rxH, 0);
+    const len = Math.max(0.05, start.distanceTo(end));
+    const mid = start.clone().add(end).multiplyScalar(0.5);
+    const dir = end.clone().sub(start).normalize();
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    return { mid, quat, len };
+  }, [phaseY, rVis, rxH]);
+
+  const deltaDeg = (Math.atan2(height, radius) * 180) / Math.PI;
+
   return (
     <>
-      {/* Tower */}
-      <mesh position={[0, h / 2, 0]}>
-        <cylinderGeometry args={[0.08, 0.15, h, 8]} />
-        <meshStandardMaterial color="#777" metalness={0.6} />
-      </mesh>
-      {/* Antenna array */}
-      <mesh position={[0, h, 0]}>
-        <boxGeometry args={[0.5, 0.3, 0.1]} />
-        <meshStandardMaterial color="#cc3333" emissive="#ff2200" emissiveIntensity={0.4} />
-      </mesh>
-      <Label position={[0, h + 0.5, 0]} color="#cc0000" size={0.14}>{`P = ${power.toFixed(0)} Вт`}</Label>
-      {/* beam cone */}
-      <mesh position={[r, h * 0.3, 0]} rotation={[0, 0, -Math.PI / 6]}>
-        <coneGeometry args={[0.8, 2, 16, 1, true]} />
-        <meshBasicMaterial color="#ff8844" transparent opacity={0.15} side={THREE.DoubleSide} />
-      </mesh>
-      {/* Measurement point */}
-      <mesh position={[r * 2, 0.4, 0]}>
-        <boxGeometry args={[0.2, 0.8, 0.2]} />
-        <meshStandardMaterial color="#2244cc" />
-      </mesh>
-      <Label position={[r * 2, 1.2, 0]} color="#0022aa" size={0.12}>{`r = ${radius.toFixed(0)} м`}</Label>
-      <Label position={[0.5, h * 0.7, 0]} color="#ff6622" size={0.10}>{'Луч'}</Label>
-      {/* Ground */}
+      {/* Пол */}
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[12, 8]} />
         <meshStandardMaterial color="#73945c" roughness={0.9} />
+      </mesh>
+
+      {/* Техздание у подножия */}
+      <mesh position={[0, 0.42, 0]} castShadow>
+        <boxGeometry args={[1.15, 0.84, 0.95]} />
+        <meshStandardMaterial color="#6d4c41" roughness={0.88} />
+      </mesh>
+      <mesh position={[0.58, 0.5, 0.48]} rotation={[0, 0.2, 0]} castShadow>
+        <boxGeometry args={[0.08, 0.65, 0.08]} />
+        <meshStandardMaterial color="#5d4037" metalness={0.2} />
+      </mesh>
+      <mesh position={[-0.55, 0.5, -0.42]} rotation={[0, -0.35, 0]} castShadow>
+        <boxGeometry args={[0.08, 0.65, 0.08]} />
+        <meshStandardMaterial color="#5d4037" metalness={0.2} />
+      </mesh>
+
+      {/* Несущая мачта (усечённая призма + пояса) */}
+      <mesh position={[0, 0.85 + hVis * 0.42, 0]} castShadow>
+        <cylinderGeometry args={[0.06, 0.11, hVis * 0.82, 5]} />
+        <meshStandardMaterial color="#78909c" metalness={0.55} roughness={0.42} />
+      </mesh>
+      {[0.15, 0.42, 0.68].map((t) => (
+        <mesh key={t} position={[0, 0.9 + hVis * t, 0]} castShadow>
+          <boxGeometry args={[0.62, 0.035, 0.035]} />
+          <meshStandardMaterial color="#607d8b" metalness={0.45} />
+        </mesh>
+      ))}
+
+      {/* Площадка и УВЧ-панели (характерный «телевизионный» контур) */}
+      <group position={[0, hVis + 0.05, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.52, 0.06, 0.52]} />
+          <meshStandardMaterial color="#90a4ae" metalness={0.5} roughness={0.4} />
+        </mesh>
+        {[-0.14, 0, 0.14].map((dz) => (
+          <mesh key={dz} position={[0.22, 0.26, dz]} rotation={[0, 0, -0.12]} castShadow>
+            <boxGeometry args={[0.05, 0.42, 0.22]} />
+            <meshStandardMaterial color="#eeeeee" metalness={0.35} roughness={0.35} />
+          </mesh>
+        ))}
+        <mesh position={[-0.18, 0.22, 0]} rotation={[0, Math.PI / 2, 0.25]} castShadow>
+          <cylinderGeometry args={[0.22, 0.26, 0.06, 20, 1, true, 0.2, 1.6]} />
+          <meshStandardMaterial color="#cfd8dc" metalness={0.6} roughness={0.28} side={THREE.DoubleSide} />
+        </mesh>
+        <mesh position={[0.18, 0.31, 0.26]}>
+          <sphereGeometry args={[0.055, 10, 10]} />
+          <meshStandardMaterial color="#e53935" emissive="#c62828" emissiveIntensity={0.8} />
+        </mesh>
+        <mesh position={[-0.2, 0.31, -0.24]}>
+          <sphereGeometry args={[0.055, 10, 10]} />
+          <meshStandardMaterial color="#e53935" emissive="#c62828" emissiveIntensity={0.8} />
+        </mesh>
+      </group>
+
+      <Label position={[0.05, hVis + 0.90, 0]} color="#ffcdd2" size={0.12}>{`P = ${power.toFixed(0)} Вт`}</Label>
+      <Label position={[0.05, hVis + 0.70, 0]} color="#b3e5fc" size={0.1}>{`G = ${gain.toFixed(1)} · H = ${height.toFixed(0)} м`}</Label>
+
+      {/* Луч: прямая от фазового центра к точке на расстоянии r по земле */}
+      <mesh position={beam.mid} quaternion={beam.quat}>
+        <cylinderGeometry args={[0.038, 0.038, beam.len, 8]} />
+        <meshStandardMaterial color="#ff9100" emissive="#ff6d00" emissiveIntensity={0.35} transparent opacity={0.92} />
+      </mesh>
+      <Label position={[rVis * 0.38, Math.max(phaseY, rxH) * 0.55 + 0.5, 0]} color="#ffab40" size={0.085}>
+        R, F(Δ)
+      </Label>
+
+      {/* Точка измерения: только по rVis */}
+      <mesh position={[rVis, rxH, 0]} castShadow>
+        <boxGeometry args={[0.22, 0.78, 0.22]} />
+        <meshStandardMaterial color="#1e88e5" metalness={0.25} roughness={0.5} />
+      </mesh>
+      <Label position={[rVis, 1.15, 0]} color="#0d47a1" size={0.12}>{`r = ${radius.toFixed(0)} м`}</Label>
+      <Label position={[rVis, 0.95, 0.45]} color="#81d4fa" size={0.075}>{`Δ ≈ ${deltaDeg.toFixed(1)}°`}</Label>
+
+      {/* Слабая зона излучения у основания панелей (не привязана к r) */}
+      <mesh position={[0.35, hVis * 0.55, 0]} rotation={[0, 0, -Math.PI / 2.8]}>
+        <coneGeometry args={[0.35, 1.2, 12, 1, true]} />
+        <meshBasicMaterial color="#ffb74d" transparent opacity={0.07} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
     </>
   );
@@ -1710,70 +1795,190 @@ function UhfFieldStrengthScene({ power, height, radius }: { power: number; heigh
 
 /* ─────────────── UHF Antenna Pattern Scene (Lab 8) ─────────────── */
 
-function UhfAntennaPatternScene({ gain }: { gain: number }) {
+function UhfAntennaPatternScene({ gain, deltaDeg }: { gain: number; deltaDeg: number }) {
   const g = Math.max(1, gain);
-  const lobeLen = Math.min(4, g * 0.3);
-  const ref = useRef<THREE.Group>(null);
-  useFrame((_, delta) => { if (ref.current) ref.current.rotation.y += delta * 0.3; });
+  const deltaRad = (Math.max(0, Math.min(90, deltaDeg)) * Math.PI) / 180;
+  const F = normalizedPatternFactor(deltaRad);
+
+  const yAnt = 1.45;
+  const halfAngle = Math.max(0.06, Math.min(0.48, 0.55 / Math.sqrt(g)));
+  const coneLen = 2.35;
+  const coneR = coneLen * Math.tan(halfAngle);
+
+  const rayLen = 2.15;
+  /* Тuple rotation — R3F надёжнее обновляет, чем общий объект Quaternion на каждом кадре. */
+  const rayLayout = useMemo(() => {
+    const dir = new THREE.Vector3(0, Math.sin(deltaRad), Math.cos(deltaRad)).normalize();
+    const mid = dir.clone().multiplyScalar(rayLen * 0.5);
+    const yUp = new THREE.Vector3(0, 1, 0);
+    const q = new THREE.Quaternion();
+    if (dir.dot(yUp) > 1 - 1e-6) q.identity();
+    else if (dir.dot(yUp) < -1 + 1e-6) q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
+    else q.setFromUnitVectors(yUp, dir);
+    const e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
+    return {
+      mid: [mid.x, mid.y, mid.z] as [number, number, number],
+      rot: [e.x, e.y, e.z] as [number, number, number],
+      tip: [dir.x * rayLen, dir.y * rayLen, dir.z * rayLen] as [number, number, number],
+    };
+  }, [deltaRad, rayLen]);
+
   return (
     <>
-      <group ref={ref} position={[0, 2, 0]}>
-        {/* Main lobe */}
-        <mesh position={[0, 0, lobeLen / 2]}>
-          <sphereGeometry args={[0.3, 16, 16]} />
-          <meshStandardMaterial color="#ff4422" transparent opacity={0.4} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[12, 10]} />
+        <meshStandardMaterial color="#c5b9a8" roughness={0.9} />
+      </mesh>
+
+      {/* Мачта */}
+      <mesh position={[0, yAnt / 2 - 0.05, 0]} castShadow>
+        <cylinderGeometry args={[0.05, 0.07, yAnt - 0.15, 8]} />
+        <meshStandardMaterial color="#6d6d6d" metalness={0.4} roughness={0.55} />
+      </mesh>
+
+      <group position={[0, yAnt, 0]}>
+        {/* Консоль и облучатель */}
+        <mesh castShadow>
+          <boxGeometry args={[0.14, 0.1, 0.38]} />
+          <meshStandardMaterial color="#455a64" metalness={0.55} roughness={0.4} />
         </mesh>
-        <mesh scale={[0.4, 0.4, lobeLen]} position={[0, 0, lobeLen / 2]}>
-          <sphereGeometry args={[0.5, 16, 16]} />
-          <meshStandardMaterial color="#ff6644" transparent opacity={0.25} />
+        {/* Рупор (облучатель) */}
+        <mesh position={[0, 0, 0.12]} rotation={[-Math.PI / 2, 0, 0]} castShadow>
+          <coneGeometry args={[0.08, 0.15, 12]} />
+          <meshStandardMaterial color="#37474f" metalness={0.65} roughness={0.35} />
         </mesh>
-        {/* Back lobe small */}
-        <mesh position={[0, 0, -0.4]}>
-          <sphereGeometry args={[0.2, 12, 12]} />
-          <meshStandardMaterial color="#4466ff" transparent opacity={0.25} />
+        {/* Отражатель */}
+        <mesh position={[0, 0, -0.05]} rotation={[Math.PI / 2 + Math.PI / 4, 0, 0]} castShadow>
+          <circleGeometry args={[0.52, 40]} />
+          <meshStandardMaterial color="#b5b5b5" metalness={0.8} roughness={0.34} side={THREE.DoubleSide} />
         </mesh>
-        {/* antenna element */}
-        <mesh>
-          <sphereGeometry args={[0.08, 8, 8]} />
-          <meshStandardMaterial color="#333" metalness={0.8} />
+        <mesh position={[0, 0, -0.09]} rotation={[Math.PI / 2 + Math.PI / 4, 0, 0]}>
+          <ringGeometry args={[0.08, 0.54, 32]} />
+          <meshStandardMaterial color="#949494" metalness={0.68} roughness={0.36} side={THREE.DoubleSide} />
+        </mesh>
+
+        {/* Главный лепесток вдоль +Z (оси облучателя) */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, coneLen / 2]}>
+          <coneGeometry args={[coneR, coneLen, 40, 1, true]} />
+          <meshStandardMaterial
+            color="#ff6d00"
+            transparent
+            opacity={0.22}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+            emissive="#ff9100"
+            emissiveIntensity={0.12}
+          />
+        </mesh>
+
+        {/* Направление наблюдения (угол Δ) */}
+        <mesh position={rayLayout.mid} rotation={rayLayout.rot} renderOrder={8}>
+          <cylinderGeometry args={[0.055, 0.055, rayLen, 10]} />
+          <meshBasicMaterial color="#1565c0" depthTest depthWrite toneMapped={false} />
+        </mesh>
+        <mesh position={rayLayout.tip}>
+          <sphereGeometry args={[0.07, 14, 14]} />
+          <meshStandardMaterial color="#42a5f5" metalness={0.35} roughness={0.45} emissive="#1976d2" emissiveIntensity={0.2} />
         </mesh>
       </group>
-      <Label position={[0, 3.5, 0]} color="#0d47a1" size={0.16}>{`G = ${g.toFixed(1)}`}</Label>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[10, 10]} />
-        <meshStandardMaterial color="#c4b8a8" />
-      </mesh>
+
+      <Label position={[-0.2, yAnt + 1.05, 0]} color="#e3f2fd" size={0.11}>
+        {`G = ${g.toFixed(1)} · Δ = ${deltaDeg.toFixed(0)}°`}
+      </Label>
+      <Label position={[-0.2, yAnt + 0.82, 0]} color="#ffcc80" size={0.095}>
+        {`F(Δ) = ${F.toFixed(3)} (cos Δ)`}
+      </Label>
+      <Label position={[-0.2, yAnt + 0.62, 0]} color="#cfd8dc" size={0.068}>
+        {'Ось +Z — максимум ДН; синий луч — направление под углом Δ'}
+      </Label>
     </>
   );
 }
 
 /* ─────────────── Radiation Dose Scene (Lab 8) ─────────────── */
 
-function RadiationDoseScene({ frequency, pdu }: { frequency: number; pdu: number }) {
-  const barH = Math.min(3, pdu / 5);
+function RadiationDoseScene({ frequencyMHz }: { frequencyMHz: number }) {
+  const f = Math.max(0.03, Math.min(RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, frequencyMHz));
+  const pdu = pduForFrequencyVpm(f);
+  const lambdaM = 299.792458 / f;
+
+  const logMin = Math.log10(0.03);
+  const logMax = Math.log10(RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ);
+  const xAt = (fm: number) => {
+    const t = (Math.log10(Math.max(0.03, fm)) - logMin) / (logMax - logMin);
+    return -3.5 + t * 7.0;
+  };
+
+  const markerX = xAt(f);
+  const bands: { f0: number; f1: number; color: string }[] = [
+    { f0: 0.03, f1: 3, color: '#c62828' },
+    { f0: 3, f1: 30, color: '#ef6c00' },
+    { f0: 30, f1: 50, color: '#fbc02d' },
+    { f0: 50, f1: RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, color: '#43a047' },
+  ];
+
+  const barH = Math.max(0.2, (pdu / 50) * 2.35);
+  const barColor = pdu >= 40 ? '#c62828' : pdu >= 15 ? '#ef6c00' : pdu >= 8 ? '#fbc02d' : '#2e7d32';
+  const axisZ = 0.65;
+
   return (
     <>
-      {/* frequency bar visualization */}
-      <mesh position={[0, barH / 2, 0]}>
-        <boxGeometry args={[1, barH, 1]} />
-        <meshStandardMaterial color={pdu > 10 ? '#cc0000' : '#22aa44'} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+        <planeGeometry args={[10, 7]} />
+        <meshStandardMaterial color="#d7ccc8" roughness={0.92} />
       </mesh>
-      <Label position={[0, barH + 0.4, 0]} color="#0d47a1" size={0.16}>{`ПДУ = ${pdu.toFixed(1)} В/м`}</Label>
-      <Label position={[0, barH + 0.1, 0]} color="#666" size={0.12}>{`f = ${(frequency / 1e6).toFixed(1)} МГц`}</Label>
-      {/* Scale */}
-      {[2, 5, 10, 15, 25].map((v, i) => (
-        <group key={i}>
-          <mesh position={[-1.5, Math.min(3, v / 5) / 2, 0]}>
-            <boxGeometry args={[0.02, Math.min(3, v / 5), 0.02]} />
-            <meshBasicMaterial color="#aaa" />
+
+      {bands.map((b, i) => {
+        const x0 = xAt(b.f0);
+        const x1 = xAt(b.f1);
+        const cx = (x0 + x1) / 2;
+        const w = Math.max(0.08, x1 - x0);
+        return (
+          <mesh key={i} position={[cx, 0.015, axisZ]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[w, 1.5]} />
+            <meshStandardMaterial color={b.color} transparent opacity={0.42} depthWrite={false} />
           </mesh>
-          <Label position={[-2, Math.min(3, v / 5), 0]} color="#888" size={0.08}>{`${v}`}</Label>
-        </group>
-      ))}
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[8, 6]} />
-        <meshStandardMaterial color="#c4b8a8" />
+        );
+      })}
+
+      <mesh position={[0, 0.028, axisZ]}>
+        <boxGeometry args={[7.0, 0.025, 0.06]} />
+        <meshBasicMaterial color="#4e342e" />
       </mesh>
+      {/* Маркер f и столбец ПДУ — одна вертикаль по оси X шкалы */}
+      <mesh position={[markerX, 0.22, axisZ + 0.02]}>
+        <boxGeometry args={[0.06, 0.38, 0.06]} />
+        <meshStandardMaterial color="#1565c0" metalness={0.35} roughness={0.35} emissive="#0d47a1" emissiveIntensity={0.25} />
+      </mesh>
+
+      <mesh position={[markerX, barH / 2 + 0.06, axisZ - 0.4]} castShadow>
+        <boxGeometry args={[0.36, barH, 0.36]} />
+        <meshStandardMaterial color={barColor} metalness={0.25} roughness={0.45} />
+      </mesh>
+
+      <Label position={[0, 2.5, -0.2]} color="#3e2723" size={0.095}>
+        {'ПДУ E(f) — ступени по табл.; маркер и λ меняются непрерывно с f'}
+      </Label>
+      <Label position={[markerX, barH + 0.52, axisZ - 0.52]} color="#0d47a1" size={0.125}>{`ПДУ E = ${pdu} В/м`}</Label>
+      <Label position={[markerX, 0.52, axisZ + 0.06]} color="#b3e5fc" size={0.1}>{`f = ${f < 10 ? f.toFixed(3) : f.toFixed(1)} МГц`}</Label>
+      <Label position={[markerX, barH + 0.26, axisZ - 0.52]} color="#546e7a" size={0.078}>
+        {lambdaM < 1 ? `λ ≈ ${(lambdaM * 1000).toFixed(1)} мм` : `λ ≈ ${lambdaM.toFixed(2)} м`}
+      </Label>
+
+      {(
+        [
+          [0.1, '0.1 МГц'],
+          [1, '1 МГц'],
+          [10, '10 МГц'],
+          [100, '100 МГц'],
+          [300, '300 МГц'],
+          [RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, `${RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ} МГц`],
+        ] as const
+      ).map(([fm, lbl]) => (
+        <Label key={lbl} position={[xAt(fm), 0.1, axisZ + 0.55]} color="#e0f7fa" size={0.064}>
+          {lbl}
+        </Label>
+      ))}
     </>
   );
 }
@@ -1782,95 +1987,193 @@ function RadiationDoseScene({ frequency, pdu }: { frequency: number; pdu: number
 
 function ElectricCurrentBodyScene({ current }: { current: number }) {
   const mA = Math.max(0, current);
-  const dangerColor = mA < 1 ? '#22aa44' : mA < 10 ? '#ddaa00' : mA < 100 ? '#ff6600' : '#cc0000';
+  const pathOpacity = Math.min(0.62, 0.1 + mA / 65);
+  const pathColor = mA < 1 ? '#43a047' : mA < 10 ? '#fdd835' : mA < 100 ? '#ff9800' : '#ef5350';
+  const meterFill = mA < 1 ? '#c8e6c9' : mA < 10 ? '#fff9c4' : mA < 100 ? '#ffe0b2' : '#ffcdd2';
+  const statusFill = mA < 1 ? '#e8f5e9' : mA < 10 ? '#fffde7' : mA < 100 ? '#fff3e0' : '#ffebee';
+  const skin = '#deb897';
+  const shirt = '#5c6d8c';
+  const pants = '#455a64';
   return (
     <>
-      {/* Simplified human figure */}
-      {/* Head */}
-      <mesh position={[0, 2.9, 0]}>
-        <sphereGeometry args={[0.25, 16, 16]} />
-        <meshStandardMaterial color="#e0c8a0" />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
+        <planeGeometry args={[6, 4]} />
+        <meshStandardMaterial color="#a89888" roughness={0.88} />
       </mesh>
-      {/* Body */}
-      <mesh position={[0, 2.1, 0]}>
-        <cylinderGeometry args={[0.2, 0.25, 1.2, 12]} />
-        <meshStandardMaterial color="#4466aa" />
-      </mesh>
-      {/* Arms (left/right) */}
-      <mesh position={[-0.5, 2.2, 0]} rotation={[0, 0, Math.PI / 6]}>
-        <cylinderGeometry args={[0.07, 0.07, 0.8, 8]} />
-        <meshStandardMaterial color="#e0c8a0" />
-      </mesh>
-      <mesh position={[0.5, 2.2, 0]} rotation={[0, 0, -Math.PI / 6]}>
-        <cylinderGeometry args={[0.07, 0.07, 0.8, 8]} />
-        <meshStandardMaterial color="#e0c8a0" />
-      </mesh>
-      {/* Current path glow */}
-      <mesh position={[0, 2.1, 0]}>
-        <cylinderGeometry args={[0.12, 0.12, 1.5, 12]} />
-        <meshBasicMaterial color={dangerColor} transparent opacity={Math.min(0.5, mA / 50)} />
-      </mesh>
-      {/* Labels */}
-      <Label position={[0, 3.5, 0]} color={dangerColor} size={0.18}>{`I = ${mA.toFixed(1)} мА`}</Label>
-      <Label position={[0, 0.8, 0]} color="#0d47a1" size={0.12}>
+      {/* Силуэт на полу: ноги → торс → шея → голова; кожа и одежда согласованы */}
+      <group position={[0, 0, 0]}>
+        <mesh position={[-0.11, 0.04, 0]} castShadow>
+          <boxGeometry args={[0.12, 0.06, 0.22]} />
+          <meshStandardMaterial color="#37474f" roughness={0.65} />
+        </mesh>
+        <mesh position={[0.11, 0.04, 0]} castShadow>
+          <boxGeometry args={[0.12, 0.06, 0.22]} />
+          <meshStandardMaterial color="#37474f" roughness={0.65} />
+        </mesh>
+        <mesh position={[-0.11, 0.42, 0]} castShadow>
+          <capsuleGeometry args={[0.065, 0.58, 6, 10]} />
+          <meshStandardMaterial color={pants} roughness={0.82} />
+        </mesh>
+        <mesh position={[0.11, 0.42, 0]} castShadow>
+          <capsuleGeometry args={[0.065, 0.58, 6, 10]} />
+          <meshStandardMaterial color={pants} roughness={0.82} />
+        </mesh>
+        <mesh position={[0, 1.05, 0]} castShadow>
+          <capsuleGeometry args={[0.15, 0.38, 8, 16]} />
+          <meshStandardMaterial color={shirt} roughness={0.7} metalness={0.05} />
+        </mesh>
+        <mesh position={[0, 1.33, 0]} castShadow>
+          <cylinderGeometry args={[0.1, 0.12, 0.14, 10]} />
+          <meshStandardMaterial color={skin} roughness={0.65} />
+        </mesh>
+        <mesh position={[0, 1.52, 0]} castShadow>
+          <sphereGeometry args={[0.17, 20, 20]} />
+          <meshStandardMaterial color={skin} roughness={0.55} />
+        </mesh>
+        <mesh position={[-0.22, 1.14, 0]} rotation={[0, 0, Math.PI / 4.2]} castShadow>
+          <capsuleGeometry args={[0.05, 0.52, 6, 10]} />
+          <meshStandardMaterial color={skin} roughness={0.65} />
+        </mesh>
+        <mesh position={[0.22, 1.14, 0]} rotation={[0, 0, -Math.PI / 4.2]} castShadow>
+          <capsuleGeometry args={[0.05, 0.52, 6, 10]} />
+          <meshStandardMaterial color={skin} roughness={0.65} />
+        </mesh>
+        <mesh position={[0, 1.05, 0.04]}>
+          <capsuleGeometry args={[0.07, 0.32, 6, 12]} />
+          <meshBasicMaterial color={pathColor} transparent opacity={pathOpacity} depthWrite={false} />
+        </mesh>
+      </group>
+      <Label position={[0, 1.88, 0]} color={meterFill} size={0.16} outlineColor="#263238" depthOffset={-2}>{`I = ${mA.toFixed(1)} мА`}</Label>
+      <Label position={[0, 0.2, 0.58]} color={statusFill} size={0.115} outlineColor="#37474f" depthOffset={-2}>
         {mA < 1 ? 'Безопасно' : mA < 10 ? 'Ощутимый ток' : mA < 100 ? 'Неотпускающий!' : 'Фибрилляция!'}
       </Label>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[6, 4]} />
-        <meshStandardMaterial color="#c4b8a8" />
-      </mesh>
     </>
   );
 }
 
 /* ─────────────── Electric Resistance Scene (Lab 9) ─────────────── */
 
-function ElectricResistanceScene({ resistance }: { resistance: number }) {
-  const r = Math.max(100, resistance);
-  const boxW = Math.min(2, r / 2000);
+function ElectricResistanceScene({
+  skinResistanceOhm,
+  capacitanceNF,
+  internalResistanceOhm,
+  frequencyHz,
+}: {
+  skinResistanceOhm: number;
+  capacitanceNF: number;
+  internalResistanceOhm: number;
+  frequencyHz: number;
+}) {
+  const Rn = Math.max(1, skinResistanceOhm);
+  const CnF = Math.max(0.1, capacitanceNF);
+  const Rv = Math.max(1, internalResistanceOhm);
+  const f = Math.max(1, frequencyHz);
+
+  // Формулы как в MiniSimulator (Lab 9):
+  // Zн = Rн / sqrt(1 + (2π f Cн Rн)^2)
+  // Z = 2·Zн + Rв
+  const Zn = skinImpedance(Rn, f, CnF * 1e-9);
+  const Zt = totalBodyImpedance(Zn, Rv);
+  const term = 2 * Math.PI * f * (CnF * 1e-9) * Rn; // 2π f C Rn
+  const capGlow = Math.min(1, term / 10);
+
+  const plateW = 0.65;
+  const resistorW = Math.min(2, Math.max(0.35, Rn / 9000));
+  const internalW = Math.min(2, Math.max(0.35, Rv / 2500));
+
+  const explainColor = '#0d47a1';
+
   return (
     <>
-      {/* RC circuit visualization */}
-      {/* Rн left */}
-      <mesh position={[-2, 2, 0]}>
-        <boxGeometry args={[boxW, 0.4, 0.3]} />
-        <meshStandardMaterial color="#cc8844" />
-      </mesh>
-      <Label position={[-2, 2.5, 0]} color="#884400" size={0.14}>{'Rн (кожа)'}</Label>
-      {/* Cн left — capacitor plates */}
-      <mesh position={[-2, 1.2, -0.1]}>
-        <boxGeometry args={[0.6, 0.02, 0.3]} />
-        <meshStandardMaterial color="#4488cc" />
-      </mesh>
-      <mesh position={[-2, 1.0, -0.1]}>
-        <boxGeometry args={[0.6, 0.02, 0.3]} />
-        <meshStandardMaterial color="#4488cc" />
-      </mesh>
-      <Label position={[-2, 0.7, 0]} color="#2266aa" size={0.12}>{'Cн'}</Label>
-      {/* Rв center */}
-      <mesh position={[0, 1.6, 0]}>
-        <boxGeometry args={[0.8, 0.3, 0.3]} />
-        <meshStandardMaterial color="#44aa44" />
-      </mesh>
-      <Label position={[0, 2.1, 0]} color="#226622" size={0.14}>{'Rв (внутр)'}</Label>
-      {/* Rн right */}
-      <mesh position={[2, 2, 0]}>
-        <boxGeometry args={[boxW, 0.4, 0.3]} />
-        <meshStandardMaterial color="#cc8844" />
-      </mesh>
-      <Label position={[2, 2.5, 0]} color="#884400" size={0.14}>{'Rн (кожа)'}</Label>
-      {/* Connecting wires */}
-      {[[-3, 2, 0], [-1, 2, 0], [1, 1.6, 0], [3, 2, 0]].map((pos, i) => (
-        <mesh key={i} position={[pos[0] as number, pos[1] as number, pos[2] as number]}>
-          <boxGeometry args={[1, 0.03, 0.03]} />
-          <meshBasicMaterial color="#333" />
-        </mesh>
-      ))}
-      <Label position={[0, 3, 0]} color="#0d47a1" size={0.16}>{`Z = ${r.toFixed(0)} Ом`}</Label>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+      {/* Base ground */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow>
         <planeGeometry args={[10, 6]} />
-        <meshStandardMaterial color="#c4b8a8" />
+        <meshStandardMaterial color="#c4b8a8" roughness={1} />
       </mesh>
+
+      {/* ── (1) RC для кожи: Rн || Cн -> эквивалент Zн ── */}
+      <group>
+        {/* Rн */}
+        <mesh position={[-2.2, 2.0, 0]} castShadow>
+          <boxGeometry args={[resistorW, 0.45, 0.35]} />
+          <meshStandardMaterial color="#cc8844" emissive="#7a4d14" emissiveIntensity={0.25} />
+        </mesh>
+        <Label position={[-2.2, 2.55, 0]} color="#884400" size={0.14}>
+          {'Rн (кожа)'}
+        </Label>
+
+        {/* Cн (две пластины — визуально “конденсатор кожи”) */}
+        <mesh position={[-2.2, 1.2, -0.08]} castShadow>
+          <boxGeometry args={[plateW, 0.02, 0.32]} />
+          <meshStandardMaterial color="#4488cc" emissive="#29b6f6" emissiveIntensity={0.2 + capGlow * 1.1} />
+        </mesh>
+        <mesh position={[-2.2, 1.0, -0.08]} castShadow>
+          <boxGeometry args={[plateW, 0.02, 0.32]} />
+          <meshStandardMaterial color="#4488cc" emissive="#29b6f6" emissiveIntensity={0.2 + capGlow * 1.1} />
+        </mesh>
+        <Label position={[-2.2, 0.72, 0]} color="#2266aa" size={0.12}>
+          {`Cн = ${CnF.toFixed(0)} нФ`}
+        </Label>
+
+        {/* Эквивалент Zн (результат RC по модулю импеданса) */}
+        <mesh position={[-1.0, 1.6, 0]} castShadow>
+          <boxGeometry args={[Math.min(1.8, Math.max(0.35, Zn / 12000)), 0.35, 0.35]} />
+          <meshStandardMaterial color="#1de9b6" emissive="#00e676" emissiveIntensity={0.35 + (1 - capGlow) * 0.25} />
+        </mesh>
+        <Label position={[-1.0, 2.0, 0]} color={explainColor} size={0.14}>
+          {`Zн ≈ ${Zn.toFixed(0)} Ом`}
+        </Label>
+      </group>
+
+      {/* ── (2) “Две кожи” в серии + внутреннее сопротивление ── */}
+      <group>
+        {/* Zн #1 */}
+        <mesh position={[-0.7, 1.6, 0]} castShadow>
+          <boxGeometry args={[Math.min(1.8, Math.max(0.35, Zn / 12000)), 0.35, 0.35]} />
+          <meshStandardMaterial color="#1de9b6" emissive="#00e676" emissiveIntensity={0.25} />
+        </mesh>
+
+        {/* Zн #2 */}
+        <mesh position={[0.2, 1.6, 0]} castShadow>
+          <boxGeometry args={[Math.min(1.8, Math.max(0.35, Zn / 12000)), 0.35, 0.35]} />
+          <meshStandardMaterial color="#1de9b6" emissive="#00e676" emissiveIntensity={0.25} />
+        </mesh>
+
+        {/* Rв */}
+        <mesh position={[1.1, 1.6, 0]} castShadow>
+          <boxGeometry args={[internalW, 0.38, 0.35]} />
+          <meshStandardMaterial color="#44aa44" emissive="#00c853" emissiveIntensity={0.18} />
+        </mesh>
+        <Label position={[1.1, 2.0, 0]} color="#226622" size={0.13}>
+          {`Rв ≈ ${Rv.toFixed(0)} Ом`}
+        </Label>
+
+        {/* Connecting wires (just for visual “series path”) */}
+        {(
+          [
+            [-1.35, 1.75, 0],
+            [-0.35, 1.75, 0],
+            [0.65, 1.75, 0],
+            [1.55, 1.75, 0],
+          ] as Array<[number, number, number]>
+        ).map((pos, i) => (
+          <mesh key={i} position={pos} castShadow>
+            <boxGeometry args={[0.25, 0.03, 0.03]} />
+            <meshBasicMaterial color="#333" />
+          </mesh>
+        ))}
+      </group>
+
+      {/* ── (3) Итог и зависимость ── */}
+      <Label position={[0, 2.95, 0]} color={explainColor} size={0.16}>
+        {`Z = 2·Zн + Rв ≈ ${Zt.toFixed(0)} Ом`}
+      </Label>
+      <Label position={[0, 2.55, 0]} color="#546e7a" size={0.11} outlineColor="#263238" depthOffset={-2}>
+        {`Zн = Rн / √(1 + (2π f Cн Rн)²)`}
+      </Label>
+      <Label position={[0, 2.25, 0]} color="#455a64" size={0.11} outlineColor="#263238" depthOffset={-2}>
+        {`f = ${f.toFixed(0)} Гц (частота)`}
+      </Label>
     </>
   );
 }
@@ -1879,29 +2182,101 @@ function ElectricResistanceScene({ resistance }: { resistance: number }) {
 
 function ElectricFrequencyEffectScene({ frequency }: { frequency: number }) {
   const f = Math.max(1, frequency);
-  const barCount = 6;
-  const freqs = [10, 50, 100, 500, 1000, 10000];
-  const impedances = freqs.map((fr) => 1000 / (1 + fr / 200));
+
+  // Как в MiniSimulator:
+  // - кожа: Rn = 5000 Ом, Cн = 20 нФ
+  // - внутреннее сопротивление: Rv = 500 Ом
+  const Rn = 5000;
+  const Rv = 500;
+  const CnF = 20e-9;
+
+  const freqs = [10, 30, 50, 100, 300, 500, 1000, 5000, 10000];
+  const currentIdx = freqs.reduce((best, fr, i) => (Math.abs(fr - f) < Math.abs(freqs[best] - f) ? i : best), 0);
+
+  const values = freqs.map((fr) => {
+    const Zn = skinImpedance(Rn, fr, CnF);
+    const Zt = totalBodyImpedance(Zn, Rv);
+    return { fr, Zn, Zt };
+  });
+
+  const maxY = Math.max(...values.map((v) => Math.max(v.Zn, v.Zt)), 1);
+  const maxHeight = 2.25;
+  const baseX = -3.8;
+  const step = 0.85;
+
   return (
     <>
-      {freqs.map((fr, i) => {
-        const h = Math.max(0.2, impedances[i] / 400);
-        const isCurrent = Math.abs(fr - f) < fr * 0.5;
+      {/* Legend */}
+      <Label position={[-4.05, 2.85, 0]} color="#90caf9" size={0.12} outlineColor="#263238" depthOffset={-2}>
+        {'Zн (кожа)'}
+      </Label>
+      <Label position={[-3.55, 2.85, 0]} color="#ffcc80" size={0.12} outlineColor="#263238" depthOffset={-2}>
+        {'Z (тело)'}
+      </Label>
+
+      {/* Bars */}
+      {values.map((v, i) => {
+        const xCenter = baseX + i * step;
+        const hZn = 0.15 + (v.Zn / maxY) * maxHeight;
+        const hZ = 0.15 + (v.Zt / maxY) * maxHeight;
+        const isCurrent = i === currentIdx;
+
         return (
-          <group key={i}>
-            <mesh position={[-3 + i * 1.2, h / 2, 0]}>
-              <boxGeometry args={[0.6, h, 0.6]} />
-              <meshStandardMaterial color={isCurrent ? '#ff4422' : '#4488cc'} />
+          <group key={v.fr}>
+            {/* Zн */}
+            <mesh position={[xCenter - 0.18, hZn / 2, -0.06]}>
+              <boxGeometry args={[0.22, hZn, 0.22]} />
+              <meshStandardMaterial
+                color="#1de9b6"
+                emissive={isCurrent ? '#00e676' : '#00796b'}
+                emissiveIntensity={isCurrent ? 0.9 : 0.22}
+              />
             </mesh>
-            <Label position={[-3 + i * 1.2, h + 0.3, 0]} color="#0d47a1" size={0.08}>{`${fr}`}</Label>
+
+            {/* Z */}
+            <mesh position={[xCenter + 0.18, hZ / 2, 0.06]}>
+              <boxGeometry args={[0.22, hZ, 0.22]} />
+              <meshStandardMaterial
+                color="#ffa726"
+                emissive={isCurrent ? '#ff8f00' : '#e65100'}
+                emissiveIntensity={isCurrent ? 0.95 : 0.2}
+              />
+            </mesh>
+
+            <Label
+              position={[xCenter, Math.max(hZn, hZ) + 0.22, 0]}
+              color="#e0e0e0"
+              size={0.085}
+              outlineColor="#263238"
+              depthOffset={-3}
+            >
+              {`${v.fr}`}
+            </Label>
           </group>
         );
       })}
-      <Label position={[0, 3.5, 0]} color="#0d47a1" size={0.16}>{'Z(f), Ом — импеданс vs частота'}</Label>
-      <Label position={[0, -0.3, 2]} color="#666" size={0.11}>{'Частота, Гц →'}</Label>
+
+      {/* Current readout */}
+      {(() => {
+        const sel = values[currentIdx];
+        const ZnTxt = sel.Zn.toFixed(0);
+        const ZTxt = sel.Zt.toFixed(0);
+        return (
+          <>
+            <Label position={[-0.05, 3.15, 0]} color="#e3f2fd" size={0.16} outlineColor="#0d47a1" depthOffset={-2}>
+              {`f = ${sel.fr} Гц`}
+            </Label>
+            <Label position={[-0.05, 2.80, 0]} color="#e0f7fa" size={0.12} outlineColor="#263238" depthOffset={-2}>
+              {`Zн ≈ ${ZnTxt} Ом; Z ≈ ${ZTxt} Ом`}
+            </Label>
+          </>
+        );
+      })()}
+
+      {/* Floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[10, 6]} />
-        <meshStandardMaterial color="#c4b8a8" />
+        <planeGeometry args={[12, 6]} />
+        <meshStandardMaterial color="#c4b8a8" roughness={1} />
       </mesh>
     </>
   );
@@ -1911,6 +2286,18 @@ function ElectricFrequencyEffectScene({ frequency }: { frequency: number }) {
 
 function GroundCurrentSpreadScene({ current, resistivity }: { current: number; resistivity: number }) {
   const ringCount = 6;
+  // Радиусы x_i для наглядности (м). Формулы: UA = I·ρ / (2π·x)
+  const x0 = 0.45;
+  const xStep = 0.55;
+  const xs = Array.from({ length: ringCount }, (_, i) => x0 + (i + 1) * xStep);
+
+  const potentials = xs.map((x) => (current * resistivity) / (2 * Math.PI * x)); // UA_i
+  const maxU = Math.max(...potentials, 1e-9);
+
+  // Нормализация для “свечения” (под ползунки из MiniSimulator: I 0.1..50, ρ 1..500)
+  const curNorm = Math.max(0, Math.min(1, current / 50));
+  const rhoNorm = Math.max(0, Math.min(1, resistivity / 500));
+  const electrodeGlow = 0.2 + Math.sqrt(curNorm * rhoNorm) * 1.6;
   return (
     <>
       {/* Ground electrode */}
@@ -1920,17 +2307,32 @@ function GroundCurrentSpreadScene({ current, resistivity }: { current: number; r
       </mesh>
       <mesh position={[0, 0.5, 0]}>
         <sphereGeometry args={[0.12, 12, 12]} />
-        <meshStandardMaterial color="#cc0000" emissive="#ff0000" emissiveIntensity={0.5} />
+        <meshStandardMaterial
+          color="#cc0000"
+          emissive="#ff0000"
+          emissiveIntensity={electrodeGlow}
+          roughness={0.35}
+        />
       </mesh>
       <Label position={[0, 1, 0]} color="#cc0000" size={0.14}>{`Iз = ${current.toFixed(0)} А`}</Label>
       {/* Equipotential rings on ground */}
-      {Array.from({ length: ringCount }, (_, i) => {
-        const r = (i + 1) * 0.6;
-        const opac = 0.5 / (i + 1);
+      {xs.map((x, i) => {
+        const u = potentials[i];
+        const t = u / maxU; // 0..1
+        const opac = 0.08 + 0.55 * t;
+        const tube = 0.015 + 0.045 * t;
+        const emissiveIntensity = 0.15 + 1.1 * t;
         return (
-          <mesh key={i} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[r, 0.03, 8, 64]} />
-            <meshBasicMaterial color="#ff8844" transparent opacity={opac} />
+          <mesh key={x} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[x, tube, 8, 64]} />
+            <meshStandardMaterial
+              color="#ff8844"
+              emissive="#ff3d00"
+              emissiveIntensity={emissiveIntensity}
+              transparent
+              opacity={opac}
+              roughness={0.85}
+            />
           </mesh>
         );
       })}
@@ -1946,9 +2348,37 @@ function GroundCurrentSpreadScene({ current, resistivity }: { current: number; r
 
 /* ─────────────── Step Voltage Scene (Lab 10) ─────────────── */
 
-function StepVoltageScene({ distance, stepV }: { distance: number; stepV: number }) {
-  const d = Math.max(1, distance);
-  const danger = stepV > 36;
+function StepVoltageScene({
+  current,
+  resistivity,
+  distanceM,
+  stepLengthM,
+}: {
+  current: number; // Iz, А
+  resistivity: number; // rho, Ом·м
+  distanceM: number; // x, м
+  stepLengthM: number; // a, м
+}) {
+  const x = Math.max(0.5, distanceM);
+  const a = Math.max(0.1, stepLengthM);
+  const Iz = Math.max(0.1, current);
+  const rho = Math.max(1, resistivity);
+
+  // Uш по формуле из методики: Uш = Iз·ρ·a/(2π·x·(x+a))
+  const Ush = stepVoltage(Iz, rho, x, a);
+  const danger = Ush > 36;
+  const dangerT = Math.max(0, Math.min(1, Ush / 36)); // 0..1
+
+  // Визуальная “шкала” для позиции человека
+  const personX = Math.min(4, x * 0.18);
+  const footSep = Math.max(0.06, Math.min(0.28, a * 0.18));
+  const bodyColor = danger ? '#cc0000' : '#4466aa';
+
+  // Колечки (условные “эквипотенциалы”): чем больше Ush, тем ярче/контрастнее
+  const baseR = 0.5;
+  const radii = [1, 2, 3, 4, 5].map((i) => baseR * i * (0.85 + dangerT * 0.25));
+  const electrodeGlow = 0.15 + 1.25 * dangerT;
+
   return (
     <>
       {/* Ground electrode */}
@@ -1956,35 +2386,53 @@ function StepVoltageScene({ distance, stepV }: { distance: number; stepV: number
         <cylinderGeometry args={[0.08, 0.08, 1.2, 8]} />
         <meshStandardMaterial color="#666" metalness={0.8} />
       </mesh>
-      {/* Equipotential lines */}
-      {[1, 2, 3, 4, 5].map((i) => (
-        <mesh key={i} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[i * 0.5, 0.02, 8, 64]} />
-          <meshBasicMaterial color="#ffaa44" transparent opacity={0.4 / i} />
-        </mesh>
-      ))}
+      <mesh position={[0, 0.08, 0]}>
+        <sphereGeometry args={[0.09, 12, 12]} />
+        <meshStandardMaterial color="#cc0000" emissive="#ff3d00" emissiveIntensity={electrodeGlow} roughness={0.35} />
+      </mesh>
+
+      {/* Equipotential lines (визуальная зависимость от Ush) */}
+      {radii.map((r, i) => {
+        const opac = 0.08 + (0.35 + 0.25 * dangerT) / (i + 1);
+        const emissiveIntensity = 0.15 + 1.4 * dangerT * (1 / (i + 1));
+        return (
+          <mesh key={r} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[r, 0.02 + 0.01 * dangerT, 8, 64]} />
+            <meshStandardMaterial
+              color="#ffaa44"
+              emissive="#ff8f00"
+              emissiveIntensity={emissiveIntensity}
+              transparent
+              opacity={opac}
+              roughness={0.85}
+            />
+          </mesh>
+        );
+      })}
+
       {/* Person at distance */}
-      <group position={[Math.min(4, d * 0.5), 0, 0]}>
+      <group position={[personX, 0, 0]}>
         <mesh position={[0, 1.5, 0]}>
           <sphereGeometry args={[0.15, 12, 12]} />
           <meshStandardMaterial color="#e0c8a0" />
         </mesh>
         <mesh position={[0, 0.9, 0]}>
           <cylinderGeometry args={[0.12, 0.15, 0.8, 8]} />
-          <meshStandardMaterial color={danger ? '#cc0000' : '#4466aa'} />
+          <meshStandardMaterial color={bodyColor} />
         </mesh>
         {/* Feet showing step */}
-        <mesh position={[-0.15, 0.15, 0]}>
+        <mesh position={[-footSep / 2, 0.15, 0]}>
           <boxGeometry args={[0.1, 0.3, 0.1]} />
-          <meshStandardMaterial color={danger ? '#cc0000' : '#4466aa'} />
+          <meshStandardMaterial color={bodyColor} />
         </mesh>
-        <mesh position={[0.15, 0.15, 0]}>
+        <mesh position={[footSep / 2, 0.15, 0]}>
           <boxGeometry args={[0.1, 0.3, 0.1]} />
-          <meshStandardMaterial color={danger ? '#cc0000' : '#4466aa'} />
+          <meshStandardMaterial color={bodyColor} />
         </mesh>
       </group>
-      <Label position={[Math.min(4, d * 0.5), 2, 0]} color={danger ? '#cc0000' : '#006600'} size={0.14}>
-        {`Uш = ${stepV.toFixed(1)} В`}
+
+      <Label position={[personX, 2, 0]} color={danger ? '#cc0000' : '#006600'} size={0.14}>
+        {`Uш = ${Ush.toFixed(1)} В`}
       </Label>
       <Label position={[0, 0.7, 0]} color="#cc0000" size={0.10}>{'Заземлитель'}</Label>
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
@@ -1999,6 +2447,17 @@ function StepVoltageScene({ distance, stepV }: { distance: number; stepV: number
 
 function EquipotentialZonesScene({ current, resistivity }: { current: number; resistivity: number }) {
   const zones = 8;
+  const ringThickness = 0.35;
+
+  // Визуальная привязка радиусов колец к реальной координате x (м)
+  const rs = Array.from({ length: zones }, (_, i) => (i + 1) * 0.4);
+  const phis = rs.map((x) => groundPotential(current, resistivity, x));
+  const maxPhi = Math.max(...phis, 1e-9);
+
+  const curNorm = Math.max(0, Math.min(1, current / 50));
+  const rhoNorm = Math.max(0, Math.min(1, resistivity / 500));
+  const electrodeGlow = 0.2 + Math.sqrt(curNorm * rhoNorm) * 1.7;
+
   return (
     <>
       {/* Electrode */}
@@ -2006,23 +2465,48 @@ function EquipotentialZonesScene({ current, resistivity }: { current: number; re
         <cylinderGeometry args={[0.08, 0.08, 1, 8]} />
         <meshStandardMaterial color="#555" metalness={0.8} />
       </mesh>
+      <mesh position={[0, 0.08, 0]}>
+        <sphereGeometry args={[0.09, 12, 12]} />
+        <meshStandardMaterial color="#cc0000" emissive="#ff3d00" emissiveIntensity={electrodeGlow} roughness={0.35} />
+      </mesh>
       {/* Colored zones — red→yellow→green */}
-      {Array.from({ length: zones }, (_, i) => {
-        const r = (i + 1) * 0.4;
-        const t = i / (zones - 1);
-        const red = Math.round(255 * (1 - t));
-        const green = Math.round(200 * t);
-        const col = `rgb(${red},${green},40)`;
+      {rs.map((r, i) => {
+        const phi = phis[i];
+        // тёмно-красный возле электродов (φ большой), к зелёному — дальше (φ меньше)
+        const t = Math.sqrt(Math.max(0, Math.min(1, phi / maxPhi))); // 0..1
+        const opac = 0.08 + 0.55 * t;
+        const emissiveIntensity = 0.1 + 1.25 * t;
+
+        // interpolate: red-ish (t=1) -> green-ish (t=0)
+        const red = Math.round(255 * t + 70 * (1 - t));
+        const green = Math.round(75 * t + 220 * (1 - t));
+        const blue = Math.round(40);
+        const col = `rgb(${red},${green},${blue})`;
+
         return (
-          <mesh key={i} position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[r - 0.35, r, 64]} />
-            <meshBasicMaterial color={col} transparent opacity={0.35} side={THREE.DoubleSide} />
+          <mesh key={r} position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[Math.max(0.03, r - ringThickness), r, 64]} />
+            <meshStandardMaterial
+              color={col}
+              emissive={col}
+              emissiveIntensity={emissiveIntensity}
+              transparent
+              opacity={opac}
+              roughness={0.85}
+              side={THREE.DoubleSide}
+            />
           </mesh>
         );
       })}
       <Label position={[0, 0.8, 0]} color="#cc0000" size={0.14}>{`Iз = ${current.toFixed(0)} А`}</Label>
       <Label position={[3, 0.4, 0]} color="#006600" size={0.12}>{'Зона нулевого потенциала'}</Label>
-      <Label position={[0.8, 0.4, 0]} color="#cc4400" size={0.10}>{'φ → 0'}</Label>
+      <Label
+        position={[0.8, 0.4, 0]}
+        color="#cc4400"
+        size={0.10}
+      >
+        {`φ(x≈${rs[rs.length - 1].toFixed(1)}м)≈${phis[phis.length - 1].toFixed(0)}В`}
+      </Label>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
         <planeGeometry args={[10, 10]} />
         <meshStandardMaterial color="#8a9a68" roughness={1} />
@@ -2129,21 +2613,57 @@ function SceneContent({ type, params }: TheoryScene3DProps) {
         />
       );
     case 'uhf-field-strength':
-      return <UhfFieldStrengthScene power={Math.max(1, params.a ?? 50000)} height={Math.max(10, params.b ?? 300)} radius={Math.max(10, params.c ?? 400)} />;
+      return (
+        <UhfFieldStrengthScene
+          power={Math.max(1, params.a ?? 50000)}
+          gain={Math.max(1, params.b ?? 15)}
+          height={Math.max(10, params.c ?? 200)}
+          radius={Math.max(10, params.d ?? 400)}
+        />
+      );
     case 'uhf-antenna-pattern':
-      return <UhfAntennaPatternScene gain={Math.max(1, params.a ?? 10)} />;
-    case 'radiation-dose':
-      return <RadiationDoseScene frequency={Math.max(1e3, (params.a ?? 100) * 1e6)} pdu={Math.max(0.1, params.b ?? 5)} />;
-    case 'electric-current-body':
-      return <ElectricCurrentBodyScene current={Math.max(0, params.a ?? 10)} />;
+      return (
+        <UhfAntennaPatternScene
+          gain={Math.max(1, params.a ?? 10)}
+          deltaDeg={Math.max(0, Math.min(90, params.b ?? 25))}
+        />
+      );
+    case 'radiation-dose': {
+      const fMHz = Math.max(
+        0.03,
+        Math.min(RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, params.a ?? 100),
+      );
+      return <RadiationDoseScene frequencyMHz={fMHz} />;
+    }
+    case 'electric-current-body': {
+      const U = Math.max(1, params.a ?? 220);
+      const Z = Math.max(100, params.b ?? 5000);
+      const ImA = bodyCurrentMA(U, Z);
+      return <ElectricCurrentBodyScene current={ImA} />;
+    }
     case 'electric-resistance':
-      return <ElectricResistanceScene resistance={Math.max(100, params.a ?? 3000)} />;
+      return (
+        <ElectricResistanceScene
+          skinResistanceOhm={Math.max(100, params.a ?? 3000)}
+          capacitanceNF={Math.max(1, params.b ?? 100)}
+          internalResistanceOhm={Math.max(100, params.c ?? 500)}
+          frequencyHz={Math.max(1, params.d ?? 100)}
+        />
+      );
     case 'electric-frequency-effect':
       return <ElectricFrequencyEffectScene frequency={Math.max(1, params.a ?? 50)} />;
     case 'ground-current-spread':
       return <GroundCurrentSpreadScene current={Math.max(0.1, params.a ?? 10)} resistivity={Math.max(1, params.b ?? 100)} />;
     case 'step-voltage':
-      return <StepVoltageScene distance={Math.max(1, params.a ?? 5)} stepV={Math.max(0, params.b ?? 50)} />;
+      // MiniSimulator: a=Iz (А), b=rho (Ом·м), c=x (м), d=a(m×0.1) => stepLength=a=d/10
+      return (
+        <StepVoltageScene
+          current={Math.max(0.1, params.a ?? 10)}
+          resistivity={Math.max(1, params.b ?? 100)}
+          distanceM={Math.max(0.5, params.c ?? 5)}
+          stepLengthM={Math.max(0.1, (params.d ?? 8) / 10)}
+        />
+      );
     case 'equipotential-zones':
       return <EquipotentialZonesScene current={Math.max(0.1, params.a ?? 10)} resistivity={Math.max(1, params.b ?? 100)} />;
     default:

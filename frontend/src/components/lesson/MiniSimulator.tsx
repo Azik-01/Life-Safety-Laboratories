@@ -59,7 +59,13 @@ import {
   waveguideLengthM,
 } from '../../formulas/shielding';
 import { fieldStrengthShuleikin, attenuationFactorF, xParameter } from '../../formulas/hfField';
-import { fieldStrengthUHF, normalizedPatternFactor, distanceFromPhaseCenter } from '../../formulas/uhfField';
+import {
+  fieldStrengthUHF,
+  normalizedPatternFactor,
+  distanceFromPhaseCenter,
+  pduForFrequencyVpm,
+  RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ,
+} from '../../formulas/uhfField';
 import {
   bodyCurrentMA,
   totalBodyImpedance,
@@ -103,6 +109,21 @@ function getDefaults(type: TheorySimulatorType) {
     case 'hf-soil-attenuation':
       /* σ (слайдер ×10⁻³), λ, d */
       return { a: 5, b: 500, c: 2000, d: 120 };
+    case 'uhf-field-strength':
+      /* P Вт, G, H м, r м — согласовано с TheoryScene3D SceneContent */
+      return { a: 50000, b: 15, c: 200, d: 400 };
+    case 'radiation-dose':
+      return { a: 100, b: 0, c: 0, d: 0 };
+    case 'uhf-antenna-pattern':
+      return { a: 12, b: 25, c: 0, d: 0 };
+    case 'electric-current-body':
+      return { a: 220, b: 5000, c: 0, d: 0 };
+    case 'step-voltage':
+      /* a=Iz (А), b=rho (Ом·м), c=x (м), d=a(м×0.1) -> a=d/10 */
+      return { a: 10, b: 200, c: 5, d: 8 };
+    case 'equipotential-zones':
+      /* a=Iz (А), b=rho (Ом·м) — в сцене используется только эти два параметра */
+      return { a: 10, b: 200, c: 0, d: 0 };
     default:
       return { a: 500, b: 1.2, c: 2.5, d: 120 };
   }
@@ -576,21 +597,35 @@ export default function MiniSimulator({ type }: SimulatorProps) {
           ),
           values: [
             <ValueLine key="v1" label="F(Δ)" value={Fd.toFixed(4)} />,
+            <Typography key="v2" variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+              {
+                'В упрощённой модели множитель диаграммы F зависит только от угла Δ (здесь F = cos Δ). Коэффициент G не входит в F, но в полной формуле E поля входит как √(P·G)·F(Δ)/R — на 3D-сцене G задаёт только ширину главного лепестка для наглядности.'
+              }
+            </Typography>,
           ],
         };
       }
       case 'radiation-dose': {
-        const freqMHz = Math.max(0.03, a);
-        const E_pdu = freqMHz < 3 ? 50 : freqMHz < 30 ? 20 : freqMHz < 300 ? 10 : 5;
+        const freqMHz = Math.max(0.03, Math.min(RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, a));
+        const E_pdu = pduForFrequencyVpm(freqMHz);
         return {
           controls: (
             <Stack spacing={1.2}>
-              <Typography variant="caption">f (МГц): {a.toFixed(1)}</Typography>
-              <Slider value={a} min={0.03} max={30000} step={10} onChange={(_, v) => setA(v as number)} />
+              <Typography variant="caption">f (МГц): {freqMHz.toFixed(2)}</Typography>
+              <Slider
+                value={Math.min(RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, a)}
+                min={0.03}
+                max={RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ}
+                step={0.5}
+                onChange={(_, v) => setA(v as number)}
+              />
             </Stack>
           ),
           values: [
             <ValueLine key="v1" label="ПДУ E" value={`${E_pdu} В/м`} />,
+            <Typography key="v2" variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              {'Значение ПДУ задаётся таблицей по диапазону f (ступени на границах 3, 30, 50, 300 МГц).'}
+            </Typography>,
           ],
         };
       }

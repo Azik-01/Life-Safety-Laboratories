@@ -1959,7 +1959,7 @@ function RadiationDoseScene({ frequencyMHz }: { frequencyMHz: number }) {
         <meshStandardMaterial color={barColor} metalness={0.25} roughness={0.45} />
       </mesh>
 
-      <Label position={[0, 2.5, -0.2]} color="#3e2723" size={0.095}>
+      <Label position={[0, 2.5, -0.2]} color="#f5f5f5" size={0.095}>
         {'ПДУ E(f) — ступени по табл.; маркер и λ меняются непрерывно с f'}
       </Label>
       <Label position={[markerX, barH + 0.52, axisZ - 0.52]} color="#0d47a1" size={0.125}>{`ПДУ E = ${pdu} В/м`}</Label>
@@ -2772,6 +2772,10 @@ function ElectricFrequencyEffectScene({ frequency }: { frequency: number }) {
 /* ─────────────── Ground Current Spread Scene (Lab 10) ─────────────── */
 
 function GroundCurrentSpreadScene({ current, resistivity }: { current: number; resistivity: number }) {
+  const tRef = useRef(0);
+  useFrame((_, delta) => {
+    tRef.current += delta;
+  });
   const ringCount = 6;
   // Радиусы x_i для наглядности (м). Формулы: UA = I·ρ / (2π·x)
   const x0 = 0.45;
@@ -2784,7 +2788,10 @@ function GroundCurrentSpreadScene({ current, resistivity }: { current: number; r
   // Нормализация для “свечения” (под ползунки из MiniSimulator: I 0.1..50, ρ 1..500)
   const curNorm = Math.max(0, Math.min(1, current / 50));
   const rhoNorm = Math.max(0, Math.min(1, resistivity / 500));
+  const fieldNorm = Math.sqrt(curNorm * rhoNorm);
   const electrodeGlow = 0.2 + Math.sqrt(curNorm * rhoNorm) * 1.6;
+  const ringScale = 0.75 + fieldNorm * 0.95; // чтобы ползунки явно «раздвигали» зоны
+  const pulse = 0.6 + 0.4 * Math.abs(Math.sin(tRef.current * (0.9 + 1.4 * fieldNorm)));
   return (
     <>
       {/* Ground electrode */}
@@ -2797,33 +2804,51 @@ function GroundCurrentSpreadScene({ current, resistivity }: { current: number; r
         <meshStandardMaterial
           color="#cc0000"
           emissive="#ff0000"
-          emissiveIntensity={electrodeGlow}
+          emissiveIntensity={electrodeGlow * (0.85 + 0.35 * pulse)}
           roughness={0.35}
         />
       </mesh>
-      <Label position={[0, 1, 0]} color="#cc0000" size={0.14}>{`Iз = ${current.toFixed(0)} А`}</Label>
+      <Label position={[0, 1.05, 0]} color="#ffebee" size={0.14} outlineColor="#1b1b1b">
+        {`Iз = ${current.toFixed(1)} А · ρ = ${resistivity.toFixed(0)} Ом·м`}
+      </Label>
+      <Label position={[0, 0.82, 0]} color="#e3f2fd" size={0.10} outlineColor="#263238">
+        {`U(x) = I·ρ/(2πx)  →  U(1 м) ≈ ${((current * resistivity) / (2 * Math.PI * 1)).toFixed(0)} В`}
+      </Label>
       {/* Equipotential rings on ground */}
       {xs.map((x, i) => {
         const u = potentials[i];
-        const t = u / maxU; // 0..1
-        const opac = 0.08 + 0.55 * t;
-        const tube = 0.015 + 0.045 * t;
-        const emissiveIntensity = 0.15 + 1.1 * t;
+        const t = Math.pow(Math.max(0, Math.min(1, u / maxU)), 0.55); // 0..1 (контрастнее)
+        const opac = 0.08 + 0.62 * t;
+        const tube = 0.012 + 0.055 * t;
+        const emissiveIntensity = (0.2 + 1.6 * t) * (0.7 + 0.55 * pulse);
+        const r = x * 0.62 * ringScale; // заметная реакция на ползунки
         return (
-          <mesh key={x} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[x, tube, 8, 64]} />
-            <meshStandardMaterial
-              color="#ff8844"
-              emissive="#ff3d00"
-              emissiveIntensity={emissiveIntensity}
-              transparent
-              opacity={opac}
-              roughness={0.85}
-            />
-          </mesh>
+          <group key={x}>
+            <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <torusGeometry args={[r, tube, 8, 64]} />
+              <meshStandardMaterial
+                color="#ff8844"
+                emissive="#ff3d00"
+                emissiveIntensity={emissiveIntensity}
+                transparent
+                opacity={opac}
+                roughness={0.85}
+              />
+            </mesh>
+            <Label position={[r + 0.18, 0.16, 0]} color="#263238" size={0.06} outlineColor="#f5f5f5">
+              {`x≈${x.toFixed(1)}м  U≈${u.toFixed(0)}В`}
+            </Label>
+          </group>
         );
       })}
-      <Label position={[3, 0.5, 0]} color="#0d47a1" size={0.12}>{`ρ = ${resistivity.toFixed(0)} Ом·м`}</Label>
+      {/* Явный маркер «зоны влияния» — чем больше I·ρ, тем больше радиус */}
+      <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[Math.max(0.15, 1.0 * ringScale), Math.max(0.18, 1.06 * ringScale), 64]} />
+        <meshBasicMaterial color="#29b6f6" transparent opacity={0.22} />
+      </mesh>
+      <Label position={[2.9, 0.18, 0]} color="#b3e5fc" size={0.08} outlineColor="#0d47a1">
+        {'Радиус колец увеличивается при росте Iз и ρ'}
+      </Label>
       {/* Ground */}
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[10, 10]} />
@@ -2916,6 +2941,10 @@ function StepVoltageScene({
 /* ─────────────── Equipotential Zones Scene (Lab 10) ─────────────── */
 
 function EquipotentialZonesScene({ current, resistivity }: { current: number; resistivity: number }) {
+  const tRef = useRef(0);
+  useFrame((_, delta) => {
+    tRef.current += delta;
+  });
   const zones = 8;
   const ringThickness = 0.35;
 
@@ -2926,7 +2955,17 @@ function EquipotentialZonesScene({ current, resistivity }: { current: number; re
 
   const curNorm = Math.max(0, Math.min(1, current / 50));
   const rhoNorm = Math.max(0, Math.min(1, resistivity / 500));
-  const electrodeGlow = 0.2 + Math.sqrt(curNorm * rhoNorm) * 1.7;
+  const fieldNorm = Math.sqrt(curNorm * rhoNorm);
+  const electrodeGlow = 0.2 + fieldNorm * 1.7;
+  const pulse = 0.6 + 0.4 * Math.abs(Math.sin(tRef.current * (0.9 + 1.3 * fieldNorm)));
+  const spread = 0.75 + fieldNorm * 0.95;
+  const phiAt1m = groundPotential(current, resistivity, 1);
+  const safePhiThresholdV = 10; // визуальный порог «почти ноль»
+  const safeRadiusM = (() => {
+    const idx = phis.findIndex((p) => p <= safePhiThresholdV);
+    const x = idx === -1 ? rs[rs.length - 1] : rs[idx];
+    return x;
+  })();
 
   return (
     <>
@@ -2937,15 +2976,15 @@ function EquipotentialZonesScene({ current, resistivity }: { current: number; re
       </mesh>
       <mesh position={[0, 0.08, 0]}>
         <sphereGeometry args={[0.09, 12, 12]} />
-        <meshStandardMaterial color="#cc0000" emissive="#ff3d00" emissiveIntensity={electrodeGlow} roughness={0.35} />
+        <meshStandardMaterial color="#cc0000" emissive="#ff3d00" emissiveIntensity={electrodeGlow * (0.85 + 0.35 * pulse)} roughness={0.35} />
       </mesh>
       {/* Colored zones — red→yellow→green */}
       {rs.map((r, i) => {
         const phi = phis[i];
         // тёмно-красный возле электродов (φ большой), к зелёному — дальше (φ меньше)
-        const t = Math.sqrt(Math.max(0, Math.min(1, phi / maxPhi))); // 0..1
-        const opac = 0.08 + 0.55 * t;
-        const emissiveIntensity = 0.1 + 1.25 * t;
+        const t = Math.pow(Math.max(0, Math.min(1, phi / maxPhi)), 0.35); // 0..1 (контрастнее)
+        const opac = 0.08 + 0.62 * t;
+        const emissiveIntensity = (0.12 + 1.55 * t) * (0.7 + 0.55 * pulse);
 
         // interpolate: red-ish (t=1) -> green-ish (t=0)
         const red = Math.round(255 * t + 70 * (1 - t));
@@ -2955,7 +2994,7 @@ function EquipotentialZonesScene({ current, resistivity }: { current: number; re
 
         return (
           <mesh key={r} position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[Math.max(0.03, r - ringThickness), r, 64]} />
+            <ringGeometry args={[Math.max(0.03, r * spread - ringThickness), r * spread, 64]} />
             <meshStandardMaterial
               color={col}
               emissive={col}
@@ -2968,14 +3007,19 @@ function EquipotentialZonesScene({ current, resistivity }: { current: number; re
           </mesh>
         );
       })}
-      <Label position={[0, 0.8, 0]} color="#cc0000" size={0.14}>{`Iз = ${current.toFixed(0)} А`}</Label>
-      <Label position={[3, 0.4, 0]} color="#006600" size={0.12}>{'Зона нулевого потенциала'}</Label>
-      <Label
-        position={[0.8, 0.4, 0]}
-        color="#cc4400"
-        size={0.10}
-      >
-        {`φ(x≈${rs[rs.length - 1].toFixed(1)}м)≈${phis[phis.length - 1].toFixed(0)}В`}
+      <Label position={[0, 0.92, 0]} color="#ffebee" size={0.14} outlineColor="#1b1b1b">
+        {`Iз = ${current.toFixed(1)} А · ρ = ${resistivity.toFixed(0)} Ом·м`}
+      </Label>
+      <Label position={[0, 0.68, 0]} color="#e3f2fd" size={0.10} outlineColor="#263238">
+        {`φ(1 м) ≈ ${phiAt1m.toFixed(0)} В  |  «почти ноль» ≤ ${safePhiThresholdV} В при x ≳ ${safeRadiusM.toFixed(1)} м`}
+      </Label>
+      {/* Явный контур «зона почти нулевого потенциала» */}
+      <mesh position={[0, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[safeRadiusM * spread - 0.06, safeRadiusM * spread, 64]} />
+        <meshBasicMaterial color="#00e676" transparent opacity={0.18} />
+      </mesh>
+      <Label position={[3.15, 0.25, 0]} color="#b9f6ca" size={0.09} outlineColor="#1b5e20">
+        {'контур: «почти ноль»'}
       </Label>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
         <planeGeometry args={[10, 10]} />
@@ -3112,14 +3156,9 @@ function SceneContent({ type, params }: TheoryScene3DProps) {
       return <ElectricCurrentBodyScene current={ImA} />;
     }
     case 'electric-resistance':
-      return (
-        <ElectricResistanceScene
-          skinResistanceOhm={Math.max(100, params.a ?? 3000)}
-          capacitanceNF={Math.max(1, params.b ?? 100)}
-          internalResistanceOhm={Math.max(100, params.c ?? 500)}
-          frequencyHz={Math.max(1, params.d ?? 100)}
-        />
-      );
+      // По запросу: убрали визуализацию «Эквивалентная схема сопротивления тела».
+      // Оставляем пустую сцену без схемы, чтобы не ломать типизацию simulator.
+      return <Room />;
     case 'electric-frequency-effect':
       return <ElectricFrequencyEffectScene frequency={Math.max(1, params.a ?? 50)} />;
     case 'ground-current-spread':

@@ -87,6 +87,8 @@ import {
   stepVoltage as calcStepVoltage,
   safeDistance,
   lesson11TouchEstimate,
+  lesson12TnLabEstimate,
+  type Lesson12TnScenario,
 } from '../../formulas/electricSafety';
 import { useProgress } from '../../context/ProgressContext';
 
@@ -203,6 +205,9 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const [l11Rg, setL11Rg] = useState(10);
   const [l11Rzm, setL11Rzm] = useState(15);
   const [l11Riso, setL11Riso] = useState(6000);
+  const [l12Scenario, setL12Scenario] = useState<Lesson12TnScenario>('sc_enclosure');
+  const [l12Rh, setL12Rh] = useState(1000);
+  const [l12R0, setL12R0] = useState(4);
   const [trainingMode, setTrainingMode] = useState(false);
   const [manualTableOpen, setManualTableOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(() =>
@@ -1294,6 +1299,26 @@ export default function LabSection({ lesson }: LabSectionProps) {
     [l11Network, l11Regime, l11TouchedPhase, l11Uphi, l11Rh, l11Rg, l11Rzm, l11Riso],
   );
 
+  const tnEarthingStateMemo = useMemo(() => {
+    if (lesson.id !== 12) return undefined;
+    const v = lesson12Full;
+    return {
+      scenario: l12Scenario,
+      UphiV: variantNumeric(v, 'UphiV', 220),
+      ZnOhm: variantNumeric(v, 'ZnOhm', 1),
+      ZHOhm: variantNumeric(v, 'ZHOhm', 1),
+      R0Ohm: l12R0,
+      RnOhm: variantNumeric(v, 'RnOhm', 4),
+      RzmOhm: variantNumeric(v, 'RzmOhm', 100),
+      RhOhm: l12Rh,
+    };
+  }, [lesson.id, lesson12Full, l12Scenario, l12Rh, l12R0]);
+
+  const lesson12LabMetrics = useMemo(() => {
+    if (lesson.id !== 12 || !tnEarthingStateMemo) return null;
+    return lesson12TnLabEstimate(tnEarthingStateMemo);
+  }, [lesson.id, tnEarthingStateMemo]);
+
   return (
     <Stack spacing={2}>
       <Paper id="lab-variant" variant="outlined" sx={{ p: 2 }}>
@@ -1583,6 +1608,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
           bodyElecState={bodyElecStateMemo}
           groundState={groundStateMemo}
           threePhaseState={lesson.id === 11 ? threePhaseStateMemo : undefined}
+          tnEarthingState={lesson.id === 12 ? tnEarthingStateMemo : undefined}
         />
       </Suspense>
 
@@ -2115,6 +2141,44 @@ export default function LabSection({ lesson }: LabSectionProps) {
             {lesson11Calcs && (
               <Alert severity={lesson11Calcs.ImA < 10 ? 'success' : 'error'}>
                 Uпр ≈ {lesson11Calcs.UprV.toFixed(1)} В → I_h ≈ {lesson11Calcs.ImA.toFixed(2)} мА ({lesson11Calcs.dangerLabel})
+              </Alert>
+            )}
+          </Stack>
+        )}
+
+        {lesson.id === 12 && (
+          <Stack spacing={1.2}>
+            <Typography variant="caption" fontWeight={600}>
+              Занятие 12 — TN, зануление, обрыв нуля (модель по формулам 12.2–12.13)
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Z_n, Z_H, R_n, R_зм и U_ф берутся из варианта (табл. 12.2); ρ и тип грунта — табл. 12.1.
+            </Typography>
+            <Typography variant="caption">Сценарий</Typography>
+            <Select size="small" value={l12Scenario} onChange={(e) => setL12Scenario(e.target.value as Lesson12TnScenario)}>
+              <MenuItem value="normal">Норма: корпус без опасного потенциала</MenuItem>
+              <MenuItem value="sc_enclosure">КЗ на занулённый корпус (без повт. заземления нуля)</MenuItem>
+              <MenuItem value="sc_enclosure_repeat">КЗ на корпус при повторном заземлении нуля</MenuItem>
+              <MenuItem value="break_after_fault">Обрыв нуля: корпус за местом обрыва</MenuItem>
+              <MenuItem value="break_before_ok">Обрыв нуля: корпус до обрыва (U ≈ 0)</MenuItem>
+              <MenuItem value="break_after_repeat">Обрыв нуля + R_n: корпус за обрывом</MenuItem>
+              <MenuItem value="break_before_repeat">Обрыв нуля + R_n: корпус до обрыва</MenuItem>
+              <MenuItem value="phase_to_soil">Фаза на землю (напряжение на корпусе, 12.13)</MenuItem>
+            </Select>
+            <Typography variant="caption">R_h при касании корпуса (Ом): {l12Rh}</Typography>
+            <Slider value={l12Rh} min={500} max={5000} step={50} onChange={(_, v) => setL12Rh(v as number)} />
+            <Typography variant="caption">R_0 заземление нейтрали (Ом): {l12R0}</Typography>
+            <Slider value={l12R0} min={1} max={20} step={0.5} disabled={!trainingMode} onChange={(_, v) => setL12R0(v as number)} />
+            {lesson12LabMetrics && (
+              <Alert
+                severity={
+                  lesson12LabMetrics.IbodyMA < 10 ? 'success' : lesson12LabMetrics.IbodyMA < 30 ? 'warning' : 'error'
+                }
+              >
+                {lesson12LabMetrics.caption}
+                <br />
+                I_к.з. ≈ {lesson12LabMetrics.IkzA.toFixed(2)} А; U_корп ≈ {lesson12LabMetrics.UenclosureV.toFixed(1)} В; I_h ≈{' '}
+                {lesson12LabMetrics.IbodyMA.toFixed(2)} мА
               </Alert>
             )}
           </Stack>

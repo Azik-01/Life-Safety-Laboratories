@@ -227,3 +227,96 @@ export function lesson11TouchEstimate(p: Lesson11TouchParams): { UprV: number; I
   const Upr = (sqrt3 * U * Rh) / (Rh + Rzm);
   return { UprV: Upr, ImA: (Upr / Rh) * 1000 };
 }
+
+/* ─── Lab 12: TN-C/C-S, зануление, обрыв нуля (упрощённые формулы 12.2–12.13) ─── */
+
+export type Lesson12TnScenario =
+  | 'normal'
+  | 'sc_enclosure'
+  | 'sc_enclosure_repeat'
+  | 'break_after_fault'
+  | 'break_before_ok'
+  | 'break_after_repeat'
+  | 'break_before_repeat'
+  | 'phase_to_soil';
+
+export interface Lesson12TnLabParams {
+  scenario: Lesson12TnScenario;
+  /** U_ф, В */
+  UphiV: number;
+  /** Z_n, петля «фаза–нуль», Ом (12.2) */
+  ZnOhm: number;
+  /** Z_H, нулевой провод, Ом */
+  ZHOhm: number;
+  /** R_0, заземление нейтрали, Ом (в методичке часто 4 Ом) */
+  R0Ohm: number;
+  /** R_n, повторное заземление нуля, Ом */
+  RnOhm: number;
+  /** R_зм, сопротивление места замыкания фазы на землю, Ом (12.13) */
+  RzmOhm: number;
+  /** R_h, тело человека, Ом */
+  RhOhm: number;
+}
+
+/**
+ * Педагогическая модель для вкладки «Лабораторная» (занятие 12).
+ * I_к.з. = U_ф / Z_n; напряжение на корпусе — по выбранному сценарию; I_h = U_корп / R_h.
+ */
+export function lesson12TnLabEstimate(p: Lesson12TnLabParams): {
+  IkzA: number;
+  UenclosureV: number;
+  IbodyMA: number;
+  caption: string;
+} {
+  const U = Math.max(1e-6, p.UphiV);
+  const Zn = Math.max(1e-3, p.ZnOhm);
+  const Zh = Math.max(1e-3, p.ZHOhm);
+  const R0 = Math.max(1e-3, p.R0Ohm);
+  const Rn = Math.max(1e-3, p.RnOhm);
+  const Rzm = Math.max(1e-3, p.RzmOhm);
+  const Rh = Math.max(1, p.RhOhm);
+  const Ikz = U / Zn;
+
+  let Uencl = 0;
+  let caption = '';
+
+  switch (p.scenario) {
+    case 'normal':
+      Uencl = 0;
+      caption = 'Норма: занулённый корпус на потенциале нуля';
+      break;
+    case 'sc_enclosure':
+      Uencl = Ikz * Zh;
+      caption = 'КЗ на занулённый корпус, без повторного заземления нуля (12.3)';
+      break;
+    case 'sc_enclosure_repeat': {
+      const Ukz = Ikz * Zh;
+      Uencl = (Ukz * Rn) / (Rn + R0);
+      caption = 'КЗ на корпус при повторном заземлении нулевого провода (12.4)';
+      break;
+    }
+    case 'break_after_fault':
+      Uencl = U;
+      caption = 'Обрыв нуля за нагрузкой: корпус за местом обрыва (12.5)';
+      break;
+    case 'break_before_ok':
+      Uencl = 0;
+      caption = 'Обрыв нуля: корпус до места обрыва (12.6, U_2 = 0)';
+      break;
+    case 'break_after_repeat':
+      Uencl = (U * Rn) / (R0 + Rn);
+      caption = 'Обрыв нуля + R_n: корпус за обрывом (12.7)';
+      break;
+    case 'break_before_repeat':
+      Uencl = (U * R0) / (R0 + Rn);
+      caption = 'Обрыв нуля + R_n: корпус до обрыва (12.8)';
+      break;
+    case 'phase_to_soil':
+      Uencl = (U * R0) / (Rzm + R0);
+      caption = 'Фаза на землю: напряжение на занулённом оборудовании (12.13)';
+      break;
+  }
+
+  const IbodyMA = (Uencl / Rh) * 1000;
+  return { IkzA: Ikz, UenclosureV: Uencl, IbodyMA, caption };
+}

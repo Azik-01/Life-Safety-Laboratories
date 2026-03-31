@@ -41,8 +41,16 @@ import {
   normalizedPatternFactorFromR,
 } from '../../formulas/uhfField';
 import {
-  bodyCurrentMA, totalBodyImpedance, skinImpedance, classifyCurrentDanger,
-  stepVoltage, groundPotential, safeDistance, lesson11TouchEstimate,
+  bodyCurrentMA,
+  totalBodyImpedance,
+  skinImpedance,
+  classifyCurrentDanger,
+  stepVoltage,
+  groundPotential,
+  safeDistance,
+  lesson11TouchEstimate,
+  lesson12TnLabEstimate,
+  type Lesson12TnScenario,
 } from '../../formulas/electricSafety';
 import FastForwardIcon from '@mui/icons-material/FastForward';
 import SlowMotionVideoIcon from '@mui/icons-material/SlowMotionVideo';
@@ -168,6 +176,17 @@ interface LabSceneProps {
     RgOhm: number;
     RzmOhm: number;
     RisoOhm: number;
+  };
+  /** Занятие 12: TN, зануление, обрыв нуля — параметры из варианта + сценарий */
+  tnEarthingState?: {
+    scenario: Lesson12TnScenario;
+    UphiV: number;
+    ZnOhm: number;
+    ZHOhm: number;
+    R0Ohm: number;
+    RnOhm: number;
+    RzmOhm: number;
+    RhOhm: number;
   };
 }
 
@@ -2088,6 +2107,266 @@ function ThreePhaseNeutralScene({
   );
 }
 
+/* ─────────────── Lesson 12: TN grounding / bonding / neutral break ─────────────── */
+
+function TnEarthingLabScene({
+  state,
+  timeScale,
+}: {
+  state: NonNullable<LabSceneProps['tnEarthingState']>;
+  timeScale: number;
+}) {
+  const pulseRef = useRef(0);
+  useFrame((_, delta) => {
+    pulseRef.current += delta * timeScale;
+  });
+  const pulse = 0.55 + 0.45 * Math.abs(Math.sin(pulseRef.current * 5));
+  const { IkzA, UenclosureV, IbodyMA, caption } = lesson12TnLabEstimate(state);
+  const danger = classifyCurrentDanger(IbodyMA, true);
+  const dangerColor =
+    danger === 'safe'
+      ? '#4caf50'
+      : danger === 'perceptible'
+        ? '#ff9800'
+        : danger === 'non-releasing'
+          ? '#f44336'
+          : '#d50000';
+
+  const yPEN = 2.35;
+  const xN = -2.1;
+  const xEquip = 1.85;
+  /** Длина фазной жилы и угол L1 совпадают с отрисовкой ниже (i = 0 → L1). */
+  const phaseLenL12 = 1.35;
+  const l1Ang = Math.PI / 2;
+  const l1Dx = phaseLenL12 * Math.cos(l1Ang);
+  const l1Dz = phaseLenL12 * Math.sin(l1Ang);
+  /** Внешний конец жилы L1 (центр бруска + половина длины вдоль направления от N). */
+  const l1Tip: [number, number, number] = [xN + l1Dx * 0.95, yPEN, l1Dz * 0.95];
+  const hasBreak =
+    state.scenario === 'break_after_fault' ||
+    state.scenario === 'break_before_ok' ||
+    state.scenario === 'break_after_repeat' ||
+    state.scenario === 'break_before_repeat';
+  const hasRepeatGround =
+    state.scenario === 'sc_enclosure_repeat' ||
+    state.scenario === 'break_after_repeat' ||
+    state.scenario === 'break_before_repeat';
+  const showArcToEnclosure =
+    state.scenario === 'sc_enclosure' ||
+    state.scenario === 'sc_enclosure_repeat' ||
+    hasBreak;
+  const showPhaseSoil = state.scenario === 'phase_to_soil';
+
+  const breakGap = 0.35;
+  const xBreakLeft = -0.15;
+  const xBreakRight = xBreakLeft + breakGap;
+  const penEndX = xEquip - 0.15;
+
+  const penSegments = (() => {
+    if (!hasBreak) {
+      return [{ x0: xN, x1: penEndX }];
+    }
+    return [
+      { x0: xN, x1: xBreakLeft },
+      { x0: xBreakRight, x1: penEndX },
+    ];
+  })();
+
+  const l1FaultPoint: [number, number, number] = l1Tip;
+  const enclosureTop: [number, number, number] = [xEquip, 1.05, 0];
+  const personPos: [number, number, number] = [xEquip + 0.95, 0.35, 0.25];
+
+  const arcMid = (() => {
+    if (!showArcToEnclosure) return null;
+    const a = new THREE.Vector3(...l1FaultPoint);
+    const b = new THREE.Vector3(...enclosureTop);
+    const seg = b.clone().sub(a);
+    const L = seg.length();
+    if (L < 1e-3) return null;
+    const u = seg.multiplyScalar(1 / L);
+    const mid = a.clone().add(u.clone().multiplyScalar(L * 0.5));
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), u);
+    return { position: mid, quat, height: Math.max(0.12, L - 0.16) };
+  })();
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
+        <planeGeometry args={[16, 14]} />
+        <meshStandardMaterial color="#ded8ce" roughness={0.92} />
+      </mesh>
+
+      <mesh position={[xN - 0.4, 1.2, 0]} castShadow>
+        <boxGeometry args={[0.85, 1.45, 0.55]} />
+        <meshStandardMaterial color="#616161" metalness={0.25} />
+      </mesh>
+      <Text fontSize={0.1} color="#eceff1" position={[xN - 0.4, 2.05, 0.32]}>
+        Трансформатор
+      </Text>
+
+      <mesh position={[xN, yPEN, 0]} castShadow>
+        <sphereGeometry args={[0.085, 14, 14]} />
+        <meshStandardMaterial color="#9e9e9e" emissive="#333" emissiveIntensity={0.12} />
+      </mesh>
+      <Text fontSize={0.095} color="#bdbdbd" position={[xN, yPEN + 0.32, 0]}>
+        N
+      </Text>
+
+      {(['#c62828', '#1565c0', '#2e7d32'] as const).map((col, i) => {
+        const ang = Math.PI / 2 + (i * 2 * Math.PI) / 3;
+        const len = phaseLenL12;
+        const dx = len * Math.cos(ang);
+        const dz = len * Math.sin(ang);
+        const mx = xN + dx * 0.45;
+        const mz = dz * 0.45;
+        return (
+          <group key={`l12-ph-${i}`}>
+            <mesh position={[mx, yPEN, mz]} rotation={[0, Math.atan2(dx, dz), 0]}>
+              <boxGeometry args={[0.055, 0.055, len]} />
+              <meshStandardMaterial color={col} metalness={0.15} />
+            </mesh>
+            <Text fontSize={0.085} color={col} position={[xN + dx * 1.22, yPEN + 0.2, dz * 1.22]}>
+              {['L1', 'L2', 'L3'][i]}
+            </Text>
+          </group>
+        );
+      })}
+
+      {penSegments.map((seg, i) => (
+        <mesh key={`pen-${i}`} position={[(seg.x0 + seg.x1) / 2, yPEN, 0]} castShadow>
+          <boxGeometry args={[Math.abs(seg.x1 - seg.x0), 0.05, 0.05]} />
+          <meshStandardMaterial color="#fdd835" metalness={0.35} />
+        </mesh>
+      ))}
+
+      {hasBreak && (
+        <Text fontSize={0.08} color="#ff5722" position={[(xBreakLeft + xBreakRight) / 2, yPEN + 0.28, 0]}>
+          обрыв PEN
+        </Text>
+      )}
+
+      <group position={[xN, 0.12, 0]}>
+        <mesh>
+          <cylinderGeometry args={[0.03, 0.03, yPEN - 0.2, 8]} />
+          <meshStandardMaterial color="#6d4c41" />
+        </mesh>
+        <mesh position={[0.35, 0, 0]}>
+          <boxGeometry args={[0.45, 0.05, 0.35]} />
+          <meshStandardMaterial color="#5d4037" />
+        </mesh>
+        <Text fontSize={0.075} color="#fbc02d" position={[0.72, 0.2, 0]}>
+          {`R_0 = ${state.R0Ohm} Ом`}
+        </Text>
+      </group>
+
+      {hasRepeatGround && (
+        <group position={[0.5, 0.12, 0]}>
+          <mesh>
+            <cylinderGeometry args={[0.028, 0.028, yPEN - 0.22, 8]} />
+            <meshStandardMaterial color="#8d6e63" />
+          </mesh>
+          <mesh position={[0.15, 0, 0.15]}>
+            <boxGeometry args={[0.36, 0.05, 0.28]} />
+            <meshStandardMaterial color="#4e342e" />
+          </mesh>
+          {/* Отвод повторного заземления нуля: электрод ↔ точка подключения на PEN */}
+          <mesh position={[0, yPEN - 0.12, 0]} castShadow>
+            <sphereGeometry args={[0.04, 10, 10]} />
+            <meshStandardMaterial color="#fdd835" metalness={0.35} />
+          </mesh>
+          <mesh position={[0, (yPEN - 0.12) / 2, 0]} castShadow>
+            <cylinderGeometry args={[0.018, 0.018, yPEN - 0.12, 10]} />
+            <meshStandardMaterial color="#fdd835" metalness={0.35} />
+          </mesh>
+          <Text fontSize={0.072} color="#ffe082" position={[0.88, 0.25, 0.15]}>
+            {`R_n = ${state.RnOhm} Ом`}
+          </Text>
+        </group>
+      )}
+
+      <mesh position={[xEquip, 0.55, 0]} castShadow>
+        <boxGeometry args={[0.95, 0.95, 0.65]} />
+        <meshStandardMaterial
+          color={UenclosureV > 30 ? '#90a4ae' : '#78909c'}
+          metalness={0.45}
+          roughness={0.35}
+          emissive={UenclosureV > 25 ? '#ff7043' : '#000000'}
+          emissiveIntensity={UenclosureV > 25 ? (UenclosureV > 120 ? 0.35 : 0.15) * pulse : 0}
+        />
+      </mesh>
+      <Text fontSize={0.088} color="#eceff1" position={[xEquip, 1.12, 0.38]}>
+        Занулённый корпус
+      </Text>
+
+      {showArcToEnclosure && arcMid && (
+        <group>
+          <mesh position={l1FaultPoint}>
+            <sphereGeometry args={[0.07, 10, 10]} />
+            <meshStandardMaterial color="#ff5722" emissive="#ff1744" emissiveIntensity={0.45 * pulse} />
+          </mesh>
+          <mesh position={arcMid.position} quaternion={arcMid.quat}>
+            <cylinderGeometry args={[0.03, 0.03, arcMid.height, 10]} />
+            <meshStandardMaterial color="#bf360c" emissive="#ff3d00" emissiveIntensity={0.28 * pulse} metalness={0.3} />
+          </mesh>
+        </group>
+      )}
+
+      {showPhaseSoil && (
+        <group>
+          <mesh position={[l1Tip[0], 0.65, l1Tip[2]]} rotation={[Math.PI / 3, 0, 0]}>
+            <cylinderGeometry args={[0.022, 0.022, 2.2, 8]} />
+            <meshStandardMaterial color="#3e2723" />
+          </mesh>
+          <mesh position={[l1Tip[0] + 0.8, 0.08, l1Tip[2] + 0.5]}>
+            <sphereGeometry args={[0.1, 10, 10]} />
+            <meshStandardMaterial color="#6d4c41" />
+          </mesh>
+          <Text fontSize={0.078} color="#ffab91" position={[l1Tip[0] + 1.2, 0.45, l1Tip[2] + 0.5]}>
+            {`L1 → земля, R_зм = ${state.RzmOhm} Ом`}
+          </Text>
+        </group>
+      )}
+
+      <group position={personPos}>
+        <mesh position={[0, 0.55, 0]} castShadow>
+          <capsuleGeometry args={[0.18, 0.48, 6, 10]} />
+          <meshStandardMaterial color={dangerColor} transparent opacity={0.85} />
+        </mesh>
+        <mesh position={[0, 1.0, 0]} castShadow>
+          <sphereGeometry args={[0.14, 10, 10]} />
+          <meshStandardMaterial color="#ffccbc" />
+        </mesh>
+        <mesh position={[-0.22, 0.75, -0.35]} rotation={[0.55, 0.25, 0]}>
+          <boxGeometry args={[0.055, 0.42, 0.055]} />
+          <meshStandardMaterial color="#ffccbc" />
+        </mesh>
+        {IbodyMA > 0.8 && (
+          <mesh position={[-0.22, 0.75, -0.35]}>
+            <boxGeometry args={[0.09, 0.45, 0.09]} />
+            <meshBasicMaterial color="#ff1744" transparent opacity={0.22 * pulse} />
+          </mesh>
+        )}
+      </group>
+
+      <Text fontSize={0.12} color="#fff9c4" position={[-4.65, 3.15, 0]}>
+        TN · зануление · петля КЗ
+      </Text>
+      <Text fontSize={0.095} color="#e1f5fe" position={[-4.65, 2.78, 0]} maxWidth={6}>
+        {caption}
+      </Text>
+      <Text fontSize={0.1} color="#b0bec5" position={[-4.65, 2.42, 0]}>
+        {`I_к.з. ≈ ${IkzA.toFixed(1)} А  |  Z_n = ${state.ZnOhm} Ом  |  Z_H = ${state.ZHOhm} Ом`}
+      </Text>
+      <Text fontSize={0.13} color="#ffcc80" position={[-4.65, 2.05, 0]}>
+        {`U_корп ≈ ${UenclosureV.toFixed(1)} В`}
+      </Text>
+      <Text fontSize={0.15} color={dangerColor} position={[-4.65, 1.65, 0]}>
+        {`I_h ≈ ${IbodyMA.toFixed(2)} мА`}
+      </Text>
+    </>
+  );
+}
+
 /* ─────────────── Lesson 10: Step Voltage ─────────────── */
 
 function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundState']; timeScale: number }) {
@@ -2563,6 +2842,21 @@ export default function LabScene3D(props: LabSceneProps) {
         headline: `${net} · ${reg} · касание ${ph}: Uпр ≈ ${UprV.toFixed(1)} В, I ≈ ${ImA.toFixed(2)} мА (${dText})`,
       };
     }
+    if (props.lessonId === 12) {
+      const s = props.tnEarthingState;
+      if (!s) {
+        return { headline: 'Занятие 12: задайте вариант и откройте лабораторную сцену.' };
+      }
+      const r = lesson12TnLabEstimate(s);
+      const dz =
+        r.IbodyMA < 1 ? 'безопасно'
+        : r.IbodyMA < 10 ? 'ощутимо'
+        : r.IbodyMA < 30 ? 'неотпускающий ток'
+        : 'опасно';
+      return {
+        headline: `TN: I_к.з. ≈ ${r.IkzA.toFixed(1)} А · U_корп ≈ ${r.UenclosureV.toFixed(1)} В · I_h ≈ ${r.IbodyMA.toFixed(2)} мА (${dz})`,
+      };
+    }
     return { headline: 'Занятие не установлено.' };
   }, [props, tvModel, tvSelectedIndex]);
 
@@ -2696,7 +2990,7 @@ export default function LabScene3D(props: LabSceneProps) {
           {props.lessonId === 11 &&
             'Звезда трёхфазного источника, нейтраль (ИТ без соединения с землёй, TN с заземлением через R_з). В аварии TN показано КЗ фазы L1 на землю — меняется цепь касания и оценка Uпр, I_h по упрощённой модели из занятия.'}
           {props.lessonId === 12 &&
-            'Интерактивная сцена для занятия №12 пока не подключена. Расчёты выполняйте по материалам вкладки «Теория» и таблицам варианта.'}
+            'Сцена: трёхфазная сеть с занулённым корпусом, заземление нейтрали R_0 и (при сценарии) повторное R_n. Выберите режим — КЗ на корпус, обрыв нуля или фаза на землю; оценки I_к.з., U на корпусе и I_h согласованы с формулами 12.2–12.13 (упрощённая модель). Числа Z_n, Z_H, R_n, R_зм — из вашего варианта (табл. 12.2).'}
         </Alert>
       )}
       <Box sx={{ height: { xs: 320, md: 420 }, borderRadius: 1, overflow: 'hidden' }}>
@@ -2707,7 +3001,7 @@ export default function LabScene3D(props: LabSceneProps) {
               ? [8, 5, 10]
               : props.lessonId === 10
                 ? [10, 6, 10]
-                : props.lessonId === 11
+                : props.lessonId === 11 || props.lessonId === 12
                   ? [7.5, 5.2, 7.5]
                   : props.lessonId === 8
                     ? [6.8, 5, 8.2]
@@ -2763,16 +3057,8 @@ export default function LabScene3D(props: LabSceneProps) {
           {props.lessonId === 11 && props.threePhaseState && (
             <ThreePhaseNeutralScene state={props.threePhaseState} timeScale={timeScale} />
           )}
-          {props.lessonId === 12 && (
-            <group>
-              <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-                <planeGeometry args={[10, 6]} />
-                <meshStandardMaterial color="#eceff1" roughness={0.95} />
-              </mesh>
-              <Text position={[0, 0.35, 0]} color="#37474f" fontSize={0.22}>
-                Занятие 12 — визуализация появится позже
-              </Text>
-            </group>
+          {props.lessonId === 12 && props.tnEarthingState && (
+            <TnEarthingLabScene state={props.tnEarthingState} timeScale={timeScale} />
           )}
           <OrbitControls enablePan={false} />
           <hemisphereLight args={['#b1e1ff', '#b97a20', 0.25]} />

@@ -100,6 +100,20 @@ const LABELS: Record<string, [string, string]> = {
   faultCurrentA:    ['Iз',                   'А'],
   soilResistivityOhmM: ['ρ',                 'Ом·м'],
   stepLengthM:      ['a',                    'м'],
+  // Lesson 11 — сети до 1 кВ (как табл. 6.1: символ + единица; разметка ячейки — Uφ, R_h)
+  UphiV:            ['Uφ',                   'В'],
+  bodyResistanceOhm: ['R_h',                  'Ом'],
+  /* Lesson 12 — таблицы 12.1 / 12.2 */
+  soilType:         ['Вид грунта',           ''],
+  rhoOhmM:          ['ρ',                    'Ом·м'],
+  RnOhm:            ['R_n',                  'Ом'],
+  ZnOhm:            ['Z_n',                  'Ом'],
+  ZHOhm:            ['Z_H',                  'Ом'],
+  RzmOhm:           ['Rзм',                  'Ом'],
+  lPipeM:           ['l',                    'м'],
+  dPipeM:           ['d',                    'м'],
+  tPipeM:           ['t',                    'м'],
+  etaZ:             ['η_з',                  ''],
 };
 
 /** Значение f без «Гц» — единица указана в подписи параметра. */
@@ -141,6 +155,7 @@ function formatValue(key: string, val: number | string): string {
     /* Единица «Гц» только в заголовке строки, в ячейках — число (напр. 50). */
     return String(val);
   }
+  if (key === 'etaZ') return val.toFixed(2);
   if (Number.isInteger(val)) return String(val);
   return val.toFixed(2);
 }
@@ -235,6 +250,16 @@ export default function VariantTable({ variants, activeVariant }: Props) {
                   ) : key === 'pSoundKW' ? (
                     <>
                       P<sub style={{ fontSize: '0.72em' }}>звук</sub>
+                      {unitSuffix}
+                    </>
+                  ) : key === 'UphiV' ? (
+                    <>
+                      U<sub style={{ fontSize: '0.72em' }}>φ</sub>
+                      {unitSuffix}
+                    </>
+                  ) : key === 'bodyResistanceOhm' ? (
+                    <>
+                      R<sub style={{ fontSize: '0.72em' }}>h</sub>
                       {unitSuffix}
                     </>
                   ) : (

@@ -37,6 +37,8 @@ import {
   lesson7Table2Variants,
   lesson8MergedValues,
   lesson8Table3Variants,
+  lesson12MergedValues,
+  lesson12Table1Variants,
   pickVariantByTicketDigits,
 } from '../../data/variants';
 import Lab4TablesPanel from './Lab4TablesPanel';
@@ -84,6 +86,7 @@ import {
   groundPotential,
   stepVoltage as calcStepVoltage,
   safeDistance,
+  lesson11TouchEstimate,
 } from '../../formulas/electricSafety';
 import { useProgress } from '../../context/ProgressContext';
 
@@ -119,6 +122,27 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const progress = useProgress();
   const persistedLabStep = progress.get(lesson.id).labStep;
   const initialValues = lesson.variants[0]?.values ?? {};
+  /** Числа из таблицы вариантов (значения могут быть string | number). */
+  function variantNumeric(values: Record<string, string | number>, key: string, fallback: number): number {
+    const raw = values[key];
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    if (typeof raw === 'string') {
+      const n = Number(raw);
+      if (Number.isFinite(n)) return n;
+    }
+    return fallback;
+  }
+  function variantValuesAsNumbers(values: Record<string, string | number>): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(values)) {
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+      else if (typeof v === 'string') {
+        const n = Number(v);
+        if (Number.isFinite(n)) out[k] = n;
+      }
+    }
+    return out;
+  }
   const [ticketInput, setTicketInput] = useState('');
   const [variantNumber, setVariantNumber] = useState(0);
   const [lesson2Penultimate, setLesson2Penultimate] = useState(0);
@@ -151,6 +175,11 @@ export default function LabSection({ lesson }: LabSectionProps) {
       : {},
   );
   const [lesson8Penultimate, setLesson8Penultimate] = useState(0);
+  /* ── Lesson 12 (grounding / TN) state ── */
+  const [lesson12Full, setLesson12Full] = useState<Record<string, number | string>>(() =>
+    lesson.id === 12 ? lesson12MergedValues(0, 0) : {},
+  );
+  const [lesson12Penultimate, setLesson12Penultimate] = useState(0);
   /* ── Lesson 9 (body resistance) state ── */
   const [l9Voltage, setL9Voltage] = useState(220);
   const [l9Freq, setL9Freq] = useState(50);
@@ -166,6 +195,14 @@ export default function LabSection({ lesson }: LabSectionProps) {
   const [l10X, setL10X] = useState(5);
   const [l10A, setL10A] = useState(0.8);
   const [l10Surface, setL10Surface] = useState<'earth' | 'sand' | 'stone'>('earth');
+  const [l11Uphi, setL11Uphi] = useState(220);
+  const [l11Rh, setL11Rh] = useState(1000);
+  const [l11Network, setL11Network] = useState<'IT' | 'TN'>('TN');
+  const [l11Regime, setL11Regime] = useState<'normal' | 'emergency'>('normal');
+  const [l11TouchedPhase, setL11TouchedPhase] = useState(0);
+  const [l11Rg, setL11Rg] = useState(10);
+  const [l11Rzm, setL11Rzm] = useState(15);
+  const [l11Riso, setL11Riso] = useState(6000);
   const [trainingMode, setTrainingMode] = useState(false);
   const [manualTableOpen, setManualTableOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(() =>
@@ -179,35 +216,51 @@ export default function LabSection({ lesson }: LabSectionProps) {
   );
 
   const [lampType, setLampType] = useState<LampType>('led');
-  const [intensityCd, setIntensityCd] = useState(initialValues.intensityCd ?? initialValues.lampFluxLm ?? 900);
-  const [heightM, setHeightM] = useState(initialValues.heightM ?? 2.8);
-  const [sensorOffsetM, setSensorOffsetM] = useState(initialValues.distanceM ?? 0.9);
-  const [reflectance, setReflectance] = useState(initialValues.reflectance ?? 0.4);
-  const [luminaireCount, setLuminaireCount] = useState(initialValues.luminaireCount ?? 2);
+  const [intensityCd, setIntensityCd] = useState(
+    variantNumeric(initialValues, 'intensityCd', variantNumeric(initialValues, 'lampFluxLm', 900)),
+  );
+  const [heightM, setHeightM] = useState(variantNumeric(initialValues, 'heightM', 2.8));
+  const [sensorOffsetM, setSensorOffsetM] = useState(variantNumeric(initialValues, 'distanceM', 0.9));
+  const [reflectance, setReflectance] = useState(variantNumeric(initialValues, 'reflectance', 0.4));
+  const [luminaireCount, setLuminaireCount] = useState(variantNumeric(initialValues, 'luminaireCount', 2));
 
-  const [sourceA, setSourceA] = useState(initialValues.sourceA1mDb ?? 98);
-  const [sourceB, setSourceB] = useState(initialValues.sourceB1mDb ?? 92);
-  const [sourceC, setSourceC] = useState(initialValues.sourceC1mDb ?? 86);
+  const [sourceA, setSourceA] = useState(variantNumeric(initialValues, 'sourceA1mDb', 98));
+  const [sourceB, setSourceB] = useState(variantNumeric(initialValues, 'sourceB1mDb', 92));
+  const [sourceC, setSourceC] = useState(variantNumeric(initialValues, 'sourceC1mDb', 86));
   const [observerX, setObserverX] = useState(4.5);
-  const [sourceAX, setSourceAX] = useState(4.5 - (initialValues.distanceA ?? 3));
-  const [sourceBX, setSourceBX] = useState(4.5 - (initialValues.distanceB ?? 4));
-  const [sourceCX, setSourceCX] = useState(4.5 - (initialValues.distanceC ?? 5));
-  const [barrierMassA, setBarrierMassA] = useState(initialValues.barrierMassA ?? 150);
-  const [barrierMassB, setBarrierMassB] = useState(initialValues.barrierMassB ?? initialValues.barrierMassA ?? 150);
-  const [barrierMassC, setBarrierMassC] = useState(initialValues.barrierMassC ?? initialValues.barrierMassA ?? 150);
+  const [sourceAX, setSourceAX] = useState(4.5 - variantNumeric(initialValues, 'distanceA', 3));
+  const [sourceBX, setSourceBX] = useState(4.5 - variantNumeric(initialValues, 'distanceB', 4));
+  const [sourceCX, setSourceCX] = useState(4.5 - variantNumeric(initialValues, 'distanceC', 5));
+  const [barrierMassA, setBarrierMassA] = useState(variantNumeric(initialValues, 'barrierMassA', 150));
+  const [barrierMassB, setBarrierMassB] = useState(
+    variantNumeric(initialValues, 'barrierMassB', variantNumeric(initialValues, 'barrierMassA', 150)),
+  );
+  const [barrierMassC, setBarrierMassC] = useState(
+    variantNumeric(initialValues, 'barrierMassC', variantNumeric(initialValues, 'barrierMassA', 150)),
+  );
   const [sourceAOn, setSourceAOn] = useState(true);
   const [sourceBOn, setSourceBOn] = useState(true);
   const [sourceCOn, setSourceCOn] = useState(true);
 
-  const [frequencyHz, setFrequencyHz] = useState(initialValues.frequencyHz ?? 2.4e6);
-  const [distanceM, setDistanceM] = useState(initialValues.distanceM ?? 1.2);
-  const [eVpm, setEVpm] = useState(initialValues.electricFieldVpm ?? 14);
-  const [hApm, setHApm] = useState(initialValues.magneticFieldApm ?? 0.45);
+  const [frequencyHz, setFrequencyHz] = useState(variantNumeric(initialValues, 'frequencyHz', 2.4e6));
+  const [distanceM, setDistanceM] = useState(variantNumeric(initialValues, 'distanceM', 1.2));
+  const [eVpm, setEVpm] = useState(variantNumeric(initialValues, 'electricFieldVpm', 14));
+  const [hApm, setHApm] = useState(variantNumeric(initialValues, 'magneticFieldApm', 0.45));
 
   useEffect(() => {
     const restored = Math.max(0, Math.min(progress.get(lesson.id).labStep, lesson.labWizard.steps.length));
     setStepIndex((current) => (current === restored ? current : restored));
   }, [lesson.id, lesson.labWizard.steps.length, progress]);
+
+  useEffect(() => {
+    if (lesson.id !== 11) return;
+    const v = lesson.variants[0]?.values;
+    if (!v) return;
+    const u = Number(v.UphiV);
+    const r = Number(v.bodyResistanceOhm);
+    if (Number.isFinite(u)) setL11Uphi(u);
+    if (Number.isFinite(r)) setL11Rh(r);
+  }, [lesson.id, lesson.variants]);
 
   useEffect(() => {
     progress.setLabStep(lesson.id, stepIndex);
@@ -229,37 +282,41 @@ export default function LabSection({ lesson }: LabSectionProps) {
 
   function applyVariantValues(values: Record<string, number | string>) {
     if (lesson.id === 2) {
-      setLesson2Full(values);
+      setLesson2Full(variantValuesAsNumbers(values));
     }
     if (lesson.id === 4) {
-      setLesson4Room(values);
+      setLesson4Room(variantValuesAsNumbers(values));
     }
     if (lesson.id === 1 || lesson.id === 2) {
-      setIntensityCd(values.intensityCd ?? values.lampFluxLm ?? 900);
-      setHeightM(values.heightM ?? 2.8);
-      setSensorOffsetM(values.distanceM ?? 0.9);
-      setReflectance(values.reflectance ?? 0.4);
-      setLuminaireCount(values.luminaireCount ?? 2);
+      setIntensityCd(variantNumeric(values, 'intensityCd', variantNumeric(values, 'lampFluxLm', 900)));
+      setHeightM(variantNumeric(values, 'heightM', 2.8));
+      setSensorOffsetM(variantNumeric(values, 'distanceM', 0.9));
+      setReflectance(variantNumeric(values, 'reflectance', 0.4));
+      setLuminaireCount(variantNumeric(values, 'luminaireCount', 2));
     }
     if (lesson.id === 3 || lesson.id === 4) {
-      setSourceA(values.sourceA1mDb ?? 98);
-      setSourceB(values.sourceB1mDb ?? 92);
-      setSourceC(values.sourceC1mDb ?? 86);
-      setSourceAX(observerX - (values.distanceA ?? 3));
-      setSourceBX(observerX - (values.distanceB ?? 4));
-      setSourceCX(observerX - (values.distanceC ?? 5));
-      setBarrierMassA(values.barrierMassA ?? 150);
-      setBarrierMassB(values.barrierMassB ?? values.barrierMassA ?? 150);
-      setBarrierMassC(values.barrierMassC ?? values.barrierMassA ?? 150);
+      setSourceA(variantNumeric(values, 'sourceA1mDb', 98));
+      setSourceB(variantNumeric(values, 'sourceB1mDb', 92));
+      setSourceC(variantNumeric(values, 'sourceC1mDb', 86));
+      setSourceAX(observerX - variantNumeric(values, 'distanceA', 3));
+      setSourceBX(observerX - variantNumeric(values, 'distanceB', 4));
+      setSourceCX(observerX - variantNumeric(values, 'distanceC', 5));
+      setBarrierMassA(variantNumeric(values, 'barrierMassA', 150));
+      setBarrierMassB(variantNumeric(values, 'barrierMassB', variantNumeric(values, 'barrierMassA', 150)));
+      setBarrierMassC(variantNumeric(values, 'barrierMassC', variantNumeric(values, 'barrierMassA', 150)));
     }
     if (lesson.id === 5) {
-      setFrequencyHz(values.frequencyHz ?? 2.4e6);
-      setDistanceM(values.distanceM ?? 1.2);
-      setEVpm(values.electricFieldVpm ?? 14);
-      setHApm(values.magneticFieldApm ?? 0.45);
+      setFrequencyHz(variantNumeric(values, 'frequencyHz', 2.4e6));
+      setDistanceM(variantNumeric(values, 'distanceM', 1.2));
+      setEVpm(variantNumeric(values, 'electricFieldVpm', 14));
+      setHApm(variantNumeric(values, 'magneticFieldApm', 0.45));
     }
-    if (lesson.id === 6) { setLesson6Full(values); }
-    if (lesson.id === 7) { setLesson7Full(values); }
+    if (lesson.id === 6) {
+      setLesson6Full(variantValuesAsNumbers(values));
+    }
+    if (lesson.id === 7) {
+      setLesson7Full(variantValuesAsNumbers(values));
+    }
     if (lesson.id === 8) {
       setLesson8Full(
         Object.fromEntries(
@@ -268,17 +325,24 @@ export default function LabSection({ lesson }: LabSectionProps) {
       );
     }
     if (lesson.id === 9) {
-      setL9Voltage(values.voltage ?? 220);
-      setL9Freq(values.frequency ?? 50);
-      setL9Rn(values.Rn ?? 5000);
-      setL9C(values.C ?? 20);
-      setL9Rv(values.Rv ?? 500);
+      setL9Voltage(variantNumeric(values, 'voltage', 220));
+      setL9Freq(variantNumeric(values, 'frequency', 50));
+      setL9Rn(variantNumeric(values, 'Rn', 5000));
+      setL9C(variantNumeric(values, 'C', 20));
+      setL9Rv(variantNumeric(values, 'Rv', 500));
     }
     if (lesson.id === 10) {
-      setL10Iz(values.Iz ?? 10);
-      setL10Rho(values.rho ?? 100);
-      setL10X(values.x ?? 5);
-      setL10A(values.a ?? 0.8);
+      setL10Iz(variantNumeric(values, 'Iz', 10));
+      setL10Rho(variantNumeric(values, 'rho', 100));
+      setL10X(variantNumeric(values, 'x', 5));
+      setL10A(variantNumeric(values, 'a', 0.8));
+    }
+    if (lesson.id === 11) {
+      setL11Uphi(variantNumeric(values, 'UphiV', 220));
+      setL11Rh(variantNumeric(values, 'bodyResistanceOhm', 1000));
+    }
+    if (lesson.id === 12) {
+      setLesson12Full({ ...values });
     }
   }
 
@@ -688,6 +752,40 @@ export default function LabSection({ lesson }: LabSectionProps) {
     return { j, phi, Ush, Iz: l10Iz, rho: l10Rho, x: l10X, a: l10A };
   }, [lesson.id, l10Iz, l10Rho, l10X, l10A]);
 
+  const lesson11Calcs = useMemo(() => {
+    if (lesson.id !== 11) return null;
+    const regimeEff = l11Network === 'IT' ? 'normal' : l11Regime;
+    const { UprV, ImA } = lesson11TouchEstimate({
+      network: l11Network,
+      regime: regimeEff,
+      touchedPhaseIndex: l11TouchedPhase,
+      UphiV: l11Uphi,
+      RhOhm: l11Rh,
+      RgOhm: l11Rg,
+      RzmOhm: l11Rzm,
+      RisoOhm: l11Riso,
+    });
+    const dangerLevel = classifyCurrentDanger(ImA, true);
+    const dangerLabel =
+      dangerLevel === 'safe'
+        ? 'безопасный уровень'
+        : dangerLevel === 'perceptible'
+          ? 'ощутимый ток'
+          : dangerLevel === 'non-releasing'
+            ? 'неотпускающий ток'
+            : 'опасная зона';
+    return {
+      UprV,
+      ImA,
+      dangerLabel,
+      Uphi: l11Uphi,
+      Rh: l11Rh,
+      network: l11Network,
+      regimeEff,
+      touchedPhase: l11TouchedPhase,
+    };
+  }, [lesson.id, l11Network, l11Regime, l11TouchedPhase, l11Uphi, l11Rh, l11Rg, l11Rzm, l11Riso]);
+
   function addResultRow() {
     if (stepIndex === 0) return;
     const currentStep = lesson.labWizard.steps[stepIndex - 1];
@@ -960,6 +1058,21 @@ export default function LabSection({ lesson }: LabSectionProps) {
       } else {
         value = '—';
       }
+    } else if (lesson.id === 11) {
+      if (sid === 's11-2' && lesson11Calcs) {
+        const ph = `L${lesson11Calcs.touchedPhase + 1}`;
+        const mode =
+          lesson11Calcs.network === 'IT'
+            ? 'ИТ, норма'
+            : lesson11Calcs.regimeEff === 'emergency'
+              ? 'TN, авария (КЗ L1)'
+              : 'TN, норма';
+        value = `I_h=${lesson11Calcs.ImA.toFixed(2)} мА; Uпр≈${lesson11Calcs.UprV.toFixed(1)} В (${mode}; касание ${ph}; U_ф=${l11Uphi} В; R_h=${l11Rh} Ом)`;
+      } else if (lesson11Calcs) {
+        value = `I_h≈${lesson11Calcs.ImA.toFixed(2)} мА; Uпр≈${lesson11Calcs.UprV.toFixed(1)} В`;
+      } else {
+        value = '—';
+      }
     } else {
       const zz = EMI_ZONE_LABEL[emiMetrics.zone];
       value = `λ=${emiMetrics.lambda.toExponential(2)} м; ППЭ=${emiMetrics.ppe.toFixed(3)} Вт/м²; зона: ${zz}`;
@@ -1001,6 +1114,19 @@ export default function LabSection({ lesson }: LabSectionProps) {
     if (lesson.id === 6) return lesson6Full;
     if (lesson.id === 7) return lesson7Full;
     if (lesson.id === 8) return lesson8Full;
+    if (lesson.id === 11) {
+      return {
+        network: l11Network,
+        regime: l11Network === 'IT' ? 'normal' : l11Regime,
+        touchedPhaseIndex: l11TouchedPhase,
+        UphiV: l11Uphi,
+        RhOhm: l11Rh,
+        RgOhm: l11Rg,
+        RzmOhm: l11Rzm,
+        RisoOhm: l11Riso,
+      };
+    }
+    if (lesson.id === 12) return lesson12Full;
     return variant.values;
   }, [
     barrierMassA,
@@ -1017,6 +1143,18 @@ export default function LabSection({ lesson }: LabSectionProps) {
     sourceC,
     sourceCX,
     variant.values,
+    l11Network,
+    l11Regime,
+    l11TouchedPhase,
+    l11Uphi,
+    l11Rh,
+    l11Rg,
+    l11Rzm,
+    l11Riso,
+    lesson12Full,
+    lesson6Full,
+    lesson7Full,
+    lesson8Full,
   ]);
 
   const reportText = useMemo(() => {
@@ -1142,6 +1280,20 @@ export default function LabSection({ lesson }: LabSectionProps) {
     surfaceType: l10Surface,
   }), [l10Iz, l10Rho, l10X, l10A, l10Surface]);
 
+  const threePhaseStateMemo = useMemo(
+    () => ({
+      network: l11Network,
+      regime: l11Regime,
+      touchedPhaseIndex: l11TouchedPhase,
+      UphiV: l11Uphi,
+      RhOhm: l11Rh,
+      RgOhm: l11Rg,
+      RzmOhm: l11Rzm,
+      RisoOhm: l11Riso,
+    }),
+    [l11Network, l11Regime, l11TouchedPhase, l11Uphi, l11Rh, l11Rg, l11Rzm, l11Riso],
+  );
+
   return (
     <Stack spacing={2}>
       <Paper id="lab-variant" variant="outlined" sx={{ p: 2 }}>
@@ -1175,6 +1327,9 @@ export default function LabSection({ lesson }: LabSectionProps) {
               if (lesson.id === 8) {
                 setLesson8Penultimate(pen);
               }
+              if (lesson.id === 12) {
+                setLesson12Penultimate(pen);
+              }
               applyVariantValues(resolved.values);
             }}
           >
@@ -1200,6 +1355,9 @@ export default function LabSection({ lesson }: LabSectionProps) {
                 applyVariantValues(merged);
               } else if (lesson.id === 8) {
                 const merged = lesson8MergedValues(Number(event.target.value), lesson8Penultimate);
+                applyVariantValues(merged);
+              } else if (lesson.id === 12) {
+                const merged = lesson12MergedValues(Number(event.target.value), lesson12Penultimate);
                 applyVariantValues(merged);
               } else if (nextVariant) {
                 applyVariantValues(nextVariant.values);
@@ -1294,6 +1452,25 @@ export default function LabSection({ lesson }: LabSectionProps) {
             >
               {[0,1,2,3,4,5,6,7,8,9].map((d) => (
                 <MenuItem key={d} value={d}>Предпоследняя цифра: {d} (Табл. 8.3)</MenuItem>
+              ))}
+            </Select>
+          )}
+          {lesson.id === 12 && (
+            <Select
+              size="small"
+              value={lesson12Penultimate}
+              onChange={(event) => {
+                const pen = Number(event.target.value);
+                setLesson12Penultimate(pen);
+                const merged = lesson12MergedValues(variantNumber, pen);
+                applyVariantValues(merged);
+              }}
+              sx={{ minWidth: 260 }}
+            >
+              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
+                <MenuItem key={d} value={d}>
+                  Предпоследняя цифра: {d} (Табл. 12.1 — грунт, ρ)
+                </MenuItem>
               ))}
             </Select>
           )}
@@ -1405,6 +1582,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
           uhfState={uhfStateMemo}
           bodyElecState={bodyElecStateMemo}
           groundState={groundStateMemo}
+          threePhaseState={lesson.id === 11 ? threePhaseStateMemo : undefined}
         />
       </Suspense>
 
@@ -1873,6 +2051,74 @@ export default function LabSection({ lesson }: LabSectionProps) {
             )}
           </Stack>
         )}
+
+        {lesson.id === 11 && (
+          <Stack spacing={1.2}>
+            <Typography variant="caption" fontWeight={600}>Трёхфазная сеть и касание фазы</Typography>
+            <Typography variant="caption">Система</Typography>
+            <Select
+              size="small"
+              value={l11Network}
+              disabled={!trainingMode}
+              onChange={(e) => {
+                const n = e.target.value as 'IT' | 'TN';
+                setL11Network(n);
+                if (n === 'IT') setL11Regime('normal');
+              }}
+            >
+              <MenuItem value="IT">ИТ — изолированная нейтраль</MenuItem>
+              <MenuItem value="TN">TN — заземлённая нейтраль</MenuItem>
+            </Select>
+            <Typography variant="caption">Режим (TN)</Typography>
+            <Select
+              size="small"
+              value={l11Regime}
+              disabled={!trainingMode || l11Network === 'IT'}
+              onChange={(e) => setL11Regime(e.target.value as 'normal' | 'emergency')}
+            >
+              <MenuItem value="normal">Нормальный</MenuItem>
+              <MenuItem value="emergency">Аварийный: КЗ фазы L1 на землю</MenuItem>
+            </Select>
+            <Typography variant="caption">Касаемая фаза</Typography>
+            <Select
+              size="small"
+              value={l11TouchedPhase}
+              disabled={!trainingMode}
+              onChange={(e) => setL11TouchedPhase(Number(e.target.value))}
+            >
+              <MenuItem value={0}>L1</MenuItem>
+              <MenuItem value={1}>L2</MenuItem>
+              <MenuItem value={2}>L3</MenuItem>
+            </Select>
+            <Typography variant="caption">U_ф (В): {l11Uphi}</Typography>
+            <Slider value={l11Uphi} min={127} max={254} step={1} disabled={!trainingMode} onChange={(_, v) => setL11Uphi(v as number)} />
+            <Typography variant="caption">R_h (Ом): {l11Rh}</Typography>
+            <Slider value={l11Rh} min={300} max={5000} step={50} onChange={(_, v) => setL11Rh(v as number)} />
+            {l11Network === 'TN' && (
+              <>
+                <Typography variant="caption">R_з, сопротивление заземления нейтрали (Ом): {l11Rg}</Typography>
+                <Slider value={l11Rg} min={1} max={80} step={1} disabled={!trainingMode} onChange={(_, v) => setL11Rg(v as number)} />
+                {l11Regime === 'emergency' && (
+                  <>
+                    <Typography variant="caption">R_зм, контакт КЗ на землю (Ом): {l11Rzm}</Typography>
+                    <Slider value={l11Rzm} min={1} max={80} step={1} disabled={!trainingMode} onChange={(_, v) => setL11Rzm(v as number)} />
+                  </>
+                )}
+              </>
+            )}
+            {l11Network === 'IT' && (
+              <>
+                <Typography variant="caption">R_из, изоляция фазы относительно земли (Ом): {l11Riso}</Typography>
+                <Slider value={l11Riso} min={500} max={20000} step={100} disabled={!trainingMode} onChange={(_, v) => setL11Riso(v as number)} />
+              </>
+            )}
+            {lesson11Calcs && (
+              <Alert severity={lesson11Calcs.ImA < 10 ? 'success' : 'error'}>
+                Uпр ≈ {lesson11Calcs.UprV.toFixed(1)} В → I_h ≈ {lesson11Calcs.ImA.toFixed(2)} мА ({lesson11Calcs.dangerLabel})
+              </Alert>
+            )}
+          </Stack>
+        )}
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
@@ -1924,7 +2170,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
       <Dialog
         open={manualTableOpen}
         onClose={() => setManualTableOpen(false)}
-        maxWidth={lesson.id === 4 || lesson.id === 6 || lesson.id === 7 || lesson.id === 8 ? 'xl' : 'md'}
+        maxWidth={lesson.id === 4 || lesson.id === 6 || lesson.id === 7 || lesson.id === 8 || lesson.id === 12 ? 'xl' : 'md'}
         fullWidth
       >
         <DialogTitle>
@@ -1932,7 +2178,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
             ? 'Таблицы 4.1–4.4 — Исходные данные (Занятие №4)'
             : lesson.labWizard.manualTableName}
         </DialogTitle>
-        <DialogContent sx={lesson.id === 6 || lesson.id === 7 || lesson.id === 8 ? { overflowX: 'hidden' } : undefined}>
+        <DialogContent sx={lesson.id === 6 || lesson.id === 7 || lesson.id === 8 || lesson.id === 12 ? { overflowX: 'hidden' } : undefined}>
           {lesson.id === 4 ? (
             <Lab4TablesPanel lastDigit={variantNumber} penultimateDigit={lesson4Penultimate} />
           ) : lesson.id === 6 ? (
@@ -1967,6 +2213,17 @@ export default function LabSection({ lesson }: LabSectionProps) {
                 Таблица 8.3 — по предпоследней цифре (ваша: <strong>{lesson8Penultimate}</strong>)
               </Typography>
               <VariantTable variants={lesson8Table3Variants} activeVariant={lesson8Penultimate} />
+            </Stack>
+          ) : lesson.id === 12 ? (
+            <Stack spacing={3}>
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 12.1 — по предпоследней цифре (ваша: <strong>{lesson12Penultimate}</strong>)
+              </Typography>
+              <VariantTable variants={lesson12Table1Variants} activeVariant={lesson12Penultimate} />
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 12.2 — по последней цифре студбилета
+              </Typography>
+              <VariantTable variants={lesson.variants} activeVariant={variantNumber} />
             </Stack>
           ) : lesson.id === 2 ? (
             <Stack spacing={3}>

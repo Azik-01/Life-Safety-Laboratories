@@ -8,7 +8,7 @@ import type { TheorySimulatorType } from '../../types/theme';
 import { waveguideAttenuationPerM } from '../../formulas/shielding';
 import { attenuationFactorF, xParameter } from '../../formulas/hfField';
 import { pduForFrequencyVpm, RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, normalizedPatternFactor } from '../../formulas/uhfField';
-import { bodyCurrentMA, skinImpedance, totalBodyImpedance, groundPotential, stepVoltage } from '../../formulas/electricSafety';
+import { bodyCurrentMA, skinImpedance, totalBodyImpedance, groundPotential, stepVoltage, lesson11TouchEstimate, classifyCurrentDanger } from '../../formulas/electricSafety';
 
 /* ─── Scene title map ─── */
 export const sceneTitle: Record<TheorySimulatorType, string> = {
@@ -41,6 +41,9 @@ export const sceneTitle: Record<TheorySimulatorType, string> = {
   'ground-current-spread': 'Растекание тока в грунте от заземлителя',
   'step-voltage': 'Шаговое напряжение между точками грунта',
   'equipotential-zones': 'Эквипотенциальные линии вокруг заземлителя',
+  'l11-it-touch': 'ИТ (изолированная нейтраль): касание фазы (нормальный режим)',
+  'l11-tn-normal-touch': 'TN (заземлённая нейтраль): касание фазы (нормальный режим)',
+  'l11-tn-emergency-touch': 'TN (авария): КЗ L1→земля и касание фазы',
 };
 
 /* ─── Bold label helper ─── */
@@ -2071,6 +2074,470 @@ function ElectricCurrentBodyScene({ current }: { current: number }) {
   );
 }
 
+/* ─────────────── Lesson 11: three distinct THEORY scenes (schematics) ─────────────── */
+
+const L11_RAIL_Y = [1.52, 1.18, 0.84] as const;
+const L11_PHASE_COLORS = ['#c62828', '#1565c0', '#2e7d32'] as const;
+
+function L11WireH({
+  x0,
+  x1,
+  y,
+  z = 0,
+  thickness = 0.055,
+  color,
+  emissiveIntensity = 0,
+}: {
+  x0: number;
+  x1: number;
+  y: number;
+  z?: number;
+  thickness?: number;
+  color: string;
+  emissiveIntensity?: number;
+}) {
+  const lo = Math.min(x0, x1);
+  const hi = Math.max(x0, x1);
+  const mid = (lo + hi) / 2;
+  const len = hi - lo;
+  if (len < 1e-4) return null;
+  return (
+    <mesh position={[mid, y, z]} castShadow>
+      <boxGeometry args={[len, thickness, thickness]} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={emissiveIntensity} roughness={0.45} metalness={0.08} />
+    </mesh>
+  );
+}
+
+function L11WireV({
+  x,
+  y0,
+  y1,
+  z = 0,
+  thickness = 0.055,
+  color,
+  emissiveIntensity = 0,
+}: {
+  x: number;
+  y0: number;
+  y1: number;
+  z?: number;
+  thickness?: number;
+  color: string;
+  emissiveIntensity?: number;
+}) {
+  const lo = Math.min(y0, y1);
+  const hi = Math.max(y0, y1);
+  const mid = (lo + hi) / 2;
+  const len = hi - lo;
+  if (len < 1e-4) return null;
+  return (
+    <mesh position={[x, mid, z]} castShadow>
+      <boxGeometry args={[thickness, len, thickness]} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={emissiveIntensity} roughness={0.45} metalness={0.08} />
+    </mesh>
+  );
+}
+
+function L11Junction({ x, y, z = 0, active }: { x: number; y: number; z?: number; active?: boolean }) {
+  return (
+    <mesh position={[x, y, z]} castShadow>
+      <sphereGeometry args={[0.052, 10, 10]} />
+      <meshStandardMaterial
+        color={active ? '#ffee58' : '#90a4ae'}
+        emissive={active ? '#ffc107' : '#546e7a'}
+        emissiveIntensity={active ? 0.45 : 0.06}
+        roughness={0.4}
+        metalness={0.12}
+      />
+    </mesh>
+  );
+}
+
+function L11SchematicBase({
+  title,
+  UprV,
+  ImA,
+  extra,
+  footnote,
+}: {
+  title: string;
+  UprV: number;
+  ImA: number;
+  extra?: string;
+  footnote?: string;
+}) {
+  const danger = classifyCurrentDanger(ImA, true);
+  const dangerColor =
+    danger === 'safe'
+      ? '#4caf50'
+      : danger === 'perceptible'
+        ? '#ffb300'
+        : danger === 'non-releasing'
+          ? '#f44336'
+          : '#d50000';
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
+        <planeGeometry args={[10, 6]} />
+        <meshStandardMaterial color="#eef2f5" roughness={0.98} />
+      </mesh>
+      <Label position={[0, 2.8, 0]} color="#263238" size={0.14} outlineColor="#ffffff" depthOffset={-2}>
+        {title}
+      </Label>
+      <Label position={[-3.9, 2.35, 0]} color="#0d47a1" size={0.11} outlineColor="#ffffff" depthOffset={-2}>
+        {`Uпр ≈ ${UprV.toFixed(1)} В`}
+      </Label>
+      <Label position={[-3.9, 2.05, 0]} color={dangerColor} size={0.12} outlineColor="#ffffff" depthOffset={-2}>
+        {`I ≈ ${ImA.toFixed(2)} мА`}
+      </Label>
+      {extra ? (
+        <Label position={[-3.9, footnote ? 1.78 : 1.75, 0]} color="#455a64" size={0.1} outlineColor="#ffffff" depthOffset={-2}>
+          {extra}
+        </Label>
+      ) : null}
+      {footnote ? (
+        <Label position={[-3.9, 1.48, 0]} color="#607d8b" size={0.082} outlineColor="#ffffff" depthOffset={-2}>
+          {footnote}
+        </Label>
+      ) : null}
+    </>
+  );
+}
+
+function L11ItTouchSchematic({
+  UphiV,
+  RhOhm,
+  RisoOhm,
+  touchedPhaseIndex,
+}: {
+  UphiV: number;
+  RhOhm: number;
+  RisoOhm: number;
+  touchedPhaseIndex: number;
+}) {
+  const phase = Math.min(2, Math.max(0, Math.floor(touchedPhaseIndex)));
+  const { UprV, ImA } = lesson11TouchEstimate({
+    network: 'IT',
+    regime: 'normal',
+    touchedPhaseIndex: phase,
+    UphiV,
+    RhOhm,
+    RgOhm: 10,
+    RzmOhm: 15,
+    RisoOhm,
+  });
+  const pulseRef = useRef(0);
+  useFrame((_, d) => {
+    pulseRef.current += d;
+  });
+  const glow = 0.25 + 0.35 * Math.abs(Math.sin(pulseRef.current * 4));
+  const yAct = L11_RAIL_Y[phase];
+  const srcX = -4.05;
+  const busX = -2.92;
+  const stubEnd = -2.38;
+  const rhCx = -0.95;
+  const rhHalf = 0.52;
+  const risoCx = 1.05;
+  const risoHalf = 0.62;
+  const dropX = 2.35;
+  const gndY = 0.48;
+  const wireNeutral = '#546e7a';
+  return (
+    <>
+      <L11SchematicBase
+        title={`ИТ: касание ${['L1', 'L2', 'L3'][phase]} (цепь Rh + Rиз/3)`}
+        UprV={UprV}
+        ImA={ImA}
+        extra={`Uφ=${UphiV.toFixed(0)} В; Rh=${Math.round(RhOhm)} Ω; Rиз≈${Math.round(RisoOhm)} Ω/фаза`}
+        footnote="При симметрии Uпр и I одинаковы для L1–L3; подсвечена ветвь касания."
+      />
+
+      <mesh position={[srcX, 1.15, 0]} castShadow>
+        <boxGeometry args={[0.92, 0.95, 0.36]} />
+        <meshStandardMaterial color="#90a4ae" roughness={0.55} metalness={0.12} />
+      </mesh>
+      <Label position={[srcX, 1.68, 0]} color="#263238" size={0.1} outlineColor="#ffffff" depthOffset={-2}>
+        {'3φ ИТ'}
+      </Label>
+
+      {L11_RAIL_Y.map((y, i) => {
+        const c = L11_PHASE_COLORS[i];
+        const active = i === phase;
+        const dim = active ? 0.22 + glow : 0.04;
+        return (
+          <group key={i}>
+            <L11Junction x={busX} y={y} active={active} />
+            <L11WireH x0={srcX + 0.48} x1={busX} y={y} color={c} emissiveIntensity={dim} />
+            {!active ? (
+              <>
+                <L11WireH x0={busX} x1={stubEnd} y={y} color={c} emissiveIntensity={0.02} />
+                <mesh position={[stubEnd - 0.04, y, 0]} castShadow>
+                  <boxGeometry args={[0.045, 0.055, 0.055]} />
+                  <meshStandardMaterial color="#bdbdbd" roughness={0.85} />
+                </mesh>
+              </>
+            ) : null}
+            <Label position={[srcX - 0.1, y + 0.14, 0]} color={c} size={0.09} outlineColor="#ffffff" depthOffset={-2}>
+              {['L1', 'L2', 'L3'][i]}
+            </Label>
+          </group>
+        );
+      })}
+
+      <L11WireH x0={busX} x1={rhCx - rhHalf} y={yAct} color={L11_PHASE_COLORS[phase]} emissiveIntensity={0.2 + glow} />
+      <mesh position={[rhCx, yAct, 0]} castShadow>
+        <boxGeometry args={[1.04, 0.48, 0.3]} />
+        <meshStandardMaterial color="#ffcc80" emissive="#ffb300" emissiveIntensity={0.14} />
+      </mesh>
+      <Label position={[rhCx, yAct + 0.35, 0]} color="#6d4c41" size={0.1} outlineColor="#ffffff" depthOffset={-2}>
+        {'Rh'}
+      </Label>
+
+      <L11WireH x0={rhCx + rhHalf} x1={risoCx - risoHalf} y={yAct} color={L11_PHASE_COLORS[phase]} emissiveIntensity={0.18 + glow} />
+      <mesh position={[risoCx, yAct, 0]} castShadow>
+        <boxGeometry args={[1.24, 0.48, 0.3]} />
+        <meshStandardMaterial color="#b39ddb" emissive="#7e57c2" emissiveIntensity={0.12} />
+      </mesh>
+      <Label position={[risoCx, yAct + 0.35, 0]} color="#311b92" size={0.1} outlineColor="#ffffff" depthOffset={-2}>
+        {'Rиз/3'}
+      </Label>
+
+      <L11WireH x0={risoCx + risoHalf} x1={dropX} y={yAct} color={L11_PHASE_COLORS[phase]} emissiveIntensity={0.16 + glow} />
+      <L11Junction x={dropX} y={yAct} active />
+      <L11WireV x={dropX} y0={yAct} y1={gndY + 0.06} color={wireNeutral} emissiveIntensity={0.06} />
+
+      <mesh position={[dropX, gndY, 0]} castShadow>
+        <boxGeometry args={[1.0, 0.11, 0.55]} />
+        <meshStandardMaterial color="#8d6e63" roughness={0.9} />
+      </mesh>
+      <Label position={[dropX, gndY + 0.18, 0]} color="#3e2723" size={0.095} outlineColor="#ffffff" depthOffset={-2}>
+        {'Земля'}
+      </Label>
+    </>
+  );
+}
+
+function L11TnNormalTouchSchematic({
+  UphiV,
+  RhOhm,
+  RgOhm,
+  touchedPhaseIndex,
+}: {
+  UphiV: number;
+  RhOhm: number;
+  RgOhm: number;
+  touchedPhaseIndex: number;
+}) {
+  const phase = Math.min(2, Math.max(0, Math.floor(touchedPhaseIndex)));
+  const { UprV, ImA } = lesson11TouchEstimate({
+    network: 'TN',
+    regime: 'normal',
+    touchedPhaseIndex: phase,
+    UphiV,
+    RhOhm,
+    RgOhm,
+    RzmOhm: 15,
+    RisoOhm: 6000,
+  });
+  const yAct = L11_RAIL_Y[phase];
+  const srcX = -4.05;
+  const busX = -2.92;
+  const stubEnd = -2.38;
+  const rhCx = -0.88;
+  const rhHalf = 0.5;
+  const rgCx = 0.78;
+  const rgHalf = 0.54;
+  const dropX = 2.28;
+  const gndY = 0.48;
+  const wireNeutral = '#546e7a';
+  return (
+    <>
+      <L11SchematicBase
+        title={`TN (норма): касание ${['L1', 'L2', 'L3'][phase]} (Rh + Rз на землю)`}
+        UprV={UprV}
+        ImA={ImA}
+        extra={`Uφ=${UphiV.toFixed(0)} В; Rh=${Math.round(RhOhm)} Ω; Rз=${RgOhm.toFixed(1)} Ω`}
+        footnote="Упрощённо: последовательно Rh и Rз до земли; при симметрии Uпр и I не зависят от L1–L3; подсветка — касаемая фаза."
+      />
+
+      <mesh position={[srcX, 1.15, 0]} castShadow>
+        <boxGeometry args={[0.92, 0.95, 0.36]} />
+        <meshStandardMaterial color="#90a4ae" roughness={0.55} metalness={0.12} />
+      </mesh>
+      <Label position={[srcX, 1.68, 0]} color="#263238" size={0.1} outlineColor="#ffffff" depthOffset={-2}>
+        {'3φ TN'}
+      </Label>
+
+      {L11_RAIL_Y.map((y, i) => {
+        const c = L11_PHASE_COLORS[i];
+        const active = i === phase;
+        const dim = active ? 0.18 : 0.04;
+        return (
+          <group key={i}>
+            <L11Junction x={busX} y={y} active={active} />
+            <L11WireH x0={srcX + 0.48} x1={busX} y={y} color={c} emissiveIntensity={dim} />
+            {!active ? (
+              <>
+                <L11WireH x0={busX} x1={stubEnd} y={y} color={c} emissiveIntensity={0.02} />
+                <mesh position={[stubEnd - 0.04, y, 0]} castShadow>
+                  <boxGeometry args={[0.045, 0.055, 0.055]} />
+                  <meshStandardMaterial color="#bdbdbd" roughness={0.85} />
+                </mesh>
+              </>
+            ) : null}
+            <Label position={[srcX - 0.1, y + 0.14, 0]} color={c} size={0.09} outlineColor="#ffffff" depthOffset={-2}>
+              {['L1', 'L2', 'L3'][i]}
+            </Label>
+          </group>
+        );
+      })}
+
+      <L11WireH x0={busX} x1={rhCx - rhHalf} y={yAct} color={L11_PHASE_COLORS[phase]} emissiveIntensity={0.2} />
+      <mesh position={[rhCx, yAct, 0]} castShadow>
+        <boxGeometry args={[1.0, 0.48, 0.3]} />
+        <meshStandardMaterial color="#ffcc80" emissive="#ffb300" emissiveIntensity={0.14} />
+      </mesh>
+      <Label position={[rhCx, yAct + 0.35, 0]} color="#6d4c41" size={0.1} outlineColor="#ffffff" depthOffset={-2}>
+        {'Rh'}
+      </Label>
+
+      <L11WireH x0={rhCx + rhHalf} x1={rgCx - rgHalf} y={yAct} color={L11_PHASE_COLORS[phase]} emissiveIntensity={0.16} />
+      <mesh position={[rgCx, yAct, 0]} castShadow>
+        <boxGeometry args={[1.08, 0.48, 0.3]} />
+        <meshStandardMaterial color="#ffe082" emissive="#fdd835" emissiveIntensity={0.12} />
+      </mesh>
+      <Label position={[rgCx, yAct + 0.35, 0]} color="#6d4c41" size={0.095} outlineColor="#ffffff" depthOffset={-2}>
+        {'Rз'}
+      </Label>
+
+      <L11WireH x0={rgCx + rgHalf} x1={dropX} y={yAct} color={wireNeutral} emissiveIntensity={0.08} />
+      <L11Junction x={dropX} y={yAct} active />
+      <L11WireV x={dropX} y0={yAct} y1={gndY + 0.06} color={wireNeutral} emissiveIntensity={0.06} />
+
+      <mesh position={[dropX, gndY, 0]} castShadow>
+        <boxGeometry args={[1.0, 0.11, 0.55]} />
+        <meshStandardMaterial color="#8d6e63" roughness={0.9} />
+      </mesh>
+      <Label position={[dropX, gndY + 0.18, 0]} color="#3e2723" size={0.095} outlineColor="#ffffff" depthOffset={-2}>
+        {'Земля'}
+      </Label>
+    </>
+  );
+}
+
+function L11TnEmergencyTouchSchematic({
+  UphiV,
+  RhOhm,
+  RzmOhm,
+  touchedPhaseIndex,
+}: {
+  UphiV: number;
+  RhOhm: number;
+  RzmOhm: number;
+  touchedPhaseIndex: number;
+}) {
+  const phase = Math.min(2, Math.max(0, Math.floor(touchedPhaseIndex)));
+  const { UprV, ImA } = lesson11TouchEstimate({
+    network: 'TN',
+    regime: 'emergency',
+    touchedPhaseIndex: phase,
+    UphiV,
+    RhOhm,
+    RgOhm: 10,
+    RzmOhm,
+    RisoOhm: 6000,
+  });
+  const pulseRef = useRef(0);
+  useFrame((_, d) => {
+    pulseRef.current += d;
+  });
+  const glow = 0.2 + 0.5 * Math.abs(Math.sin(pulseRef.current * 6));
+  const yFault = 1.62;
+  const yTouch = 0.88;
+  const wire = '#546e7a';
+  const gndTop = 0.54;
+  const gndY = 0.48;
+  const faultDropX = 1.12;
+  const touchDropX = 0.68;
+  const kzCx = -3.18;
+  const rzmCx = -0.9;
+  const rzmHalf = 0.58;
+  const rhCx = -0.88;
+  const rhHalf = 0.54;
+  const phaseColor = L11_PHASE_COLORS[phase];
+  const touchGlow = 0.14 + (phase !== 0 ? glow * 0.55 : glow * 0.15);
+  return (
+    <>
+      <L11SchematicBase
+        title={`TN (авария): КЗ L1→земля + касание ${['L1', 'L2', 'L3'][phase]}`}
+        UprV={UprV}
+        ImA={ImA}
+        extra={`Uφ=${UphiV.toFixed(0)} В; Rh=${Math.round(RhOhm)} Ω; Rзм=${RzmOhm.toFixed(1)} Ω`}
+        footnote="Ветвь аварии — L1 и Rзм; ниже — выбранная фаза касания и Rh; обе сходятся на землю."
+      />
+
+      {/* Верх: пробой L1 — Rзм — шина перед спуском */}
+      <mesh position={[kzCx, yFault, 0]} castShadow>
+        <boxGeometry args={[1.08, 0.48, 0.3]} />
+        <meshStandardMaterial color="#ffab91" emissive="#ff3d00" emissiveIntensity={0.2 + glow} />
+      </mesh>
+      <Label position={[kzCx, yFault + 0.34, 0]} color="#bf360c" size={0.098} outlineColor="#ffffff" depthOffset={-2}>
+        {'КЗ L1'}
+      </Label>
+
+      <L11WireH x0={kzCx + 0.56} x1={rzmCx - rzmHalf} y={yFault} color={L11_PHASE_COLORS[0]} emissiveIntensity={0.14 + glow} />
+
+      <mesh position={[rzmCx, yFault, 0]} castShadow>
+        <boxGeometry args={[1.15, 0.48, 0.3]} />
+        <meshStandardMaterial color="#ffe082" emissive="#fdd835" emissiveIntensity={0.12} />
+      </mesh>
+      <Label position={[rzmCx, yFault + 0.34, 0]} color="#6d4c41" size={0.095} outlineColor="#ffffff" depthOffset={-2}>
+        {'Rзм'}
+      </Label>
+
+      <L11WireH x0={rzmCx + rzmHalf} x1={faultDropX} y={yFault} color={wire} emissiveIntensity={0.08} />
+      <L11Junction x={faultDropX} y={yFault} active />
+      <L11WireV x={faultDropX} y0={yFault} y1={gndTop} color={wire} emissiveIntensity={0.07} />
+
+      {/* Низ: касание L1/L2/L3 — Rh — спуск */}
+      <mesh position={[kzCx, yTouch, 0]} castShadow>
+        <boxGeometry args={[1.08, 0.48, 0.3]} />
+        <meshStandardMaterial color={phaseColor} emissive={phaseColor} emissiveIntensity={touchGlow} />
+      </mesh>
+      <Label position={[kzCx, yTouch + 0.34, 0]} color={phaseColor} size={0.095} outlineColor="#ffffff" depthOffset={-2}>
+        {['L1', 'L2', 'L3'][phase]}
+      </Label>
+
+      <L11WireH x0={kzCx + 0.56} x1={rhCx - rhHalf} y={yTouch} color={phaseColor} emissiveIntensity={0.16 + (phase !== 0 ? glow * 0.4 : 0.1)} />
+
+      <mesh position={[rhCx, yTouch, 0]} castShadow>
+        <boxGeometry args={[1.06, 0.48, 0.3]} />
+        <meshStandardMaterial color="#ffcc80" emissive="#ffb300" emissiveIntensity={0.13} />
+      </mesh>
+      <Label position={[rhCx, yTouch + 0.34, 0]} color="#6d4c41" size={0.095} outlineColor="#ffffff" depthOffset={-2}>
+        {'Rh'}
+      </Label>
+
+      <L11WireH x0={rhCx + rhHalf} x1={touchDropX} y={yTouch} color={phaseColor} emissiveIntensity={0.12} />
+      <L11Junction x={touchDropX} y={yTouch} active />
+      <L11WireV x={touchDropX} y0={yTouch} y1={gndTop} color={wire} emissiveIntensity={0.07} />
+
+      {/* Общая горизонталь на уровне «земли» и шина */}
+      <L11WireH x0={touchDropX} x1={faultDropX} y={gndTop} color={wire} emissiveIntensity={0.06} />
+      <L11WireH x0={faultDropX} x1={2.42} y={gndTop} color={wire} emissiveIntensity={0.06} />
+
+      <mesh position={[1.55, gndY, 0]} castShadow>
+        <boxGeometry args={[1.45, 0.11, 0.55]} />
+        <meshStandardMaterial color="#8d6e63" roughness={0.9} />
+      </mesh>
+      <Label position={[1.55, gndY + 0.18, 0]} color="#3e2723" size={0.095} outlineColor="#ffffff" depthOffset={-2}>
+        {'Земля'}
+      </Label>
+    </>
+  );
+}
+
 /* ─────────────── Electric Resistance Scene (Lab 9) ─────────────── */
 
 function ElectricResistanceScene({
@@ -2669,6 +3136,36 @@ function SceneContent({ type, params }: TheoryScene3DProps) {
       );
     case 'equipotential-zones':
       return <EquipotentialZonesScene current={Math.max(0.1, params.a ?? 10)} resistivity={Math.max(1, params.b ?? 100)} />;
+    case 'l11-it-touch': {
+      return (
+        <L11ItTouchSchematic
+          UphiV={Math.max(1, params.a ?? 220)}
+          RhOhm={Math.max(1, params.b ?? 1000)}
+          RisoOhm={Math.max(100, params.c ?? 6000)}
+          touchedPhaseIndex={Math.round(params.d ?? 0)}
+        />
+      );
+    }
+    case 'l11-tn-normal-touch': {
+      return (
+        <L11TnNormalTouchSchematic
+          UphiV={Math.max(1, params.a ?? 220)}
+          RhOhm={Math.max(1, params.b ?? 1000)}
+          RgOhm={Math.max(0.1, params.c ?? 10)}
+          touchedPhaseIndex={Math.round(params.d ?? 0)}
+        />
+      );
+    }
+    case 'l11-tn-emergency-touch': {
+      return (
+        <L11TnEmergencyTouchSchematic
+          UphiV={Math.max(1, params.a ?? 220)}
+          RhOhm={Math.max(1, params.b ?? 1000)}
+          RzmOhm={Math.max(0.1, params.c ?? 15)}
+          touchedPhaseIndex={Math.round(params.d ?? 1)}
+        />
+      );
+    }
     default:
       return <Room />;
   }

@@ -32,6 +32,9 @@ const sceneTitle: Record<string, string> = {
   'ground-current-spread': 'Растекание тока в грунте от заземлителя',
   'step-voltage': 'Шаговое напряжение между точками грунта',
   'equipotential-zones': 'Эквипотенциальные линии вокруг заземлителя',
+  'l11-it-touch': 'ИТ (изолированная нейтраль): касание фазы',
+  'l11-tn-normal-touch': 'TN (заземлённая нейтраль): касание фазы',
+  'l11-tn-emergency-touch': 'TN (авария): КЗ L1→земля и касание',
 };
 import {
   brightness,
@@ -74,6 +77,7 @@ import {
   currentDensity,
   groundPotential,
   stepVoltage,
+  lesson11TouchEstimate,
 } from '../../formulas/electricSafety';
 const TheoryScene3D = lazy(() => import('./TheoryScene3D'));
 const isTestEnvironment = import.meta.env.MODE === 'test';
@@ -124,6 +128,15 @@ function getDefaults(type: TheorySimulatorType) {
     case 'equipotential-zones':
       /* a=Iz (А), b=rho (Ом·м) — в сцене используется только эти два параметра */
       return { a: 10, b: 200, c: 0, d: 0 };
+    case 'l11-it-touch':
+      // a=Uφ (В), b=Rh (Ом), c=Rиз (Ом/фаза), d=фаза (0..2)
+      return { a: 220, b: 1000, c: 6000, d: 1 };
+    case 'l11-tn-normal-touch':
+      // a=Uφ (В), b=Rh (Ом), c=Rз (Ом), d=фаза (0..2)
+      return { a: 220, b: 1000, c: 10, d: 1 };
+    case 'l11-tn-emergency-touch':
+      // a=Uφ (В), b=Rh (Ом), c=Rзм (Ом), d=фаза (0..2)
+      return { a: 220, b: 1000, c: 15, d: 2 };
     default:
       return { a: 500, b: 1.2, c: 2.5, d: 120 };
   }
@@ -759,6 +772,126 @@ export default function MiniSimulator({ type }: SimulatorProps) {
             <ValueLine key="v1" label="φ(5 м)" value={`${phi5.toFixed(2)} В`} />,
             <ValueLine key="v2" label="φ(10 м)" value={`${phi10.toFixed(2)} В`} />,
             <ValueLine key="v3" label="φ(20 м)" value={`${phi20.toFixed(2)} В`} />,
+          ],
+        };
+      }
+      case 'l11-it-touch': {
+        const UphiV = Math.max(1, a);
+        const RhOhm = Math.max(1, b);
+        const RisoOhm = Math.max(100, c);
+        const phase = Math.min(2, Math.max(0, Math.round(d)));
+        const { UprV, ImA } = lesson11TouchEstimate({
+          network: 'IT',
+          regime: 'normal',
+          touchedPhaseIndex: phase,
+          UphiV,
+          RhOhm,
+          RgOhm: 10,
+          RzmOhm: 15,
+          RisoOhm,
+        });
+        const danger = classifyCurrentDanger(ImA, true);
+        return {
+          controls: (
+            <Stack spacing={1.2}>
+              <Typography variant="caption">Uφ (В): {UphiV.toFixed(0)}</Typography>
+              <Slider value={a} min={127} max={254} step={1} onChange={(_, v) => setA(v as number)} />
+              <Typography variant="caption">Rh (Ом): {RhOhm.toFixed(0)}</Typography>
+              <Slider value={b} min={300} max={5000} step={50} onChange={(_, v) => setB(v as number)} />
+              <Typography variant="caption">Rиз (Ом/фаза): {RisoOhm.toFixed(0)}</Typography>
+              <Slider value={c} min={500} max={20000} step={100} onChange={(_, v) => setC(v as number)} />
+              <Typography variant="caption">Фаза касания (0=L1,1=L2,2=L3): {phase}</Typography>
+              <Slider value={phase} min={0} max={2} step={1} onChange={(_, v) => setD(v as number)} />
+            </Stack>
+          ),
+          values: [
+            <ValueLine key="v1" label="Uпр" value={`${UprV.toFixed(1)} В`} />,
+            <ValueLine key="v2" label="I" value={`${ImA.toFixed(2)} мА`} />,
+            <ValueLine
+              key="v3"
+              label="Оценка"
+              value={danger === 'safe' ? 'Безопасный уровень' : danger === 'perceptible' ? 'Ощутимый ток' : danger === 'non-releasing' ? 'Неотпускающий' : 'Опасная зона'}
+            />,
+          ],
+        };
+      }
+      case 'l11-tn-normal-touch': {
+        const UphiV = Math.max(1, a);
+        const RhOhm = Math.max(1, b);
+        const RgOhm = Math.max(0.1, c);
+        const phase = Math.min(2, Math.max(0, Math.round(d)));
+        const { UprV, ImA } = lesson11TouchEstimate({
+          network: 'TN',
+          regime: 'normal',
+          touchedPhaseIndex: phase,
+          UphiV,
+          RhOhm,
+          RgOhm,
+          RzmOhm: 15,
+          RisoOhm: 6000,
+        });
+        const danger = classifyCurrentDanger(ImA, true);
+        return {
+          controls: (
+            <Stack spacing={1.2}>
+              <Typography variant="caption">Uφ (В): {UphiV.toFixed(0)}</Typography>
+              <Slider value={a} min={127} max={254} step={1} onChange={(_, v) => setA(v as number)} />
+              <Typography variant="caption">Rh (Ом): {RhOhm.toFixed(0)}</Typography>
+              <Slider value={b} min={300} max={5000} step={50} onChange={(_, v) => setB(v as number)} />
+              <Typography variant="caption">Rз (Ом): {RgOhm.toFixed(1)}</Typography>
+              <Slider value={c} min={0.5} max={80} step={0.5} onChange={(_, v) => setC(v as number)} />
+              <Typography variant="caption">Фаза касания (0=L1,1=L2,2=L3): {phase}</Typography>
+              <Slider value={phase} min={0} max={2} step={1} onChange={(_, v) => setD(v as number)} />
+            </Stack>
+          ),
+          values: [
+            <ValueLine key="v1" label="Uпр" value={`${UprV.toFixed(1)} В`} />,
+            <ValueLine key="v2" label="I" value={`${ImA.toFixed(2)} мА`} />,
+            <ValueLine
+              key="v3"
+              label="Оценка"
+              value={danger === 'safe' ? 'Безопасный уровень' : danger === 'perceptible' ? 'Ощутимый ток' : danger === 'non-releasing' ? 'Неотпускающий' : 'Опасная зона'}
+            />,
+          ],
+        };
+      }
+      case 'l11-tn-emergency-touch': {
+        const UphiV = Math.max(1, a);
+        const RhOhm = Math.max(1, b);
+        const RzmOhm = Math.max(0.1, c);
+        const phase = Math.min(2, Math.max(0, Math.round(d)));
+        const { UprV, ImA } = lesson11TouchEstimate({
+          network: 'TN',
+          regime: 'emergency',
+          touchedPhaseIndex: phase,
+          UphiV,
+          RhOhm,
+          RgOhm: 10,
+          RzmOhm,
+          RisoOhm: 6000,
+        });
+        const danger = classifyCurrentDanger(ImA, true);
+        return {
+          controls: (
+            <Stack spacing={1.2}>
+              <Typography variant="caption">Uφ (В): {UphiV.toFixed(0)}</Typography>
+              <Slider value={a} min={127} max={254} step={1} onChange={(_, v) => setA(v as number)} />
+              <Typography variant="caption">Rh (Ом): {RhOhm.toFixed(0)}</Typography>
+              <Slider value={b} min={300} max={5000} step={50} onChange={(_, v) => setB(v as number)} />
+              <Typography variant="caption">Rзм (Ом): {RzmOhm.toFixed(1)}</Typography>
+              <Slider value={c} min={0.5} max={80} step={0.5} onChange={(_, v) => setC(v as number)} />
+              <Typography variant="caption">Фаза касания (0=L1,1=L2,2=L3): {phase}</Typography>
+              <Slider value={phase} min={0} max={2} step={1} onChange={(_, v) => setD(v as number)} />
+            </Stack>
+          ),
+          values: [
+            <ValueLine key="v1" label="Uпр" value={`${UprV.toFixed(1)} В`} />,
+            <ValueLine key="v2" label="I" value={`${ImA.toFixed(2)} мА`} />,
+            <ValueLine
+              key="v3"
+              label="Оценка"
+              value={danger === 'safe' ? 'Безопасный уровень' : danger === 'perceptible' ? 'Ощутимый ток' : danger === 'non-releasing' ? 'Неотпускающий' : 'Опасная зона'}
+            />,
           ],
         };
       }

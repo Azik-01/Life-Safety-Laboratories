@@ -1,4 +1,4 @@
-export type LessonId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+export type LessonId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 
 export type TheorySimulatorType =
   | 'light-flux'
@@ -29,7 +29,10 @@ export type TheorySimulatorType =
   | 'electric-frequency-effect'
   | 'ground-current-spread'
   | 'step-voltage'
-  | 'equipotential-zones';
+  | 'equipotential-zones'
+  | 'l11-it-touch'
+  | 'l11-tn-normal-touch'
+  | 'l11-tn-emergency-touch';
 
 export interface TheoryMiniQuestion {
   question: string;

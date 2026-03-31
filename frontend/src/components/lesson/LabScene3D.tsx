@@ -42,7 +42,7 @@ import {
 } from '../../formulas/uhfField';
 import {
   bodyCurrentMA, totalBodyImpedance, skinImpedance, classifyCurrentDanger,
-  stepVoltage, groundPotential, safeDistance,
+  stepVoltage, groundPotential, safeDistance, lesson11TouchEstimate,
 } from '../../formulas/electricSafety';
 import FastForwardIcon from '@mui/icons-material/FastForward';
 import SlowMotionVideoIcon from '@mui/icons-material/SlowMotionVideo';
@@ -77,7 +77,7 @@ function Text(props: ComponentProps<typeof DreiText>) {
 type LampType = 'incandescent' | 'fluorescent' | 'led';
 
 interface LabSceneProps {
-  lessonId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+  lessonId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
   lightState: {
     lampType: LampType;
     intensityCd: number;
@@ -158,6 +158,16 @@ interface LabSceneProps {
     distanceM: number;
     stepLengthM: number;
     surfaceType?: 'earth' | 'sand' | 'stone';
+  };
+  threePhaseState?: {
+    network: 'IT' | 'TN';
+    regime: 'normal' | 'emergency';
+    touchedPhaseIndex: number;
+    UphiV: number;
+    RhOhm: number;
+    RgOhm: number;
+    RzmOhm: number;
+    RisoOhm: number;
   };
 }
 
@@ -1814,6 +1824,270 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
   );
 }
 
+/* ─────────────── Lesson 11: Three-phase network & touch path ─────────────── */
+
+function ThreePhaseNeutralScene({
+  state,
+  timeScale,
+}: {
+  state: NonNullable<LabSceneProps['threePhaseState']>;
+  timeScale: number;
+}) {
+  const pulseRef = useRef(0);
+  useFrame((_, delta) => {
+    pulseRef.current += delta * timeScale;
+  });
+  const { UprV, ImA } = lesson11TouchEstimate({
+    network: state.network,
+    regime: state.network === 'IT' ? 'normal' : state.regime,
+    touchedPhaseIndex: state.touchedPhaseIndex,
+    UphiV: state.UphiV,
+    RhOhm: state.RhOhm,
+    RgOhm: state.RgOhm,
+    RzmOhm: state.RzmOhm,
+    RisoOhm: state.RisoOhm,
+  });
+  const danger = classifyCurrentDanger(ImA, true);
+  const dangerColor =
+    danger === 'safe'
+      ? '#4caf50'
+      : danger === 'perceptible'
+        ? '#ff9800'
+        : danger === 'non-releasing'
+          ? '#f44336'
+          : '#d50000';
+
+  const phaseColors = ['#c62828', '#1565c0', '#2e7d32'];
+  const phaseLabels = ['L1', 'L2', 'L3'];
+  const rStar = 2.4;
+  const yW = 2.65;
+  const angles = [Math.PI / 2, Math.PI / 2 + (2 * Math.PI) / 3, Math.PI / 2 - (2 * Math.PI) / 3];
+  const phaseEnds = angles.map((a) => [rStar * Math.cos(a), yW, rStar * Math.sin(a)] as [number, number, number]);
+  const touched = Math.min(2, Math.max(0, state.touchedPhaseIndex));
+  const end = phaseEnds[touched];
+  const personPos: [number, number, number] = [end[0] * 1.28, 0.35, end[2] * 1.28];
+  const pulse = 0.55 + 0.45 * Math.abs(Math.sin(pulseRef.current * 5));
+
+  /** Поворот тела к фазе; сустав — боковое плечо (+ малый вынос вперёд), не середина груди по Z */
+  const armPose = (() => {
+    const shoulderY = 0.96;
+    const shoulderLat = 0.19;
+    const shoulderForwardZ = 0.055;
+    const wireTip = new THREE.Vector3(end[0] - personPos[0], yW - personPos[1], end[2] - personPos[2]);
+    const horizLen = Math.hypot(wireTip.x, wireTip.z);
+    const bodyYaw = horizLen > 1e-4 ? Math.atan2(wireTip.x, wireTip.z) : 0;
+    const wireLocal = wireTip.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), -bodyYaw);
+    const shoulderSign = Math.abs(wireLocal.x) > 0.025 ? Math.sign(wireLocal.x) : 1;
+    const shoulderSideX = shoulderSign * shoulderLat;
+    const shoulderLocal = new THREE.Vector3(shoulderSideX, shoulderY, shoulderForwardZ);
+    const reach = wireLocal.clone().sub(shoulderLocal);
+    const reachLen = reach.length();
+    const armYawLocal = Math.hypot(reach.x, reach.z) > 1e-4 ? Math.atan2(reach.x, reach.z) : 0;
+    const elev = (70 * Math.PI) / 180;
+    const pitchFromVertical = Math.PI / 2 - elev;
+    const armLen = Math.min(0.78, Math.max(0.42, reachLen > 1e-4 ? reachLen * 0.88 : 0.52));
+    return { bodyYaw, shoulderSideX, shoulderY, shoulderForwardZ, armYawLocal, pitchFromVertical, armLen };
+  })();
+
+  const showFault = state.network === 'TN' && state.regime === 'emergency';
+  const faultEnd = phaseEnds[0];
+  const faultGround: [number, number, number] = [faultEnd[0] * 1.15, 0.08, faultEnd[2] * 1.15];
+  const faultOnL1: [number, number, number] = [faultEnd[0] * 0.92, yW - 0.08, faultEnd[2] * 0.92];
+
+  /** Сегмент «проводник + контакт с землёй» между двумя маркерами КЗ */
+  const faultArc = (() => {
+    if (!showFault) return null;
+    const a = new THREE.Vector3(...faultOnL1);
+    const b = new THREE.Vector3(...faultGround);
+    const seg = b.clone().sub(a);
+    const segLen = seg.length();
+    if (segLen < 1e-3) return null;
+    const u = seg.clone().multiplyScalar(1 / segLen);
+    const gapTop = 0.1;
+    const gapBot = 0.09;
+    const h = Math.max(0.04, segLen - gapTop - gapBot);
+    const mid = a.clone().add(u.clone().multiplyScalar(gapTop + h / 2));
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), u);
+    return { position: mid, quat, height: h };
+  })();
+
+  const netLabel = state.network === 'IT' ? 'ИТ (изолированная нейтраль)' : 'TN (заземлённая нейтраль)';
+  const regimeLabel =
+    state.network === 'IT' ? 'нормальный режим' : state.regime === 'normal' ? 'нормальный режим' : 'авария: L1 → земля';
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
+        <planeGeometry args={[18, 18]} />
+        <meshStandardMaterial color="#e2ddd4" roughness={0.9} metalness={0.02} />
+      </mesh>
+
+      {/* Трансформатор / звезда — условно */}
+      <mesh position={[0, 1.35, 0]} castShadow>
+        <boxGeometry args={[0.55, 1.5, 0.45]} />
+        <meshStandardMaterial color="#6d6d6d" metalness={0.35} />
+      </mesh>
+      <Text fontSize={0.11} color="#eceff1" position={[0, 2.25, 0.28]}>
+        Трёхфазный источник
+      </Text>
+
+      {/* Нейтральная точка */}
+      <mesh position={[0, yW, 0]} castShadow>
+        <sphereGeometry args={[0.09, 12, 12]} />
+        <meshStandardMaterial color="#9e9e9e" emissive="#424242" emissiveIntensity={0.15} />
+      </mesh>
+      <Text fontSize={0.1} color="#bdbdbd" position={[0, yW + 0.35, 0]}>
+        N
+      </Text>
+
+      {/* Фазные проводники */}
+      {phaseEnds.map((p, i) => {
+        const dx = p[0];
+        const dz = p[2];
+        const len = Math.sqrt(dx * dx + dz * dz) || 1;
+        const ux = dx / len;
+        const uz = dz / len;
+        const midX = ux * (rStar * 0.5);
+        const midZ = uz * (rStar * 0.5);
+        const isTouched = i === touched;
+        return (
+          <group key={`ph-${i}`}>
+            <mesh position={[midX, yW, midZ]} rotation={[0, Math.atan2(dx, dz), 0]}>
+              <boxGeometry args={[0.06, 0.06, rStar]} />
+              <meshStandardMaterial
+                color={phaseColors[i]}
+                emissive={isTouched ? phaseColors[i] : '#000'}
+                emissiveIntensity={isTouched ? 0.35 : 0}
+              />
+            </mesh>
+            <Text fontSize={0.1} color={phaseColors[i]} position={[dx * 1.08, yW + 0.2, dz * 1.08]}>
+              {phaseLabels[i]}
+            </Text>
+          </group>
+        );
+      })}
+
+      {/* Заземление нейтрали (TN) */}
+      {state.network === 'TN' && (
+        <group>
+          <mesh position={[0, yW * 0.35, 0]}>
+            <cylinderGeometry args={[0.025, 0.025, yW * 0.75, 8]} />
+            <meshStandardMaterial color="#fdd835" metalness={0.5} />
+          </mesh>
+          <mesh position={[0.35, 0.12, 0]}>
+            <boxGeometry args={[0.5, 0.06, 0.35]} />
+            <meshStandardMaterial color="#795548" />
+          </mesh>
+          <Text fontSize={0.085} color="#fdd835" position={[0.9, 0.35, 0]}>
+            {`R_з = ${state.RgOhm} Ом`}
+          </Text>
+        </group>
+      )}
+
+      {state.network === 'IT' && (
+        <Text fontSize={0.09} color="#90caf9" position={[-1.2, 0.5, 2.2]}>
+          {`Нейтраль не соединена с землёй; R_из ≈ ${state.RisoOhm} Ом/фаза`}
+        </Text>
+      )}
+
+      {/* КЗ фазы на землю: точка на L1 — токоведущая связь — точка на земле */}
+      {showFault && faultArc && (
+        <group>
+          <mesh position={faultOnL1}>
+            <sphereGeometry args={[0.1, 10, 10]} />
+            <meshStandardMaterial color="#ff5722" emissive="#ff1744" emissiveIntensity={0.5 * pulse} />
+          </mesh>
+          <mesh position={faultArc.position} quaternion={faultArc.quat} castShadow>
+            <cylinderGeometry args={[0.035, 0.035, faultArc.height, 10]} />
+            <meshStandardMaterial color="#bf360c" emissive="#ff3d00" emissiveIntensity={0.25 * pulse} metalness={0.35} roughness={0.45} />
+          </mesh>
+          <mesh position={faultGround}>
+            <sphereGeometry args={[0.11, 10, 10]} />
+            <meshStandardMaterial color="#5d4037" />
+          </mesh>
+          <Text fontSize={0.085} color="#ffab91" position={[faultGround[0] + 0.55, 0.5, faultGround[2]]}>
+            {`L1→земля, R_зм = ${state.RzmOhm} Ом`}
+          </Text>
+        </group>
+      )}
+
+      {/* Человек: корпус и ноги повёрнуты к фазе (bodyYaw), рука донастроена в локальных осях */}
+      <group position={personPos}>
+        <group rotation={[0, armPose.bodyYaw, 0]}>
+          {/* Ноги вдоль ±X, «вперёд» к фазе — +Z после bodyYaw; обувь/стилизация как в теории №9 */}
+          {(() => {
+            const floorLocalY = -personPos[1];
+            const torsoBottomY = 0.55 - (0.52 / 2 + 0.2);
+            const footHalfSep = 0.1;
+            const pants = '#455a64';
+            const shoe = '#37474f';
+            const shoeCenterY = floorLocalY + 0.03;
+            const legRadius = 0.055;
+            const legCylH = Math.max(0.12, torsoBottomY - shoeCenterY - 0.03 - 2 * legRadius);
+            const legHalf = legCylH / 2 + legRadius;
+            const legCenterY = torsoBottomY - legHalf;
+            return (
+              <>
+                <mesh position={[-footHalfSep, shoeCenterY, 0]} castShadow>
+                  <boxGeometry args={[0.12, 0.06, 0.22]} />
+                  <meshStandardMaterial color={shoe} roughness={0.65} />
+                </mesh>
+                <mesh position={[footHalfSep, shoeCenterY, 0]} castShadow>
+                  <boxGeometry args={[0.12, 0.06, 0.22]} />
+                  <meshStandardMaterial color={shoe} roughness={0.65} />
+                </mesh>
+                <mesh position={[-footHalfSep, legCenterY, 0]} castShadow>
+                  <capsuleGeometry args={[legRadius, legCylH, 6, 10]} />
+                  <meshStandardMaterial color={pants} roughness={0.82} />
+                </mesh>
+                <mesh position={[footHalfSep, legCenterY, 0]} castShadow>
+                  <capsuleGeometry args={[legRadius, legCylH, 6, 10]} />
+                  <meshStandardMaterial color={pants} roughness={0.82} />
+                </mesh>
+              </>
+            );
+          })()}
+          <mesh position={[0, 0.55, 0]} castShadow>
+            <capsuleGeometry args={[0.2, 0.52, 6, 12]} />
+            <meshStandardMaterial color={dangerColor} transparent opacity={0.82} />
+          </mesh>
+          <mesh position={[0, 1.05, 0]} castShadow>
+            <sphereGeometry args={[0.16, 12, 12]} />
+            <meshStandardMaterial color="#ffccbc" />
+          </mesh>
+          <group position={[armPose.shoulderSideX, armPose.shoulderY, armPose.shoulderForwardZ]} rotation={[0, armPose.armYawLocal, 0]}>
+            <group rotation={[armPose.pitchFromVertical, 0, 0]}>
+              <mesh position={[0, armPose.armLen * 0.5, 0]} castShadow>
+                <boxGeometry args={[0.065, armPose.armLen, 0.065]} />
+                <meshStandardMaterial color="#ffccbc" />
+              </mesh>
+              {ImA > 0.5 && (
+                <mesh position={[0, armPose.armLen * 0.5, 0]}>
+                  <boxGeometry args={[0.095, armPose.armLen + 0.04, 0.095]} />
+                  <meshBasicMaterial color="#ff1744" transparent opacity={0.28 * pulse} />
+                </mesh>
+              )}
+            </group>
+          </group>
+        </group>
+      </group>
+
+      <Text fontSize={0.13} color="#fff59d" position={[2.3, 3.25, 0]}>
+        {`${netLabel} · ${regimeLabel}`}
+      </Text>
+      <Text fontSize={0.12} color="#e1f5fe" position={[2.3, 2.95, 0]}>
+        {`U_ф = ${state.UphiV} В  →  Uпр ≈ ${UprV.toFixed(1)} В`}
+      </Text>
+      <Text fontSize={0.14} color={dangerColor} position={[2.3, 2.55, 0]}>
+        {`I_h ≈ ${ImA.toFixed(2)} мА`}
+      </Text>
+      <Text fontSize={0.085} color="#b0bec5" position={[2.3, 2.22, 0]}>
+        {`Касание: ${phaseLabels[touched]} · R_h = ${state.RhOhm} Ом`}
+      </Text>
+    </>
+  );
+}
+
 /* ─────────────── Lesson 10: Step Voltage ─────────────── */
 
 function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundState']; timeScale: number }) {
@@ -2251,9 +2525,45 @@ export default function LabScene3D(props: LabSceneProps) {
       const danger = classifyCurrentDanger(I, props.bodyElecState.frequencyHz <= 60);
       return { headline: `Ток через тело: I = ${I.toFixed(2)} мА | Z = ${Zt.toFixed(0)} Ом | ${danger === 'safe' ? 'безопасный' : danger === 'perceptible' ? 'ощутимый' : danger === 'non-releasing' ? 'неотпускающий' : 'фибрилляция'}` };
     }
-    const Ush = stepVoltage(props.groundState.faultCurrentA, props.groundState.soilResistivityOhmM, props.groundState.distanceM, props.groundState.stepLengthM);
-    const phi = groundPotential(props.groundState.faultCurrentA, props.groundState.soilResistivityOhmM, props.groundState.distanceM);
-    return { headline: `Напряжение шага: Uш = ${Ush.toFixed(1)} В | φ = ${phi.toFixed(1)} В | x = ${props.groundState.distanceM} м` };
+    if (props.lessonId === 10) {
+      const Ush = stepVoltage(props.groundState.faultCurrentA, props.groundState.soilResistivityOhmM, props.groundState.distanceM, props.groundState.stepLengthM);
+      const phi = groundPotential(props.groundState.faultCurrentA, props.groundState.soilResistivityOhmM, props.groundState.distanceM);
+      return { headline: `Напряжение шага: Uш = ${Ush.toFixed(1)} В | φ = ${phi.toFixed(1)} В | x = ${props.groundState.distanceM} м` };
+    }
+    if (props.lessonId === 11) {
+      const s = props.threePhaseState;
+      if (!s) {
+        return { headline: 'Трёхфазная сеть: задайте параметры в панели управления.' };
+      }
+      const effRegime = s.network === 'IT' ? 'normal' : s.regime;
+      const { UprV, ImA } = lesson11TouchEstimate({
+        network: s.network,
+        regime: effRegime,
+        touchedPhaseIndex: s.touchedPhaseIndex,
+        UphiV: s.UphiV,
+        RhOhm: s.RhOhm,
+        RgOhm: s.RgOhm,
+        RzmOhm: s.RzmOhm,
+        RisoOhm: s.RisoOhm,
+      });
+      const danger = classifyCurrentDanger(ImA, true);
+      const dText =
+        danger === 'safe'
+          ? 'зона безопасности'
+          : danger === 'perceptible'
+            ? 'ощутимый ток'
+            : danger === 'non-releasing'
+              ? 'неотпускающий ток'
+              : 'опасная зона';
+      const net = s.network === 'IT' ? 'ИТ' : 'TN';
+      const reg =
+        s.network === 'IT' ? 'нормальный режим' : s.regime === 'normal' ? 'нормальный режим' : 'аварийный (КЗ L1)';
+      const ph = ['L1', 'L2', 'L3'][Math.min(2, Math.max(0, s.touchedPhaseIndex))];
+      return {
+        headline: `${net} · ${reg} · касание ${ph}: Uпр ≈ ${UprV.toFixed(1)} В, I ≈ ${ImA.toFixed(2)} мА (${dText})`,
+      };
+    }
+    return { headline: 'Занятие не установлено.' };
   }, [props, tvModel, tvSelectedIndex]);
 
   const signalChart = useMemo(() => {
@@ -2383,6 +2693,10 @@ export default function LabScene3D(props: LabSceneProps) {
           {props.lessonId === 8 && 'Сцена симулирует телевещание: отдельно видео и звук. При слабом сигнале появляются помехи/рассинхрон, усилители включаются отдельно для видео и для звука. График строится после цикла 8.6→8.5→8.4.'}
           {props.lessonId === 9 && 'Сцена демонстрирует эквивалентную схему «напряжение → тело → земля» с визуализацией опасности тока через человека.'}
           {props.lessonId === 10 && 'Сцена показывает растекание тока замыкания в грунте, эквипотенциальные зоны и напряжение шага между ногами человека.'}
+          {props.lessonId === 11 &&
+            'Звезда трёхфазного источника, нейтраль (ИТ без соединения с землёй, TN с заземлением через R_з). В аварии TN показано КЗ фазы L1 на землю — меняется цепь касания и оценка Uпр, I_h по упрощённой модели из занятия.'}
+          {props.lessonId === 12 &&
+            'Интерактивная сцена для занятия №12 пока не подключена. Расчёты выполняйте по материалам вкладки «Теория» и таблицам варианта.'}
         </Alert>
       )}
       <Box sx={{ height: { xs: 320, md: 420 }, borderRadius: 1, overflow: 'hidden' }}>
@@ -2393,9 +2707,11 @@ export default function LabScene3D(props: LabSceneProps) {
               ? [8, 5, 10]
               : props.lessonId === 10
                 ? [10, 6, 10]
-                : props.lessonId === 8
-                  ? [6.8, 5, 8.2]
-                  : [8, 5, 8],
+                : props.lessonId === 11
+                  ? [7.5, 5.2, 7.5]
+                  : props.lessonId === 8
+                    ? [6.8, 5, 8.2]
+                    : [8, 5, 8],
             fov: 46,
           }}
         >
@@ -2444,6 +2760,20 @@ export default function LabScene3D(props: LabSceneProps) {
           )}
           {props.lessonId === 9 && <BodyElectricScene state={props.bodyElecState} timeScale={timeScale} />}
           {props.lessonId === 10 && <StepVoltageScene state={props.groundState} timeScale={timeScale} />}
+          {props.lessonId === 11 && props.threePhaseState && (
+            <ThreePhaseNeutralScene state={props.threePhaseState} timeScale={timeScale} />
+          )}
+          {props.lessonId === 12 && (
+            <group>
+              <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+                <planeGeometry args={[10, 6]} />
+                <meshStandardMaterial color="#eceff1" roughness={0.95} />
+              </mesh>
+              <Text position={[0, 0.35, 0]} color="#37474f" fontSize={0.22}>
+                Занятие 12 — визуализация появится позже
+              </Text>
+            </group>
+          )}
           <OrbitControls enablePan={false} />
           <hemisphereLight args={['#b1e1ff', '#b97a20', 0.25]} />
         </SafeCanvas>

@@ -172,3 +172,58 @@ export function safeDistance(
   }
   return x;
 }
+
+/* ─── Lab 11: Three-phase touch (pedagogical estimate) ─── */
+
+export type Lesson11Network = 'IT' | 'TN';
+export type Lesson11Regime = 'normal' | 'emergency';
+
+export interface Lesson11TouchParams {
+  network: Lesson11Network;
+  regime: Lesson11Regime;
+  /** Индекс фазы 0..2, к которой прикасаются (L1..L3) */
+  touchedPhaseIndex: number;
+  UphiV: number;
+  RhOhm: number;
+  /** R_з — сопротивление заземления нейтрали, Ом (TN) */
+  RgOhm: number;
+  /** R_зм — контакт КЗ фазы на землю, Ом (авария TN) */
+  RzmOhm: number;
+  /** Эквивалентное сопротивление изоляции одной фазы относительно земли, Ом (IT; ветви параллельно дают R/3 на путь) */
+  RisoOhm: number;
+}
+
+/**
+ * Упрощённая оценка Uпр и I для наглядной модели (занятие 11).
+ * IT: цепь через последовательное R_h и R_iso/3.
+ * TN норма: делитель U_ф между R_h и R_з.
+ * TN авария: фаза 0 замкнута на землю через R_зм; касание исправной фазы — по форме U_л·R_h/(R_h+R_зм).
+ */
+export function lesson11TouchEstimate(p: Lesson11TouchParams): { UprV: number; ImA: number } {
+  const U = Math.max(1e-6, p.UphiV);
+  const Rh = Math.max(1, p.RhOhm);
+  const Rg = Math.max(0.01, p.RgOhm);
+  const Rzm = Math.max(0.01, p.RzmOhm);
+  const Riso = Math.max(10, p.RisoOhm);
+
+  if (p.network === 'IT') {
+    const Rret = Riso / 3;
+    const Upr = (U * Rh) / (Rh + Rret);
+    return { UprV: Upr, ImA: (Upr / Rh) * 1000 };
+  }
+
+  if (p.regime === 'normal') {
+    const Upr = (U * Rh) / (Rh + Rg);
+    return { UprV: Upr, ImA: (Upr / Rh) * 1000 };
+  }
+
+  const faultPhase = 0;
+  const touched = Math.min(2, Math.max(0, Math.floor(p.touchedPhaseIndex)));
+  if (touched === faultPhase) {
+    const Upr = (U * Rzm) / (Rzm + Rh);
+    return { UprV: Upr, ImA: (Upr / Rh) * 1000 };
+  }
+  const sqrt3 = Math.sqrt(3);
+  const Upr = (sqrt3 * U * Rh) / (Rh + Rzm);
+  return { UprV: Upr, ImA: (Upr / Rh) * 1000 };
+}

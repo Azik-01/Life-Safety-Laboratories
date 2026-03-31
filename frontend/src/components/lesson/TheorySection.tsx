@@ -35,11 +35,79 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
   const lesson = lessonId ? getLessonById(lessonId) : undefined;
   const theoryModules = lesson?.theoryModules ?? [];
   const glossary = useMemo(() => (knowledgeLayer ? buildGlossary(knowledgeLayer) : {}), [knowledgeLayer]);
-  const [detailedMode, setDetailedMode] = useState(true);
+  /** Раньше «краткий режим» полностью скрывал рисунки — формулы оставались; из‑за этого казалось, что «рисунки не отображаются». */
+  const [diagramsCompact, setDiagramsCompact] = useState(false);
 
   /* ─── Build interleaved content list ─── */
   const interleavedContent = useMemo(() => {
     if (!knowledgeLayer || !lessonId) return [];
+
+    /* Явный порядок из contentFlow (например, занятие №11 — как в txt методички). */
+    if (knowledgeLayer.contentFlow && knowledgeLayer.contentFlow.length > 0) {
+      const flowItems: Array<{ type: 'theory' | 'formula' | 'figure' | 'scene'; data: unknown }> = [];
+      if (shouldInlineGoalInTheory(lessonId) && knowledgeLayer.goal?.trim()) {
+        flowItems.push({
+          type: 'theory',
+          data: {
+            id: `${knowledgeLayer.id}-goal`,
+            heading: 'Цель работы',
+            text: knowledgeLayer.goal.trim(),
+            keywords: ['цель работы'],
+          },
+        });
+      }
+      const theoryById = new Map(knowledgeLayer.theory.map((t) => [t.id, t]));
+      const formulaById = new Map(knowledgeLayer.formulas.map((f) => [f.id, f]));
+      const figureById = new Map(knowledgeLayer.figures.map((g) => [g.id, g]));
+      for (const flow of knowledgeLayer.contentFlow) {
+        if (flow.step === 'theory') {
+          const b = theoryById.get(flow.blockId);
+          if (b) flowItems.push({ type: 'theory', data: b });
+        } else if (flow.step === 'formula') {
+          const f = formulaById.get(flow.id);
+          if (f) flowItems.push({ type: 'formula', data: f });
+        } else {
+          const fig = figureById.get(flow.id);
+          if (fig) flowItems.push({ type: 'figure', data: fig });
+        }
+      }
+
+      /* contentFlow раньше полностью отбрасывал 3D-сцены из theoryModules — добавляем с тем же правилом, что и без flow */
+      const theoriesInFlow = knowledgeLayer.contentFlow
+        .filter((s): s is { step: 'theory'; blockId: string } => s.step === 'theory')
+        .map((s) => s.blockId);
+      const moduleByTheoryId = new Map<string, TheoryModule>();
+      const moduleCount = theoryModules.length;
+      const theoryCount = theoriesInFlow.length;
+      if (moduleCount > 0 && theoryCount > 0) {
+        const ratio = moduleCount / theoryCount;
+        theoriesInFlow.forEach((blockId, tIdx) => {
+          const moduleIdx = Math.min(Math.floor(tIdx * ratio), moduleCount - 1);
+          moduleByTheoryId.set(blockId, theoryModules[moduleIdx]);
+        });
+      }
+
+      const merged: typeof flowItems = [];
+      const usedSimulators = new Set<string>();
+      for (const item of flowItems) {
+        merged.push(item);
+        if (item.type === 'theory') {
+          const block = item.data as { id: string };
+          const mod = moduleByTheoryId.get(block.id);
+          if (mod && !usedSimulators.has(mod.simulator)) {
+            merged.push({ type: 'scene', data: mod });
+            usedSimulators.add(mod.simulator);
+          }
+        }
+      }
+      theoryModules.forEach((mod) => {
+        if (!usedSimulators.has(mod.simulator)) {
+          merged.push({ type: 'scene', data: mod });
+          usedSimulators.add(mod.simulator);
+        }
+      });
+      return merged;
+    }
 
     const theoryBlocks = theoryBlocksWithGoal(knowledgeLayer, lessonId);
     const goalShift =
@@ -186,11 +254,6 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
     return items;
   }, [knowledgeLayer, theoryModules, lessonId]);
 
-  const visibleContent = useMemo(
-    () => (detailedMode ? interleavedContent : interleavedContent.filter((item) => item.type !== 'figure')),
-    [detailedMode, interleavedContent],
-  );
-
   useEffect(() => {
     if (!lessonId || !knowledgeLayer) return;
     theoryBlocksWithGoal(knowledgeLayer, lessonId).forEach((block) =>
@@ -210,9 +273,9 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
     <Stack spacing={2}>
       <Stack direction="row" justifyContent="flex-end">
         <Chip
-          label={detailedMode ? 'Подробный режим' : 'Краткий режим'}
-          color={detailedMode ? 'primary' : 'default'}
-          onClick={() => setDetailedMode((prev) => !prev)}
+          label={diagramsCompact ? 'Рисунки: компактно' : 'Рисунки: обычный размер'}
+          color={diagramsCompact ? 'default' : 'primary'}
+          onClick={() => setDiagramsCompact((prev) => !prev)}
           variant="outlined"
           size="small"
         />
@@ -227,7 +290,7 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
             Теория, формулы, сцены и иллюстрации идут в том порядке, в котором студент выполняет расчёт по методичке.
           </Typography>
           <Stack spacing={1.5}>
-            {visibleContent.map((item) => {
+            {interleavedContent.map((item) => {
               if (item.type === 'theory') {
                 const block = item.data as { id: string; heading: string; text: string; keywords: string[] };
                 return <KnowledgeBlock key={block.id} block={block} glossary={glossary} />;
@@ -245,7 +308,9 @@ export default function TheorySection({ lessonId }: TheorySectionProps) {
                 );
               }
               const figure = item.data as { id: string; path: string; caption: string };
-              return <FigureZoom key={figure.id} src={figure.path} caption={figure.caption} />;
+              return (
+                <FigureZoom key={figure.id} src={figure.path} caption={figure.caption} compact={diagramsCompact} />
+              );
             })}
           </Stack>
         </CardContent>

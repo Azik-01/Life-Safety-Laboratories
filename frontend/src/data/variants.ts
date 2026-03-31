@@ -395,6 +395,86 @@ function lesson10Values(base: number): Record<string, number> {
   };
 }
 
+function lesson11Values(base: number): Record<string, number> {
+  return {
+    UphiV: 210 + base * 8,
+    bodyResistanceOhm: 750 + base * 120,
+  };
+}
+
+/* ─── Lab 12: Table 12.1 (penultimate digit) + Table 12.2 (last digit) ─── */
+const L12_SOIL = [
+  'Песок влажный',
+  'Сухой песок',
+  'Суглинок',
+  'Глина',
+  'Чернозём',
+  'Торф',
+  'Песок влажный',
+  'Сухой песок',
+  'Суглинок',
+  'Чернозём',
+] as const;
+const L12_RHO = [500, 300, 80, 60, 50, 25, 450, 350, 90, 65] as const;
+const L12_RN = [4, 10, 20, 4, 10, 20, 4, 10, 20, 4] as const;
+const L12_ZN = [0.8, 1.4, 1.6, 2, 2.4, 3.2, 3.6, 4.5, 5, 6.3] as const;
+const L12_ZH = [0.5, 0.9, 0.9, 1, 1.2, 1.8, 2.1, 2.8, 3.0, 4.0] as const;
+const L12_RZM = [100, 150, 100, 75, 50, 50, 100, 100, 200, 100] as const;
+const L12_L = [4, 6, 2, 3, 2, 3, 2, 3, 2, 3] as const;
+const L12_D = [0.03, 0.05, 0.07, 0.03, 0.05, 0.07, 0.03, 0.05, 0.07, 0.03] as const;
+const L12_T = [2, 2.5, 2, 2.5, 2, 2.5, 2, 2.5, 2, 2.5] as const;
+const L12_ETA = [0.65, 0.67, 0.69, 0.71, 0.73, 0.75, 0.77, 0.79, 0.81, 0.83] as const;
+
+/** Столбцы таблиц 12.1 / 12.2: порядок 1…9, 0 → индекс 0…9. */
+function lesson12TicketDigitColumnIndex(digit: number): number {
+  const d = ((digit % 10) + 10) % 10;
+  return d === 0 ? 9 : d - 1;
+}
+
+function lesson12Table1Values(penultimateDigit: number): Record<string, number | string> {
+  const i = lesson12TicketDigitColumnIndex(penultimateDigit);
+  return { soilType: L12_SOIL[i], rhoOhmM: L12_RHO[i] };
+}
+
+function lesson12Table2Values(lastDigit: number): Record<string, number> {
+  const i = lesson12TicketDigitColumnIndex(lastDigit);
+  return {
+    UphiV: 220,
+    RnOhm: L12_RN[i],
+    ZnOhm: L12_ZN[i],
+    ZHOhm: L12_ZH[i],
+    RzmOhm: L12_RZM[i],
+    lPipeM: L12_L[i],
+    dPipeM: L12_D[i],
+    tPipeM: L12_T[i],
+    etaZ: L12_ETA[i],
+  };
+}
+
+export function lesson12MergedValues(lastDigit: number, penultimateDigit: number): Record<string, number | string> {
+  return { ...lesson12Table1Values(penultimateDigit), ...lesson12Table2Values(lastDigit) };
+}
+
+const sourceNote12 =
+  'Таблица 12.1 (предпоследняя цифра) + таблица 12.2 (последняя цифра). U_ф = 220 В для всех вариантов.';
+
+const lesson12Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: lesson12Table2Values(digit),
+  sourceNote: sourceNote12,
+  validated: true,
+}));
+
+/** Таблица 12.1 — по предпоследней цифре (отображение в лабораторной). */
+export const lesson12Table1Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: lesson12Table1Values(digit),
+  sourceNote: 'Таблица 12.1 методички',
+  validated: true,
+}));
+
 /* ─── Data category exports: lab vs theory split ─── */
 
 /** Lab 6 lab-specific data (student variant values from tables 6.1 + 6.2) */
@@ -446,6 +526,11 @@ export const lessonVariants: Record<LessonId, LabVariant[]> = {
   8: lesson8Variants,
   9: makeVariants('Лабораторная работа без вариантной таблицы; параметры задаются для моделирования.', lesson9Values),
   10: makeVariants('Лабораторная работа без вариантной таблицы; расчёт зоны растекания тока.', lesson10Values),
+  11: makeVariants(
+    'Исходные данные по варианту: последняя цифра номера зачётной книжки (как табл. 6.1 у работы 6). Параметры Uφ, R_h.',
+    lesson11Values,
+  ),
+  12: lesson12Variants,
 };
 
 export function pickVariantByTicketDigits(lessonId: LessonId, ticketInput: string): LabVariant {
@@ -482,6 +567,11 @@ export function pickVariantByTicketDigits(lessonId: LessonId, ticketInput: strin
   if (lessonId === 8) {
     const base = lessonVariants[8].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[8][0];
     return { ...base, values: lesson8MergedValues(lastDigit, penultimateDigit) };
+  }
+
+  if (lessonId === 12) {
+    const base = lessonVariants[12].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[12][0];
+    return { ...base, values: lesson12MergedValues(lastDigit, penultimateDigit) };
   }
 
   return lessonVariants[lessonId].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[lessonId][0];

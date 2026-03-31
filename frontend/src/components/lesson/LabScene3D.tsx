@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { Alert, Box, Chip, IconButton, Paper, Slider, Stack, Tooltip, Typography } from '@mui/material';
-import { Billboard, OrbitControls, Text as DreiText } from '@react-three/drei';
+import { Billboard, Edges, OrbitControls, Text as DreiText } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh } from 'three';
 import * as THREE from 'three';
@@ -52,6 +52,7 @@ import {
   lesson12TnLabEstimate,
   type Lesson12TnScenario,
 } from '../../formulas/electricSafety';
+import { lesson13FireLabMetrics, lesson13VaporVolumeM3 } from '../../formulas/fireSafety';
 import FastForwardIcon from '@mui/icons-material/FastForward';
 import SlowMotionVideoIcon from '@mui/icons-material/SlowMotionVideo';
 import type { ComponentProps } from 'react';
@@ -85,7 +86,7 @@ function Text(props: ComponentProps<typeof DreiText>) {
 type LampType = 'incandescent' | 'fluorescent' | 'led';
 
 interface LabSceneProps {
-  lessonId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
+  lessonId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
   lightState: {
     lampType: LampType;
     intensityCd: number;
@@ -187,6 +188,23 @@ interface LabSceneProps {
     RnOhm: number;
     RzmOhm: number;
     RhOhm: number;
+  };
+  /** Занятие 13: ЛВЖ, испарение с площади Sₐ, концентрация и ΔP (13.1–13.6) */
+  fireSafetyState?: {
+    lvjName: string;
+    eta: number;
+    V_m3: number;
+    G_kgm3: number;
+    Vsv_m3: number;
+    SA_m2: number;
+    KH: number;
+    t_evap_h: number;
+    rhoP: number;
+    Cnkr: number;
+    Pmax: number;
+    PH: number;
+    M: number;
+    sparkOn: boolean;
   };
 }
 
@@ -2591,6 +2609,282 @@ function StepVoltageScene({ state, timeScale }: { state: LabSceneProps['groundSt
   );
 }
 
+/* ─────────────── Lesson 13: LFL vapor cloud, spill area, ignition ─────────────── */
+
+function FireSafetyLabScene({
+  state,
+  timeScale,
+}: {
+  state: NonNullable<LabSceneProps['fireSafetyState']>;
+  timeScale: number;
+}) {
+  const metrics = useMemo(
+    () =>
+      lesson13FireLabMetrics({
+        lvjName: state.lvjName,
+        eta: state.eta,
+        V_m3: state.V_m3,
+        G_kgm3: state.G_kgm3,
+        Vsv_m3: state.Vsv_m3,
+        SA_m2: state.SA_m2,
+        KH: state.KH,
+        t_evap_h: state.t_evap_h,
+        rhoP: state.rhoP,
+        Cnkr: state.Cnkr,
+        Pmax: state.Pmax,
+        PH: state.PH,
+        M: state.M,
+      }),
+    [state],
+  );
+
+  const cloudRef = useRef<THREE.Group>(null);
+  const sparkRef = useRef<THREE.PointLight>(null);
+  const timeR = useRef(0);
+
+  /**
+   * Пол квадратный: сторона = диаметр лужи при макс. Sₐ табл. 13.1 + запас, без искусственного урезания r по варианту.
+   * Синхронизировано с max(L13_SA) в data/variants.ts (= 140 м²).
+   */
+  const METERS_TO_SCENE = 0.72;
+  const LESSON13_SA_MAX_M2 = 140;
+  const LESSON13_FLOOR_PAD_M = 1.2;
+  const rSpillMaxM = Math.sqrt(LESSON13_SA_MAX_M2 / Math.PI);
+  const floorSideM = 2 * rSpillMaxM + LESSON13_FLOOR_PAD_M;
+  const roomWm = floorSideM;
+  const roomDm = floorSideM;
+  /** Высота зала только от Vсв варианта (табл. 13.2); площадь пола не меняется. Диапазон Vсв в таблице: 110…200 м³. */
+  const LESSON13_VSV_MIN = 110;
+  const LESSON13_VSV_MAX = 200;
+  const vsvForHeight = Math.max(LESSON13_VSV_MIN, Math.min(LESSON13_VSV_MAX, state.Vsv_m3));
+  const vsvU = (vsvForHeight - LESSON13_VSV_MIN) / (LESSON13_VSV_MAX - LESSON13_VSV_MIN);
+  const roomHm = 3.2 + vsvU * 4.35;
+  const roomW = roomWm * METERS_TO_SCENE;
+  const roomD = roomDm * METERS_TO_SCENE;
+  const roomH = roomHm * METERS_TO_SCENE;
+
+  const wallT = 0.04;
+  const wx = roomW / 2;
+  const wz = roomD / 2;
+
+  /** Радиус лужи строго по Sₐ варианта (площадь рассчитана под максимум). */
+  const rSpillM = Math.sqrt(Math.max(0.5, state.SA_m2) / Math.PI);
+  const spillR = Math.max(0.06, rSpillM * METERS_TO_SCENE);
+  const spillCx = 0;
+  const spillCz = 0;
+
+  const cn = Math.max(0.05, state.Cnkr);
+  const concRatio = Math.min(2.5, metrics.C_pct / cn);
+
+  const vaporColor = (() => {
+    if (!metrics.aboveNkp) return '#90caf9';
+    if (state.sparkOn) return '#ff5252';
+    return '#ffb74d';
+  })();
+
+  const vaporOpacity = Math.min(0.55, 0.14 + concRatio * 0.14);
+
+  const Vp_m3 = lesson13VaporVolumeM3(state.G_kgm3, state.V_m3, state.rhoP);
+
+  const halfFloor = Math.min(wx, wz);
+  /**
+   * В плане — от лужи. Низкий потолок не должен уменьшать радиус (иначе при большой Sₐ и малом Vсв облако «пропадает»):
+   * режем только вертикальный scale sy, облако становится более «плоским», но широким.
+   */
+  const cloudY = Math.min(
+    roomH * 0.48,
+    Math.max(0.28, spillR * 0.18 + roomH * 0.12),
+  );
+  const cloudBaseR = Math.max(
+    0.22,
+    Math.min(spillR * 0.84, halfFloor - 0.22),
+  );
+  const headroom = Math.max(0.1, roomH - cloudY - 0.14);
+  const syCap = headroom / Math.max(cloudBaseR * 0.98, 0.15);
+
+  useFrame((_, delta) => {
+    timeR.current += delta * timeScale;
+    const t = timeR.current;
+    if (cloudRef.current) {
+      const pulse = 1 + 0.05 * Math.sin(t * 3);
+      const threat = metrics.aboveNkp && state.sparkOn ? 1 + 0.1 * Math.sin(t * 12) : 1;
+      const cAnim = Math.min(1.8, concRatio);
+      const syWish = (0.4 + 0.055 * cAnim) * pulse * threat;
+      const sy = Math.min(syWish, syCap);
+      const squash = sy < 0.42 ? 1 + (0.42 - sy) * 0.35 : 1;
+      const sXZ = 0.96 * squash * pulse * threat;
+      cloudRef.current.scale.set(sXZ, sy, sXZ);
+    }
+    if (sparkRef.current && state.sparkOn) {
+      sparkRef.current.intensity = 1.4 + 1 * Math.sin(t * 20) ** 2;
+    }
+  });
+
+  const sparkAngle = Math.PI * 0.25;
+  const sparkX = spillCx + Math.cos(sparkAngle) * spillR * 0.92;
+  const sparkZ = spillCz + Math.sin(sparkAngle) * spillR * 0.92;
+
+  /** Вход — открытый торец со стороны +Z; подписи выше проёма и чуть в −Z (над порогом). */
+  const titleAnchorZ = wz - 0.48;
+  const titleBaseY = roomH + 1.42;
+
+  return (
+    <>
+      <group position={[0, 0, 0]}>
+        {/* Площадка = пол помещения (один размер) */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+          <planeGeometry args={[roomW, roomD]} />
+          <meshStandardMaterial color="#cfd8dc" roughness={0.9} />
+        </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]} receiveShadow>
+          <planeGeometry args={[roomW * 0.98, roomD * 0.98]} />
+          <meshStandardMaterial color="#eceff1" roughness={0.88} />
+        </mesh>
+
+        {/* Потолок */}
+        <mesh position={[0, roomH, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[roomW, roomD]} />
+          <meshStandardMaterial
+            color="#cfd8dc"
+            metalness={0.04}
+            roughness={0.72}
+            transparent
+            opacity={0.42}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+
+        {/* Стена −X */}
+        <mesh position={[-wx - wallT / 2, roomH / 2, 0]} rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[roomD, roomH]} />
+          <meshStandardMaterial
+            color="#cfd8dc"
+            metalness={0.04}
+            roughness={0.72}
+            transparent
+            opacity={0.42}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+
+        {/* Стена +X */}
+        <mesh position={[wx + wallT / 2, roomH / 2, 0]} rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[roomD, roomH]} />
+          <meshStandardMaterial
+            color="#cfd8dc"
+            metalness={0.04}
+            roughness={0.72}
+            transparent
+            opacity={0.42}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+
+        {/* Задняя стена −Z (камера смотрит с +Z) */}
+        <mesh position={[0, roomH / 2, -wz - wallT / 2]}>
+          <planeGeometry args={[roomW + wallT * 2, roomH]} />
+          <meshStandardMaterial
+            color="#cfd8dc"
+            metalness={0.04}
+            roughness={0.72}
+            transparent
+            opacity={0.42}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+
+        {/* Контур внутреннего объёма */}
+        <mesh position={[0, roomH / 2, 0]}>
+          <boxGeometry args={[roomW, roomH, roomD]} />
+          <meshStandardMaterial transparent opacity={0} depthWrite={false} />
+          <Edges threshold={18} color="#37474f" />
+        </mesh>
+
+        {/* Пятно пролива: площадь Sₐ варианта → радиус на полу */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[spillCx, 0.012, spillCz]} receiveShadow>
+          <circleGeometry args={[spillR, 48]} />
+          <meshStandardMaterial
+            color={metrics.aboveNkp ? '#5d4037' : '#6d4c41'}
+            roughness={0.75}
+            metalness={0.05}
+            transparent
+            opacity={0.92}
+          />
+        </mesh>
+
+        {/* Облако паров */}
+        <group ref={cloudRef} position={[spillCx, cloudY, spillCz]}>
+          <mesh>
+            <sphereGeometry args={[cloudBaseR, 28, 28]} />
+            <meshStandardMaterial
+              color={vaporColor}
+              transparent
+              opacity={vaporOpacity}
+              roughness={0.95}
+              metalness={0}
+              emissive={metrics.aboveNkp && state.sparkOn ? '#b71c1c' : '#000000'}
+              emissiveIntensity={metrics.aboveNkp && state.sparkOn ? 0.35 : 0}
+            />
+          </mesh>
+        </group>
+
+        {/* Искра у края пролива */}
+        <group position={[sparkX, 0.22, sparkZ]}>
+          <mesh visible={state.sparkOn}>
+            <sphereGeometry args={[0.11, 12, 12]} />
+            <meshStandardMaterial color="#fff59d" emissive="#ffab00" emissiveIntensity={2.2} />
+          </mesh>
+          <pointLight
+            ref={sparkRef}
+            position={[0, 0.06, 0]}
+            color="#ffecb3"
+            intensity={state.sparkOn ? 1.5 : 0}
+            distance={6}
+            decay={2}
+          />
+        </group>
+
+        {/* Числа варианта; площадка по max Sₐ табл. 13.1 */}
+        <Text position={[-wx + 0.45, 0.38, wz - 0.45]} fontSize={0.12} color="#b0bec5" maxWidth={7.5}>
+          {`План ${roomWm.toFixed(1)}×${roomDm.toFixed(1)} м · H≈${roomHm.toFixed(2)} м от Vсв=${state.Vsv_m3} м³ · V=${state.V_m3} м³`}
+        </Text>
+        <Text position={[-wx + 0.45, 0.14, wz - 0.45]} fontSize={0.1} color="#cfd8dc" maxWidth={7.5}>
+          {`Sₐ=${state.SA_m2} м² · Vп≈${Vp_m3.toFixed(2)} м³ (13.2) · табл.13.2 по предпосл. цифре`}
+        </Text>
+      </group>
+
+      {/* Блок расчётных подписей над открытым входом (+Z) */}
+      <Text position={[0, titleBaseY + 0.52, titleAnchorZ]} fontSize={0.22} color="#eceff1">
+        {`ЛВЖ: ${state.lvjName}`}
+      </Text>
+      <Text position={[0, titleBaseY + 0.14, titleAnchorZ]} fontSize={0.155} color="#cfd8dc">
+        {`C ≈ ${metrics.C_pct.toFixed(2)} %  ·  НКПР ${metrics.Cnkr_pct.toFixed(1)} %  ·  Cст ≈ ${metrics.Cst_pct.toFixed(2)} %`}
+      </Text>
+      <Text position={[0, titleBaseY - 0.22, titleAnchorZ]} fontSize={0.14} color="#b0bec5">
+        {`W ≈ ${metrics.W_kg_m2_s.toExponential(2)} кг/(м²·с)  ·  m ≈ ${metrics.m_kg.toFixed(2)} кг`}
+      </Text>
+      <Text position={[0, titleBaseY - 0.5, titleAnchorZ]} fontSize={0.14} color="#b0bec5">
+        {`ΔP ≈ ${metrics.deltaP_kPa.toFixed(2)} кПа`}
+      </Text>
+      <Text
+        position={[0, titleBaseY - 0.78, titleAnchorZ]}
+        fontSize={0.15}
+        color={metrics.roomCategoryAExplosive ? '#c62828' : '#2e7d32'}
+      >
+        {metrics.roomCategoryAExplosive
+          ? 'Кат. помещ. А по ΔP (> 5 кПа)'
+          : 'ΔP ≤ 5 кПа (модель) — уточните в отчёте'}
+      </Text>
+
+      <pointLight position={[-6, roomH * 0.9, 7]} intensity={0.55} distance={40} decay={2} color="#e3f2fd" />
+    </>
+  );
+}
+
 /* ─────────────── Main Component with Time Control ─────────────── */
 
 export default function LabScene3D(props: LabSceneProps) {
@@ -2857,6 +3151,32 @@ export default function LabScene3D(props: LabSceneProps) {
         headline: `TN: I_к.з. ≈ ${r.IkzA.toFixed(1)} А · U_корп ≈ ${r.UenclosureV.toFixed(1)} В · I_h ≈ ${r.IbodyMA.toFixed(2)} мА (${dz})`,
       };
     }
+    if (props.lessonId === 13) {
+      const s = props.fireSafetyState;
+      if (!s) {
+        return { headline: 'Занятие 13: задайте вариант (табл. 13.1–13.2) и откройте лабораторную сцену.' };
+      }
+      const m = lesson13FireLabMetrics({
+        lvjName: s.lvjName,
+        eta: s.eta,
+        V_m3: s.V_m3,
+        G_kgm3: s.G_kgm3,
+        Vsv_m3: s.Vsv_m3,
+        SA_m2: s.SA_m2,
+        KH: s.KH,
+        t_evap_h: s.t_evap_h,
+        rhoP: s.rhoP,
+        Cnkr: s.Cnkr,
+        Pmax: s.Pmax,
+        PH: s.PH,
+        M: s.M,
+      });
+      const nk = m.aboveNkp ? '≥ НКПР' : '< НКПР';
+      const catA = m.roomCategoryAExplosive ? 'да' : 'нет';
+      return {
+        headline: `${s.lvjName}: C ≈ ${m.C_pct.toFixed(2)} % (${nk}) | ΔP ≈ ${m.deltaP_kPa.toFixed(2)} кПа | кат. А по ΔP: ${catA}`,
+      };
+    }
     return { headline: 'Занятие не установлено.' };
   }, [props, tvModel, tvSelectedIndex]);
 
@@ -2991,9 +3311,17 @@ export default function LabScene3D(props: LabSceneProps) {
             'Звезда трёхфазного источника, нейтраль (ИТ без соединения с землёй, TN с заземлением через R_з). В аварии TN показано КЗ фазы L1 на землю — меняется цепь касания и оценка Uпр, I_h по упрощённой модели из занятия.'}
           {props.lessonId === 12 &&
             'Сцена: трёхфазная сеть с занулённым корпусом, заземление нейтрали R_0 и (при сценарии) повторное R_n. Выберите режим — КЗ на корпус, обрыв нуля или фаза на землю; оценки I_к.з., U на корпусе и I_h согласованы с формулами 12.2–12.13 (упрощённая модель). Числа Z_n, Z_H, R_n, R_зм — из вашего варианта (табл. 12.2).'}
+          {props.lessonId === 13 &&
+            'Сцена: план пола под max Sₐ (табл. 13.1), высота зала от Vсв (табл. 13.2). Лужа и ширина облака в плане — от Sₐ; цвет/прозрачность и чуть высота шара — от C и НКПР. C, ΔP, Vп — по формулам (13.1)–(13.6).'}
         </Alert>
       )}
-      <Box sx={{ height: { xs: 320, md: 420 }, borderRadius: 1, overflow: 'hidden' }}>
+      <Box
+        sx={{
+          height: props.lessonId === 13 ? { xs: 400, md: 540 } : { xs: 320, md: 420 },
+          borderRadius: 1,
+          overflow: 'hidden',
+        }}
+      >
         <SafeCanvas
           shadows
           camera={{
@@ -3003,10 +3331,12 @@ export default function LabScene3D(props: LabSceneProps) {
                 ? [10, 6, 10]
                 : props.lessonId === 11 || props.lessonId === 12
                   ? [7.5, 5.2, 7.5]
-                  : props.lessonId === 8
-                    ? [6.8, 5, 8.2]
-                    : [8, 5, 8],
-            fov: 46,
+                  : props.lessonId === 13
+                    ? [5.9, 4.7, 7.4]
+                    : props.lessonId === 8
+                      ? [6.8, 5, 8.2]
+                      : [8, 5, 8],
+            fov: props.lessonId === 13 ? 52 : 46,
           }}
         >
           <ambientLight intensity={0.2} />
@@ -3060,7 +3390,21 @@ export default function LabScene3D(props: LabSceneProps) {
           {props.lessonId === 12 && props.tnEarthingState && (
             <TnEarthingLabScene state={props.tnEarthingState} timeScale={timeScale} />
           )}
-          <OrbitControls enablePan={false} />
+          {props.lessonId === 13 && props.fireSafetyState && (
+            <FireSafetyLabScene state={props.fireSafetyState} timeScale={timeScale} />
+          )}
+          <OrbitControls
+            enablePan={false}
+            enableDamping
+            dampingFactor={0.06}
+            {...(props.lessonId === 13
+              ? {
+                  minDistance: 6.5,
+                  maxDistance: 38,
+                  target: [0, 2.25, 0] as [number, number, number],
+                }
+              : {})}
+          />
           <hemisphereLight args={['#b1e1ff', '#b97a20', 0.25]} />
         </SafeCanvas>
       </Box>

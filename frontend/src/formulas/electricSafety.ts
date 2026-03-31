@@ -320,3 +320,35 @@ export function lesson12TnLabEstimate(p: Lesson12TnLabParams): {
   const IbodyMA = (Uencl / Rh) * 1000;
   return { IkzA: Ikz, UenclosureV: Uencl, IbodyMA, caption };
 }
+
+/* ─── Lab 12: Earthing electrode (12.14–12.15) ─── */
+
+export interface Lesson12ElectrodeParams {
+  rhoOhmM: number;
+  lM: number;
+  dM: number;
+  tM: number;
+}
+
+/** (12.14) — сопротивление одиночного вертикального заземлителя, Ом. */
+export function lesson12SingleElectrodeResistanceOhm(p: Lesson12ElectrodeParams): number {
+  const rho = Math.max(1e-6, p.rhoOhmM);
+  const l = Math.max(1e-6, p.lM);
+  const d = Math.max(1e-6, p.dM);
+  const t = Math.max(1e-6, p.tM);
+  // Требование вида формулы: 4t > l. Если нарушено — мягко поджимаем.
+  const tEff = Math.max(t, l / 4 + 1e-6);
+  const term1 = Math.log10((2 * l) / d);
+  const ratio = (4 * tEff + l) / (4 * tEff - l);
+  const term2 = 0.5 * Math.log10(Math.max(1 + 1e-12, ratio));
+  const R = 0.366 * (rho / l) * (term1 + term2);
+  return Number.isFinite(R) ? R : NaN;
+}
+
+/** (12.15) — число электродов при ηз и требуемом Rз. */
+export function lesson12ElectrodeCount(p: { RsingleOhm: number; etaZ: number; RtargetOhm: number }): number {
+  const R1 = Math.max(1e-6, p.RsingleOhm);
+  const eta = Math.max(1e-6, Math.min(1, p.etaZ));
+  const Rt = Math.max(1e-6, p.RtargetOhm);
+  return R1 / (eta * Rt);
+}

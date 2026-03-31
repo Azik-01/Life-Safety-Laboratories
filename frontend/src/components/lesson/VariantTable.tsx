@@ -114,6 +114,30 @@ const LABELS: Record<string, [string, string]> = {
   dPipeM:           ['d',                    'м'],
   tPipeM:           ['t',                    'м'],
   etaZ:             ['η_з',                  ''],
+  // Lesson 13 — табл. 13.1 (последняя цифра)
+  lvj:              ['ЛВЖ',                  ''],
+  eta:              ['η',                    ''],
+  areaS_m2:         ['S',                    'м²'],
+  t_h:              ['t',                    'ч'],
+  Gi_kg:            ['Gᵢ',                   'кг'],
+  SA_m2:            ['Sₐ',                   'м²'],
+  x:                ['x',                    ''],
+  // Lesson 13 — табл. 13.2 (предпоследняя цифра)
+  V_m3:             ['V',                    'м³'],
+  G_kgm3:           ['G',                    'кг/м³'],
+  Vsv_m3:           ['Vсв',                  'м³'],
+  KH:               ['Kн',                   ''],
+  Mlvj_kg:          ['Mлвж',                 'кг'],
+  y:                ['y',                    ''],
+  Szd_m2:           ['Sзд',                  'м²'],
+  // Lesson 13 — табл. 13.3 (справочник по ЛВЖ)
+  l13_formula:      ['Формула',              ''],
+  l13_M:            ['M',                    'г/моль'],
+  l13_rho:          ['ρ, ρп',                'кг/м³'],
+  l13_Tvsp:         ['Твсп',                 '°C'],
+  l13_Pmax:         ['Pmax',                 'кПа'],
+  l13_Cnkn:         ['НКПР',                 '%'],
+  l13_PH:           ['Pн',                   'кПа'],
 };
 
 /** Значение f без «Гц» — единица указана в подписи параметра. */
@@ -156,6 +180,12 @@ function formatValue(key: string, val: number | string): string {
     return String(val);
   }
   if (key === 'etaZ') return val.toFixed(2);
+  if (key.startsWith('l13_') && key !== 'l13_formula') {
+    if (!Number.isFinite(val)) return String(val);
+    if (Number.isInteger(val)) return String(val);
+    const s = val.toFixed(3).replace(/\.?0+$/, '');
+    return s || '0';
+  }
   if (Number.isInteger(val)) return String(val);
   return val.toFixed(2);
 }
@@ -211,7 +241,7 @@ export default function VariantTable({ variants, activeVariant }: Props) {
             </TableCell>
             {variants.map((v) => (
               <TableCell
-                key={`hdr-${v.variant}`}
+                key={`hdr-${v.variant}-${v.displayLabel ?? ''}`}
                 align="center"
                 sx={{
                   fontWeight: 700,
@@ -223,8 +253,9 @@ export default function VariantTable({ variants, activeVariant }: Props) {
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                 }}
+                title={v.displayLabel}
               >
-                {v.variant === 0 ? '0' : v.variant}
+                {v.displayLabel ?? (v.variant === 0 ? '0' : v.variant)}
               </TableCell>
             ))}
           </TableRow>

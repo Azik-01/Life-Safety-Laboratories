@@ -335,7 +335,11 @@ function KnowledgeBlock({
       <Typography variant="subtitle2" color="primary.main">
         {block.heading}
       </Typography>
-      <Typography variant="body2" sx={{ mt: 0.5 }}>
+      <Typography
+        variant="body2"
+        component="div"
+        sx={{ mt: 0.5, whiteSpace: 'pre-wrap', tabSize: 4, wordBreak: 'break-word' }}
+      >
         <TermHighlight text={displayText} glossary={glossary} />
       </Typography>
       {isLong && (

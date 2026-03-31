@@ -9,6 +9,7 @@ import { waveguideAttenuationPerM } from '../../formulas/shielding';
 import { attenuationFactorF, xParameter } from '../../formulas/hfField';
 import { pduForFrequencyVpm, RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, normalizedPatternFactor } from '../../formulas/uhfField';
 import { bodyCurrentMA, skinImpedance, totalBodyImpedance, groundPotential, stepVoltage, lesson11TouchEstimate, classifyCurrentDanger } from '../../formulas/electricSafety';
+import { lesson12TnLabEstimate, lesson12SingleElectrodeResistanceOhm, lesson12ElectrodeCount } from '../../formulas/electricSafety';
 
 /* ─── Scene title map ─── */
 export const sceneTitle: Record<TheorySimulatorType, string> = {
@@ -44,6 +45,8 @@ export const sceneTitle: Record<TheorySimulatorType, string> = {
   'l11-it-touch': 'ИТ (изолированная нейтраль): касание фазы (нормальный режим)',
   'l11-tn-normal-touch': 'TN (заземлённая нейтраль): касание фазы (нормальный режим)',
   'l11-tn-emergency-touch': 'TN (авария): КЗ L1→земля и касание фазы',
+  'l12-tn-fault-modes': 'Занятие 12: КЗ на корпус, повторное заземление, обрыв PEN',
+  'l12-earthing-electrodes': 'Занятие 12: Одиночный заземлитель и число электродов',
 };
 
 /* ─── Bold label helper ─── */
@@ -3029,6 +3032,228 @@ function EquipotentialZonesScene({ current, resistivity }: { current: number; re
   );
 }
 
+/* ─────────────── Lesson 12: TN modes (theory) ─────────────── */
+
+function L12TnModesScene({
+  UphiV,
+  ZnOhm,
+  ZHOhm,
+  modeIndex,
+}: {
+  UphiV: number;
+  ZnOhm: number;
+  ZHOhm: number;
+  modeIndex: number;
+}) {
+  const scenarios = [
+    { id: 'sc_enclosure', label: 'КЗ на корпус (без повторного заземления)' },
+    { id: 'sc_enclosure_repeat', label: 'КЗ на корпус (с повторным заземлением)' },
+    { id: 'break_after_fault', label: 'Обрыв PEN: корпус после обрыва' },
+    { id: 'break_before_ok', label: 'Обрыв PEN: корпус до обрыва' },
+    { id: 'break_after_repeat', label: 'Обрыв PEN + Rn: корпус после обрыва' },
+    { id: 'break_before_repeat', label: 'Обрыв PEN + Rn: корпус до обрыва' },
+    { id: 'phase_to_soil', label: 'Фаза на землю (12.13)' },
+    { id: 'normal', label: 'Норма (контроль)' },
+  ] as const;
+  const idx = Math.min(scenarios.length - 1, Math.max(0, Math.round(modeIndex)));
+  const scenario = scenarios[idx].id;
+  const result = lesson12TnLabEstimate({
+    scenario: scenario as any,
+    UphiV,
+    ZnOhm,
+    ZHOhm,
+    R0Ohm: 4,
+    RnOhm: 10,
+    RzmOhm: 100,
+    RhOhm: 1000,
+  });
+  const danger = classifyCurrentDanger(result.IbodyMA, true);
+  const dangerColor =
+    danger === 'safe'
+      ? '#4caf50'
+      : danger === 'perceptible'
+        ? '#ff9800'
+        : danger === 'non-releasing'
+          ? '#f44336'
+          : '#d50000';
+
+  const yPEN = 2.25;
+  const xN = -2.4;
+  const xEquip = 2.0;
+
+  const showBreak = scenario.includes('break');
+  const showRepeat = scenario.includes('repeat') || scenario === 'sc_enclosure_repeat';
+  const showFault = scenario !== 'normal' && scenario !== 'phase_to_soil';
+  const showPhaseSoil = scenario === 'phase_to_soil';
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+        <planeGeometry args={[12, 8]} />
+        <meshStandardMaterial color="#d7ccc8" roughness={0.92} />
+      </mesh>
+
+      {/* N point */}
+      <mesh position={[xN, yPEN, 0]}>
+        <sphereGeometry args={[0.09, 14, 14]} />
+        <meshStandardMaterial color="#9e9e9e" emissive="#424242" emissiveIntensity={0.15} />
+      </mesh>
+      <Label position={[xN, yPEN + 0.35, 0]} color="#eeeeee" size={0.1}>
+        N
+      </Label>
+
+      {/* PEN line (with optional break) */}
+      {!showBreak ? (
+        <mesh position={[(xN + xEquip) / 2, yPEN, 0]}>
+          <boxGeometry args={[xEquip - xN, 0.05, 0.05]} />
+          <meshStandardMaterial color="#fdd835" metalness={0.35} />
+        </mesh>
+      ) : (
+        <>
+          <mesh position={[(xN + -0.2) / 2, yPEN, 0]}>
+            <boxGeometry args={[(-0.2 - xN), 0.05, 0.05]} />
+            <meshStandardMaterial color="#fdd835" metalness={0.35} />
+          </mesh>
+          <mesh position={[(0.25 + xEquip) / 2, yPEN, 0]}>
+            <boxGeometry args={[xEquip - 0.25, 0.05, 0.05]} />
+            <meshStandardMaterial color="#fdd835" metalness={0.35} />
+          </mesh>
+          <Label position={[0.02, yPEN + 0.28, 0]} color="#ff7043" size={0.08}>
+            обрыв PEN
+          </Label>
+        </>
+      )}
+
+      {/* Enclosure */}
+      <mesh position={[xEquip, 0.55, 0]} castShadow>
+        <boxGeometry args={[1.05, 1.05, 0.75]} />
+        <meshStandardMaterial
+          color="#78909c"
+          metalness={0.45}
+          roughness={0.35}
+          emissive={result.UenclosureV > 25 ? '#ff7043' : '#000000'}
+          emissiveIntensity={result.UenclosureV > 25 ? 0.2 : 0}
+        />
+      </mesh>
+      <Label position={[xEquip, 1.15, 0.55]} color="#eceff1" size={0.09}>
+        Корпус
+      </Label>
+
+      {/* Fault mark */}
+      {showFault && (
+        <>
+          <mesh position={[xN + 0.1, yPEN, 1.2]}>
+            <sphereGeometry args={[0.08, 10, 10]} />
+            <meshStandardMaterial color="#ff5722" emissive="#ff1744" emissiveIntensity={0.35} />
+          </mesh>
+          <mesh position={[(xN + 0.1 + xEquip) / 2, (yPEN + 1.05) / 2, 0.6]} rotation={[0, 0.3, 0.15]}>
+            <cylinderGeometry args={[0.03, 0.03, 4.1, 10]} />
+            <meshStandardMaterial color="#bf360c" emissive="#ff3d00" emissiveIntensity={0.2} />
+          </mesh>
+          <Label position={[xN + 0.3, yPEN + 0.3, 1.2]} color="#ffccbc" size={0.08}>
+            L1 → корпус
+          </Label>
+        </>
+      )}
+
+      {showPhaseSoil && (
+        <Label position={[xN + 0.2, 0.55, 1.2]} color="#ffccbc" size={0.08}>
+          L1 → земля (Rзм)
+        </Label>
+      )}
+
+      {/* Repeat ground */}
+      {showRepeat && (
+        <>
+          <mesh position={[0.6, yPEN / 2, 0]} castShadow>
+            <cylinderGeometry args={[0.02, 0.02, yPEN, 10]} />
+            <meshStandardMaterial color="#fdd835" metalness={0.35} />
+          </mesh>
+          <Label position={[1.0, 0.25, 0]} color="#ffe082" size={0.08}>
+            Rn
+          </Label>
+        </>
+      )}
+
+      <Label position={[0, 3.05, 0]} color="#f5f5f5" size={0.11} outlineColor="#111">
+        {scenarios[idx].label}
+      </Label>
+      <Label position={[-4.3, 2.65, 0]} color="#e3f2fd" size={0.095} outlineColor="#263238">
+        {`Uφ=${UphiV.toFixed(0)} В; Zn=${ZnOhm.toFixed(2)} Ом; ZH=${ZHOhm.toFixed(2)} Ом`}
+      </Label>
+      <Label position={[-4.3, 2.30, 0]} color="#b3e5fc" size={0.095} outlineColor="#263238">
+        {`Iк.з.≈${result.IkzA.toFixed(1)} А; Uкорп≈${result.UenclosureV.toFixed(1)} В`}
+      </Label>
+      <Label position={[-4.3, 1.95, 0]} color={dangerColor} size={0.12} outlineColor="#111">
+        {`Iч≈${result.IbodyMA.toFixed(2)} мА`}
+      </Label>
+    </>
+  );
+}
+
+/* ─────────────── Lesson 12: Earthing electrodes (theory) ─────────────── */
+
+function L12EarthingElectrodesScene({
+  rhoOhmM,
+  lM,
+  dMm,
+  tM,
+}: {
+  rhoOhmM: number;
+  lM: number;
+  dMm: number;
+  tM: number;
+}) {
+  const dM = Math.max(0.001, dMm / 1000);
+  const R1 = lesson12SingleElectrodeResistanceOhm({ rhoOhmM, lM, dM, tM });
+  const etaZ = 0.75;
+  const Rtarget = 4;
+  const n = lesson12ElectrodeCount({ RsingleOhm: R1, etaZ, RtargetOhm: Rtarget });
+  const nCeil = Math.max(1, Math.ceil(n));
+
+  const depthY = Math.max(0.6, Math.min(2.6, tM * 0.35));
+  const lenY = Math.max(1.0, Math.min(3.0, lM * 0.35));
+  const glow = Math.max(0.15, Math.min(2.0, (rhoOhmM / 500) * 1.2));
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+        <planeGeometry args={[12, 8]} />
+        <meshStandardMaterial color="#8a9a68" roughness={1} />
+      </mesh>
+
+      {/* Electrode */}
+      <mesh position={[0, -0.2 + depthY, 0]} castShadow>
+        <cylinderGeometry args={[0.08, 0.08, lenY, 12]} />
+        <meshStandardMaterial color="#616161" metalness={0.6} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 0.1, 0]}>
+        <sphereGeometry args={[0.10, 12, 12]} />
+        <meshStandardMaterial color="#ff5722" emissive="#ff3d00" emissiveIntensity={0.25 + 0.35 * glow} />
+      </mesh>
+
+      {/* Visual ring: higher rho => larger "influence" ring */}
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1.1, 1.1 + 0.5 + (rhoOhmM / 500) * 1.8, 64]} />
+        <meshBasicMaterial color="#ff7043" transparent opacity={0.18} />
+      </mesh>
+
+      <Label position={[0, 3.05, 0]} color="#f5f5f5" size={0.11} outlineColor="#111">
+        {'Одиночный электрод (12.14) и число электродов (12.15)'}
+      </Label>
+      <Label position={[-4.5, 2.65, 0]} color="#e3f2fd" size={0.10} outlineColor="#263238">
+        {`ρ=${rhoOhmM.toFixed(0)} Ом·м; l=${lM.toFixed(1)} м; d=${dM.toFixed(3)} м; t=${tM.toFixed(1)} м`}
+      </Label>
+      <Label position={[-4.5, 2.30, 0]} color="#ffecb3" size={0.10} outlineColor="#263238">
+        {`Rод ≈ ${Number.isFinite(R1) ? R1.toFixed(2) : '—'} Ом`}
+      </Label>
+      <Label position={[-4.5, 1.95, 0]} color="#b9f6ca" size={0.10} outlineColor="#1b5e20">
+        {`ηз=${etaZ}; Rз=4 Ом → n≈${Number.isFinite(n) ? n.toFixed(2) : '—'} → ${nCeil} шт.`}
+      </Label>
+    </>
+  );
+}
+
 /* ─────────────── Main TheoryScene3D ─────────────── */
 
 interface TheoryScene3DProps {
@@ -3175,6 +3400,24 @@ function SceneContent({ type, params }: TheoryScene3DProps) {
       );
     case 'equipotential-zones':
       return <EquipotentialZonesScene current={Math.max(0.1, params.a ?? 10)} resistivity={Math.max(1, params.b ?? 100)} />;
+    case 'l12-tn-fault-modes':
+      return (
+        <L12TnModesScene
+          UphiV={Math.max(1, params.a ?? 220)}
+          ZnOhm={Math.max(0.1, params.b ?? 2)}
+          ZHOhm={Math.max(0.05, params.c ?? 1)}
+          modeIndex={params.d ?? 0}
+        />
+      );
+    case 'l12-earthing-electrodes':
+      return (
+        <L12EarthingElectrodesScene
+          rhoOhmM={Math.max(1, params.a ?? 100)}
+          lM={Math.max(0.5, params.b ?? 3)}
+          dMm={Math.max(10, params.c ?? 50)}
+          tM={Math.max(0.3, params.d ?? 2)}
+        />
+      );
     case 'l11-it-touch': {
       return (
         <L11ItTouchSchematic

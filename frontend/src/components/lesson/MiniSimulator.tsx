@@ -78,6 +78,9 @@ import {
   groundPotential,
   stepVoltage,
   lesson11TouchEstimate,
+  lesson12TnLabEstimate,
+  lesson12SingleElectrodeResistanceOhm,
+  lesson12ElectrodeCount,
 } from '../../formulas/electricSafety';
 const TheoryScene3D = lazy(() => import('./TheoryScene3D'));
 const isTestEnvironment = import.meta.env.MODE === 'test';
@@ -137,6 +140,12 @@ function getDefaults(type: TheorySimulatorType) {
     case 'l11-tn-emergency-touch':
       // a=Uφ (В), b=Rh (Ом), c=Rзм (Ом), d=фаза (0..2)
       return { a: 220, b: 1000, c: 15, d: 2 };
+    case 'l12-tn-fault-modes':
+      // a=Uφ (В), b=Zn (Ом), c=ZH (Ом), d=режим (0..7)
+      return { a: 220, b: 2.4, c: 1.2, d: 0 };
+    case 'l12-earthing-electrodes':
+      // a=ρ (Ом·м), b=l (м), c=d (мм), d=t (м)
+      return { a: 100, b: 3, c: 50, d: 2 };
     default:
       return { a: 500, b: 1.2, c: 2.5, d: 120 };
   }
@@ -772,6 +781,80 @@ export default function MiniSimulator({ type }: SimulatorProps) {
             <ValueLine key="v1" label="φ(5 м)" value={`${phi5.toFixed(2)} В`} />,
             <ValueLine key="v2" label="φ(10 м)" value={`${phi10.toFixed(2)} В`} />,
             <ValueLine key="v3" label="φ(20 м)" value={`${phi20.toFixed(2)} В`} />,
+          ],
+        };
+      }
+      case 'l12-tn-fault-modes': {
+        const UphiV = Math.max(1, a);
+        const ZnOhm = Math.max(0.1, b);
+        const ZHOhm = Math.max(0.05, c);
+        const mode = Math.min(7, Math.max(0, Math.round(d)));
+        const modeIds = [
+          'sc_enclosure',
+          'sc_enclosure_repeat',
+          'break_after_fault',
+          'break_before_ok',
+          'break_after_repeat',
+          'break_before_repeat',
+          'phase_to_soil',
+          'normal',
+        ] as const;
+        const r = lesson12TnLabEstimate({
+          scenario: modeIds[mode],
+          UphiV,
+          ZnOhm,
+          ZHOhm,
+          R0Ohm: 4,
+          RnOhm: 10,
+          RzmOhm: 100,
+          RhOhm: 1000,
+        });
+        return {
+          controls: (
+            <Stack spacing={1.2}>
+              <Typography variant="caption">Uφ (В): {UphiV.toFixed(0)}</Typography>
+              <Slider value={a} min={127} max={254} step={1} onChange={(_, v) => setA(v as number)} />
+              <Typography variant="caption">Zn (Ом): {ZnOhm.toFixed(2)}</Typography>
+              <Slider value={b} min={0.2} max={8} step={0.1} onChange={(_, v) => setB(v as number)} />
+              <Typography variant="caption">ZH (Ом): {ZHOhm.toFixed(2)}</Typography>
+              <Slider value={c} min={0.1} max={6} step={0.1} onChange={(_, v) => setC(v as number)} />
+              <Typography variant="caption">Режим (0..7): {mode}</Typography>
+              <Slider value={mode} min={0} max={7} step={1} onChange={(_, v) => setD(v as number)} />
+            </Stack>
+          ),
+          values: [
+            <ValueLine key="v1" label="Iк.з." value={`${r.IkzA.toFixed(1)} А`} />,
+            <ValueLine key="v2" label="Uкорп" value={`${r.UenclosureV.toFixed(1)} В`} />,
+            <ValueLine key="v3" label="Iч" value={`${r.IbodyMA.toFixed(2)} мА`} />,
+          ],
+        };
+      }
+      case 'l12-earthing-electrodes': {
+        const rho = Math.max(10, a);
+        const lM = Math.max(1, b);
+        const dMm = Math.max(20, c);
+        const tM = Math.max(0.5, d);
+        const dM = dMm / 1000;
+        const R1 = lesson12SingleElectrodeResistanceOhm({ rhoOhmM: rho, lM, dM, tM });
+        const eta = 0.75;
+        const n = lesson12ElectrodeCount({ RsingleOhm: R1, etaZ: eta, RtargetOhm: 4 });
+        return {
+          controls: (
+            <Stack spacing={1.2}>
+              <Typography variant="caption">ρ (Ом·м): {rho.toFixed(0)}</Typography>
+              <Slider value={a} min={10} max={500} step={5} onChange={(_, v) => setA(v as number)} />
+              <Typography variant="caption">l (м): {lM.toFixed(1)}</Typography>
+              <Slider value={b} min={1} max={8} step={0.5} onChange={(_, v) => setB(v as number)} />
+              <Typography variant="caption">d (мм): {dMm.toFixed(0)}</Typography>
+              <Slider value={c} min={20} max={100} step={5} onChange={(_, v) => setC(v as number)} />
+              <Typography variant="caption">t (м): {tM.toFixed(1)}</Typography>
+              <Slider value={d} min={0.5} max={3.5} step={0.1} onChange={(_, v) => setD(v as number)} />
+            </Stack>
+          ),
+          values: [
+            <ValueLine key="v1" label="Rод" value={Number.isFinite(R1) ? `${R1.toFixed(2)} Ом` : '—'} />,
+            <ValueLine key="v2" label="ηз" value={`${eta}`} />,
+            <ValueLine key="v3" label="n" value={Number.isFinite(n) ? `${n.toFixed(2)} → ${Math.ceil(n)} шт.` : '—'} />,
           ],
         };
       }

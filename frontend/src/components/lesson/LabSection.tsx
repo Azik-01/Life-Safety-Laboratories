@@ -39,6 +39,10 @@ import {
   lesson8Table3Variants,
   lesson12MergedValues,
   lesson12Table1Variants,
+  lesson13MergedValues,
+  lesson13Table2Variants,
+  lesson13Table3Variants,
+  lesson13Table3ActiveColumn,
   pickVariantByTicketDigits,
 } from '../../data/variants';
 import Lab4TablesPanel from './Lab4TablesPanel';
@@ -90,6 +94,7 @@ import {
   lesson12TnLabEstimate,
   type Lesson12TnScenario,
 } from '../../formulas/electricSafety';
+import { lesson13FireLabMetrics } from '../../formulas/fireSafety';
 import { useProgress } from '../../context/ProgressContext';
 
 const LabScene3D = lazy(() => import('./LabScene3D'));
@@ -182,6 +187,11 @@ export default function LabSection({ lesson }: LabSectionProps) {
     lesson.id === 12 ? lesson12MergedValues(0, 0) : {},
   );
   const [lesson12Penultimate, setLesson12Penultimate] = useState(0);
+  const [lesson13Full, setLesson13Full] = useState<Record<string, number | string>>(() =>
+    lesson.id === 13 ? lesson13MergedValues(0, 0) : {},
+  );
+  const [lesson13Penultimate, setLesson13Penultimate] = useState(0);
+  const [lesson13SparkOn, setLesson13SparkOn] = useState(false);
   /* ── Lesson 9 (body resistance) state ── */
   const [l9Voltage, setL9Voltage] = useState(220);
   const [l9Freq, setL9Freq] = useState(50);
@@ -348,6 +358,9 @@ export default function LabSection({ lesson }: LabSectionProps) {
     }
     if (lesson.id === 12) {
       setLesson12Full({ ...values });
+    }
+    if (lesson.id === 13) {
+      setLesson13Full({ ...values });
     }
   }
 
@@ -1132,6 +1145,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
       };
     }
     if (lesson.id === 12) return lesson12Full;
+    if (lesson.id === 13) return lesson13Full;
     return variant.values;
   }, [
     barrierMassA,
@@ -1157,6 +1171,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
     l11Rzm,
     l11Riso,
     lesson12Full,
+    lesson13Full,
     lesson6Full,
     lesson7Full,
     lesson8Full,
@@ -1314,6 +1329,49 @@ export default function LabSection({ lesson }: LabSectionProps) {
     };
   }, [lesson.id, lesson12Full, l12Scenario, l12Rh, l12R0]);
 
+  const fireSafetyStateMemo = useMemo(() => {
+    if (lesson.id !== 13) return undefined;
+    const v = lesson13Full;
+    const lvj = String(v.lvj ?? 'Этанол');
+    const t3 = lesson13Table3Variants[lesson13Table3ActiveColumn(lvj)].values;
+    const t3rec = t3 as Record<string, string | number>;
+    return {
+      lvjName: lvj,
+      eta: variantNumeric(v, 'eta', 1),
+      V_m3: variantNumeric(v, 'V_m3', 50),
+      G_kgm3: variantNumeric(v, 'G_kgm3', 1),
+      Vsv_m3: variantNumeric(v, 'Vsv_m3', 100),
+      SA_m2: variantNumeric(v, 'SA_m2', 50),
+      KH: variantNumeric(v, 'KH', 1),
+      t_evap_h: variantNumeric(v, 't_h', 1),
+      rhoP: variantNumeric(t3rec, 'l13_rho', 2),
+      Cnkr: variantNumeric(t3rec, 'l13_Cnkn', 2),
+      Pmax: variantNumeric(t3rec, 'l13_Pmax', 800),
+      PH: variantNumeric(t3rec, 'l13_PH', 10),
+      M: variantNumeric(t3rec, 'l13_M', 46),
+      sparkOn: lesson13SparkOn,
+    };
+  }, [lesson.id, lesson13Full, lesson13SparkOn]);
+
+  const lesson13FirePanelMetrics = useMemo(() => {
+    if (!fireSafetyStateMemo) return null;
+    return lesson13FireLabMetrics({
+      lvjName: fireSafetyStateMemo.lvjName,
+      eta: fireSafetyStateMemo.eta,
+      V_m3: fireSafetyStateMemo.V_m3,
+      G_kgm3: fireSafetyStateMemo.G_kgm3,
+      Vsv_m3: fireSafetyStateMemo.Vsv_m3,
+      SA_m2: fireSafetyStateMemo.SA_m2,
+      KH: fireSafetyStateMemo.KH,
+      t_evap_h: fireSafetyStateMemo.t_evap_h,
+      rhoP: fireSafetyStateMemo.rhoP,
+      Cnkr: fireSafetyStateMemo.Cnkr,
+      Pmax: fireSafetyStateMemo.Pmax,
+      PH: fireSafetyStateMemo.PH,
+      M: fireSafetyStateMemo.M,
+    });
+  }, [fireSafetyStateMemo]);
+
   const lesson12LabMetrics = useMemo(() => {
     if (lesson.id !== 12 || !tnEarthingStateMemo) return null;
     return lesson12TnLabEstimate(tnEarthingStateMemo);
@@ -1355,6 +1413,9 @@ export default function LabSection({ lesson }: LabSectionProps) {
               if (lesson.id === 12) {
                 setLesson12Penultimate(pen);
               }
+              if (lesson.id === 13) {
+                setLesson13Penultimate(pen);
+              }
               applyVariantValues(resolved.values);
             }}
           >
@@ -1383,6 +1444,9 @@ export default function LabSection({ lesson }: LabSectionProps) {
                 applyVariantValues(merged);
               } else if (lesson.id === 12) {
                 const merged = lesson12MergedValues(Number(event.target.value), lesson12Penultimate);
+                applyVariantValues(merged);
+              } else if (lesson.id === 13) {
+                const merged = lesson13MergedValues(Number(event.target.value), lesson13Penultimate);
                 applyVariantValues(merged);
               } else if (nextVariant) {
                 applyVariantValues(nextVariant.values);
@@ -1499,6 +1563,25 @@ export default function LabSection({ lesson }: LabSectionProps) {
               ))}
             </Select>
           )}
+          {lesson.id === 13 && (
+            <Select
+              size="small"
+              value={lesson13Penultimate}
+              onChange={(event) => {
+                const pen = Number(event.target.value);
+                setLesson13Penultimate(pen);
+                const merged = lesson13MergedValues(variantNumber, pen);
+                applyVariantValues(merged);
+              }}
+              sx={{ minWidth: 260 }}
+            >
+              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
+                <MenuItem key={d} value={d}>
+                  Предпоследняя цифра: {d} (Табл. 13.2)
+                </MenuItem>
+              ))}
+            </Select>
+          )}
           <Button variant="outlined" onClick={() => setManualTableOpen(true)}>
             Показать таблицу методички
           </Button>
@@ -1609,6 +1692,7 @@ export default function LabSection({ lesson }: LabSectionProps) {
           groundState={groundStateMemo}
           threePhaseState={lesson.id === 11 ? threePhaseStateMemo : undefined}
           tnEarthingState={lesson.id === 12 ? tnEarthingStateMemo : undefined}
+          fireSafetyState={lesson.id === 13 ? fireSafetyStateMemo : undefined}
         />
       </Suspense>
 
@@ -2183,6 +2267,42 @@ export default function LabSection({ lesson }: LabSectionProps) {
             )}
           </Stack>
         )}
+
+        {lesson.id === 13 && (
+          <Stack spacing={1.2}>
+            <Typography variant="caption" fontWeight={600}>
+              Занятие 13 — паровоздушная смесь и расчётное давление (формулы 13.1–13.6)
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Табл. 13.1 задаётся последней цифрой билета, табл. 13.2 (включая Vсв) — предпоследней; при смене только «Вариант 0–9» Vсв не меняется, пока не смените предпоследнюю цифру в шаге 0. 3D-сцена — условный зал постоянного размера, меняются расчёты и вид пара. Искра — источник зажигания у пролива.
+            </Typography>
+            <FormControlLabel
+              control={(
+                <Checkbox
+                  checked={lesson13SparkOn}
+                  onChange={(e) => setLesson13SparkOn(e.target.checked)}
+                />
+              )}
+              label="Искра у пролива (источник воспламенения)"
+            />
+            {lesson13FirePanelMetrics && (
+              <Alert
+                severity={
+                  lesson13FirePanelMetrics.aboveNkp && lesson13SparkOn
+                    ? 'error'
+                    : lesson13FirePanelMetrics.aboveNkp
+                      ? 'warning'
+                      : 'success'
+                }
+              >
+                C ≈ {lesson13FirePanelMetrics.C_pct.toFixed(2)} % при НКПР {lesson13FirePanelMetrics.Cnkr_pct.toFixed(1)} % (
+                {lesson13FirePanelMetrics.aboveNkp ? 'смесь воспламеняемая' : 'ниже НКПР в модели'}). ΔP ≈{' '}
+                {lesson13FirePanelMetrics.deltaP_kPa.toFixed(2)} кПа; категория А по расчётному ΔP (&gt; 5 кПа):{' '}
+                {lesson13FirePanelMetrics.roomCategoryAExplosive ? 'да' : 'нет'}.
+              </Alert>
+            )}
+          </Stack>
+        )}
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
@@ -2234,7 +2354,11 @@ export default function LabSection({ lesson }: LabSectionProps) {
       <Dialog
         open={manualTableOpen}
         onClose={() => setManualTableOpen(false)}
-        maxWidth={lesson.id === 4 || lesson.id === 6 || lesson.id === 7 || lesson.id === 8 || lesson.id === 12 ? 'xl' : 'md'}
+        maxWidth={
+          lesson.id === 4 || lesson.id === 6 || lesson.id === 7 || lesson.id === 8 || lesson.id === 12 || lesson.id === 13
+            ? 'xl'
+            : 'md'
+        }
         fullWidth
       >
         <DialogTitle>
@@ -2242,7 +2366,13 @@ export default function LabSection({ lesson }: LabSectionProps) {
             ? 'Таблицы 4.1–4.4 — Исходные данные (Занятие №4)'
             : lesson.labWizard.manualTableName}
         </DialogTitle>
-        <DialogContent sx={lesson.id === 6 || lesson.id === 7 || lesson.id === 8 || lesson.id === 12 ? { overflowX: 'hidden' } : undefined}>
+        <DialogContent
+          sx={
+            lesson.id === 6 || lesson.id === 7 || lesson.id === 8 || lesson.id === 12 || lesson.id === 13
+              ? { overflowX: 'hidden' }
+              : undefined
+          }
+        >
           {lesson.id === 4 ? (
             <Lab4TablesPanel lastDigit={variantNumber} penultimateDigit={lesson4Penultimate} />
           ) : lesson.id === 6 ? (
@@ -2288,6 +2418,24 @@ export default function LabSection({ lesson }: LabSectionProps) {
                 Таблица 12.2 — по последней цифре студбилета
               </Typography>
               <VariantTable variants={lesson.variants} activeVariant={variantNumber} />
+            </Stack>
+          ) : lesson.id === 13 ? (
+            <Stack spacing={3}>
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 13.1 — по последней цифре студбилета (ваш вариант: <strong>{variantNumber}</strong>)
+              </Typography>
+              <VariantTable variants={lesson.variants} activeVariant={variantNumber} />
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 13.2 — по предпоследней цифре (ваша: <strong>{lesson13Penultimate}</strong>)
+              </Typography>
+              <VariantTable variants={lesson13Table2Variants} activeVariant={lesson13Penultimate} />
+              <Typography variant="subtitle2" fontWeight={700}>
+                Таблица 13.3 — показатели ЛВЖ (подсвечен столбец вашего ЛВЖ: <strong>{String(lesson13Full.lvj ?? '—')}</strong>)
+              </Typography>
+              <VariantTable
+                variants={lesson13Table3Variants}
+                activeVariant={lesson13Table3ActiveColumn(String(lesson13Full.lvj ?? ''))}
+              />
             </Stack>
           ) : lesson.id === 2 ? (
             <Stack spacing={3}>

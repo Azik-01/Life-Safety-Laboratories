@@ -475,6 +475,132 @@ export const lesson12Table1Variants: LabVariant[] = Array.from({ length: 10 }, (
   validated: true,
 }));
 
+/* ─── Lab 13: Table 13.1 (last digit) + Table 13.2 (penultimate digit) ─── */
+
+const L13_LVJ = ['Бензол', 'Этанол', 'Ацетон', 'Этанол', 'Ацетон', 'Бензол', 'Бензол', 'Ацетон', 'Этанол', 'Бензол'] as const;
+const L13_ETA = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5] as const;
+const L13_S = [100, 150, 250, 200, 50, 200, 250, 300, 250, 300] as const;
+const L13_T = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 2, 1] as const;
+const L13_GI = [10, 20, 30, 40, 50, 60, 70, 15, 25, 35] as const;
+const L13_SA = [50, 60, 70, 80, 90, 100, 110, 120, 130, 140] as const;
+const L13_X = [10, 5, 8, 4, 6, 5, 3, 7, 8, 9] as const;
+
+const L13_V = [50, 60, 70, 80, 90, 100, 110, 120, 130, 140] as const;
+const L13_G = [1, 2, 1, 4, 2, 3, 1, 4, 5, 12] as const;
+const L13_VSV = [110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
+const L13_KH = [5, 1, 2, 3, 4, 5, 4, 3, 2, 1] as const;
+const L13_MLVJ = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20] as const;
+const L13_Y = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+
+function lesson13Table1Values(lastDigit: number): Record<string, number | string> {
+  const d = ((lastDigit % 10) + 10) % 10;
+  return {
+    lvj: L13_LVJ[d],
+    eta: L13_ETA[d],
+    areaS_m2: L13_S[d],
+    t_h: L13_T[d],
+    Gi_kg: L13_GI[d],
+    SA_m2: L13_SA[d],
+    x: L13_X[d],
+  };
+}
+
+function lesson13Table2Values(penultimateDigit: number): Record<string, number> {
+  const d = ((penultimateDigit % 10) + 10) % 10;
+  return {
+    V_m3: L13_V[d],
+    G_kgm3: L13_G[d],
+    Vsv_m3: L13_VSV[d],
+    KH: L13_KH[d],
+    Mlvj_kg: L13_MLVJ[d],
+    y: L13_Y[d],
+  };
+}
+
+export function lesson13MergedValues(lastDigit: number, penultimateDigit: number): Record<string, number | string> {
+  return { ...lesson13Table1Values(lastDigit), ...lesson13Table2Values(penultimateDigit), Szd_m2: 2000 };
+}
+
+const sourceNote13 =
+  'Таблица 13.1 (последняя цифра) + таблица 13.2 (предпоследняя цифра). Параметры ЛВЖ: табл. 13.3.';
+
+const lesson13Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: lesson13Table1Values(digit),
+  sourceNote: sourceNote13,
+  validated: true,
+}));
+
+export const lesson13Table2Variants: LabVariant[] = Array.from({ length: 10 }, (_, digit) => ({
+  variant: digit,
+  ticketLastDigits: [digit],
+  values: lesson13Table2Values(digit),
+  sourceNote: 'Таблица 13.2 методички',
+  validated: true,
+}));
+
+/** Таблица 13.3 — физико-химические показатели ЛВЖ (общая для всех вариантов). */
+export const lesson13Table3Variants: LabVariant[] = [
+  {
+    variant: 0,
+    ticketLastDigits: [],
+    displayLabel: 'Ацетон',
+    values: {
+      l13_formula: '(CH3)2CO',
+      l13_M: 58,
+      l13_rho: 2.44,
+      l13_Tvsp: -19,
+      l13_Pmax: 875,
+      l13_Cnkn: 2.2,
+      l13_PH: 24.54,
+    },
+    sourceNote: 'Таблица 13.3 методички',
+    validated: true,
+  },
+  {
+    variant: 1,
+    ticketLastDigits: [],
+    displayLabel: 'Бензол',
+    values: {
+      l13_formula: 'C6H6',
+      l13_M: 78,
+      l13_rho: 4.3,
+      l13_Tvsp: -11,
+      l13_Pmax: 900,
+      l13_Cnkn: 1.2,
+      l13_PH: 16.03,
+    },
+    sourceNote: 'Таблица 13.3 методички',
+    validated: true,
+  },
+  {
+    variant: 2,
+    ticketLastDigits: [],
+    displayLabel: 'Этанол',
+    values: {
+      l13_formula: 'C2H5OH',
+      l13_M: 46,
+      l13_rho: 1.94,
+      l13_Tvsp: 12,
+      l13_Pmax: 865,
+      l13_Cnkn: 3.1,
+      l13_PH: 7.97,
+    },
+    sourceNote: 'Таблица 13.3 методички',
+    validated: true,
+  },
+];
+
+/** Индекс столбца табл. 13.3 по названию ЛВЖ из табл. 13.1. */
+export function lesson13Table3ActiveColumn(lvj: string): number {
+  const s = lvj.trim();
+  if (s === 'Ацетон') return 0;
+  if (s === 'Бензол') return 1;
+  if (s === 'Этанол') return 2;
+  return 0;
+}
+
 /* ─── Data category exports: lab vs theory split ─── */
 
 /** Lab 6 lab-specific data (student variant values from tables 6.1 + 6.2) */
@@ -531,6 +657,7 @@ export const lessonVariants: Record<LessonId, LabVariant[]> = {
     lesson11Values,
   ),
   12: lesson12Variants,
+  13: lesson13Variants,
 };
 
 export function pickVariantByTicketDigits(lessonId: LessonId, ticketInput: string): LabVariant {
@@ -572,6 +699,11 @@ export function pickVariantByTicketDigits(lessonId: LessonId, ticketInput: strin
   if (lessonId === 12) {
     const base = lessonVariants[12].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[12][0];
     return { ...base, values: lesson12MergedValues(lastDigit, penultimateDigit) };
+  }
+
+  if (lessonId === 13) {
+    const base = lessonVariants[13].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[13][0];
+    return { ...base, values: lesson13MergedValues(lastDigit, penultimateDigit) };
   }
 
   return lessonVariants[lessonId].find((row) => row.ticketLastDigits.includes(lastDigit)) ?? lessonVariants[lessonId][0];

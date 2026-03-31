@@ -1,4 +1,4 @@
-export type LessonId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
+export type LessonId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
 
 export type TheorySimulatorType =
   | 'light-flux'
@@ -32,7 +32,9 @@ export type TheorySimulatorType =
   | 'equipotential-zones'
   | 'l11-it-touch'
   | 'l11-tn-normal-touch'
-  | 'l11-tn-emergency-touch';
+  | 'l11-tn-emergency-touch'
+  | 'l12-tn-fault-modes'
+  | 'l12-earthing-electrodes';
 
 export interface TheoryMiniQuestion {
   question: string;
@@ -85,6 +87,8 @@ export interface LabVariant {
   values: Record<string, number | string>;
   sourceNote: string;
   validated: boolean;
+  /** Подпись столбца в `VariantTable` вместо номера варианта (например «Ацетон» для табл. 13.3). */
+  displayLabel?: string;
 }
 
 export interface LabWizard {

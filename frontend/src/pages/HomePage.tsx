@@ -19,7 +19,7 @@ export default function HomePage() {
         Life-Safety Laboratories
       </Typography>
       <Typography variant="h6" color="text.secondary" sx={{ mb: 3, maxWidth: 900 }}>
-        Полный интерактивный практикум по БЖД: теория, лабораторные и тесты по 12 занятиям в формате методички.
+        Полный интерактивный практикум по БЖД: теория, лабораторные и тесты по занятиям в формате методички.
       </Typography>
 
       <Grid container spacing={2.5}>

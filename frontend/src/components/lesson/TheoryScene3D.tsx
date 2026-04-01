@@ -10,6 +10,7 @@ import { attenuationFactorF, xParameter } from '../../formulas/hfField';
 import { pduForFrequencyVpm, RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, normalizedPatternFactor } from '../../formulas/uhfField';
 import { bodyCurrentMA, skinImpedance, totalBodyImpedance, groundPotential, stepVoltage, lesson11TouchEstimate, classifyCurrentDanger } from '../../formulas/electricSafety';
 import { lesson12TnLabEstimate, lesson12SingleElectrodeResistanceOhm, lesson12ElectrodeCount } from '../../formulas/electricSafety';
+import { TheoryStylizedPerson } from './StylizedPerson3D';
 
 /* ─── Scene title map ─── */
 export const sceneTitle: Record<TheorySimulatorType, string> = {
@@ -1986,70 +1987,6 @@ function RadiationDoseScene({ frequencyMHz }: { frequencyMHz: number }) {
         </Label>
       ))}
     </>
-  );
-}
-
-/* ─────────────── Стилизованная фигура человека (теория, ОТ) ─────────────── */
-
-/** Как в сцене «Путь тока»: обувь, брюки, рубашка, кожа; шаг задаётся половиной расстояния между стопами. */
-function TheoryStylizedPerson({
-  footHalfSep = 0.11,
-  torsoPath,
-}: {
-  footHalfSep?: number;
-  torsoPath?: { color: string; opacity: number };
-}) {
-  const skin = '#deb897';
-  const shirt = '#5c6d8c';
-  const pants = '#455a64';
-  const h = footHalfSep;
-  const refHalf = 0.11;
-  const armX = 0.22 * (h / refHalf);
-  return (
-    <group position={[0, 0, 0]}>
-      <mesh position={[-h, 0.04, 0]} castShadow>
-        <boxGeometry args={[0.12, 0.06, 0.22]} />
-        <meshStandardMaterial color="#37474f" roughness={0.65} />
-      </mesh>
-      <mesh position={[h, 0.04, 0]} castShadow>
-        <boxGeometry args={[0.12, 0.06, 0.22]} />
-        <meshStandardMaterial color="#37474f" roughness={0.65} />
-      </mesh>
-      <mesh position={[-h, 0.42, 0]} castShadow>
-        <capsuleGeometry args={[0.065, 0.58, 6, 10]} />
-        <meshStandardMaterial color={pants} roughness={0.82} />
-      </mesh>
-      <mesh position={[h, 0.42, 0]} castShadow>
-        <capsuleGeometry args={[0.065, 0.58, 6, 10]} />
-        <meshStandardMaterial color={pants} roughness={0.82} />
-      </mesh>
-      <mesh position={[0, 1.05, 0]} castShadow>
-        <capsuleGeometry args={[0.15, 0.38, 8, 16]} />
-        <meshStandardMaterial color={shirt} roughness={0.7} metalness={0.05} />
-      </mesh>
-      <mesh position={[0, 1.33, 0]} castShadow>
-        <cylinderGeometry args={[0.1, 0.12, 0.14, 10]} />
-        <meshStandardMaterial color={skin} roughness={0.65} />
-      </mesh>
-      <mesh position={[0, 1.52, 0]} castShadow>
-        <sphereGeometry args={[0.17, 20, 20]} />
-        <meshStandardMaterial color={skin} roughness={0.55} />
-      </mesh>
-      <mesh position={[-armX, 1.14, 0]} rotation={[0, 0, Math.PI / 4.2]} castShadow>
-        <capsuleGeometry args={[0.05, 0.52, 6, 10]} />
-        <meshStandardMaterial color={skin} roughness={0.65} />
-      </mesh>
-      <mesh position={[armX, 1.14, 0]} rotation={[0, 0, -Math.PI / 4.2]} castShadow>
-        <capsuleGeometry args={[0.05, 0.52, 6, 10]} />
-        <meshStandardMaterial color={skin} roughness={0.65} />
-      </mesh>
-      {torsoPath ? (
-        <mesh position={[0, 1.05, 0.04]}>
-          <capsuleGeometry args={[0.07, 0.32, 6, 12]} />
-          <meshBasicMaterial color={torsoPath.color} transparent opacity={torsoPath.opacity} depthWrite={false} />
-        </mesh>
-      ) : null}
-    </group>
   );
 }
 

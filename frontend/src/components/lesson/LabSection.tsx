@@ -97,6 +97,8 @@ import {
 import { lesson13FireLabMetrics } from '../../formulas/fireSafety';
 import { useProgress } from '../../context/ProgressContext';
 
+import type { FirstAidElectricStage } from './FirstAidElectricLabScene';
+
 const LabScene3D = lazy(() => import('./LabScene3D'));
 
 type LampType = 'incandescent' | 'fluorescent' | 'led';
@@ -192,6 +194,11 @@ export default function LabSection({ lesson }: LabSectionProps) {
   );
   const [lesson13Penultimate, setLesson13Penultimate] = useState(0);
   const [lesson13SparkOn, setLesson13SparkOn] = useState(false);
+  const [l14FirstAidStage, setL14FirstAidStage] = useState<FirstAidElectricStage>('disconnect');
+  const [l15InvestigationStage, setL15InvestigationStage] = useState<
+    'firstAid' | 'preventHazard' | 'preserveScene' | 'notify' | 'commission' | 'investigation' | 'report'
+  >('firstAid');
+  const [l15Severity, setL15Severity] = useState<'light' | 'heavyOrFatal'>('light');
   /* ── Lesson 9 (body resistance) state ── */
   const [l9Voltage, setL9Voltage] = useState(220);
   const [l9Freq, setL9Freq] = useState(50);
@@ -1353,6 +1360,16 @@ export default function LabSection({ lesson }: LabSectionProps) {
     };
   }, [lesson.id, lesson13Full, lesson13SparkOn]);
 
+  const firstAidElectricStateMemo = useMemo(() => {
+    if (lesson.id !== 14) return undefined;
+    return { stage: l14FirstAidStage };
+  }, [lesson.id, l14FirstAidStage]);
+
+  const accidentInvestigationStateMemo = useMemo(() => {
+    if (lesson.id !== 15) return undefined;
+    return { stage: l15InvestigationStage, severity: l15Severity };
+  }, [lesson.id, l15InvestigationStage, l15Severity]);
+
   const lesson13FirePanelMetrics = useMemo(() => {
     if (!fireSafetyStateMemo) return null;
     return lesson13FireLabMetrics({
@@ -1693,6 +1710,8 @@ export default function LabSection({ lesson }: LabSectionProps) {
           threePhaseState={lesson.id === 11 ? threePhaseStateMemo : undefined}
           tnEarthingState={lesson.id === 12 ? tnEarthingStateMemo : undefined}
           fireSafetyState={lesson.id === 13 ? fireSafetyStateMemo : undefined}
+          firstAidElectricState={lesson.id === 14 ? firstAidElectricStateMemo : undefined}
+          accidentInvestigationState={lesson.id === 15 ? accidentInvestigationStateMemo : undefined}
         />
       </Suspense>
 
@@ -2301,6 +2320,59 @@ export default function LabSection({ lesson }: LabSectionProps) {
                 {lesson13FirePanelMetrics.roomCategoryAExplosive ? 'да' : 'нет'}.
               </Alert>
             )}
+          </Stack>
+        )}
+
+        {lesson.id === 14 && (
+          <Stack spacing={1.2}>
+            <Typography variant="caption" fontWeight={600}>
+              Занятие 14 — первая помощь при поражении электрическим током (схема)
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Выберите этап доврачебной помощи. Сцена наглядная и не привязана к таблицам варианта.
+            </Typography>
+            <Select
+              size="small"
+              value={l14FirstAidStage}
+              onChange={(e) => setL14FirstAidStage(e.target.value as FirstAidElectricStage)}
+            >
+              <MenuItem value="disconnect">1. Освобождение от тока (сухой изолятор)</MenuItem>
+              <MenuItem value="airway">2. Проходимость дыхательных путей</MenuItem>
+              <MenuItem value="breaths">3. Искусственное дыхание</MenuItem>
+              <MenuItem value="cpr">4. Непрямой массаж сердца (один помощник)</MenuItem>
+            </Select>
+          </Stack>
+        )}
+
+        {lesson.id === 15 && (
+          <Stack spacing={1.2}>
+            <Typography variant="caption" fontWeight={600}>
+              Занятие 15 — расследование несчастных случаев (схема)
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Выберите шаг расследования и тяжесть случая — в 3D-сцене подсветится этап и срок (3/15 дней).
+            </Typography>
+            <Select size="small" value={l15Severity} onChange={(e) => setL15Severity(e.target.value as 'light' | 'heavyOrFatal')}>
+              <MenuItem value="light">Лёгкий несчастный случай</MenuItem>
+              <MenuItem value="heavyOrFatal">Тяжёлый / со смертельным исходом</MenuItem>
+            </Select>
+            <Select
+              size="small"
+              value={l15InvestigationStage}
+              onChange={(e) =>
+                setL15InvestigationStage(
+                  e.target.value as 'firstAid' | 'preventHazard' | 'preserveScene' | 'notify' | 'commission' | 'investigation' | 'report',
+                )
+              }
+            >
+              <MenuItem value="firstAid">1. Первая помощь</MenuItem>
+              <MenuItem value="preventHazard">2. Предотвращение опасности</MenuItem>
+              <MenuItem value="preserveScene">3. Фиксация обстановки</MenuItem>
+              <MenuItem value="notify">4. Уведомления</MenuItem>
+              <MenuItem value="commission">5. Комиссия</MenuItem>
+              <MenuItem value="investigation">6. Материалы расследования</MenuItem>
+              <MenuItem value="report">7. Итоги и акты</MenuItem>
+            </Select>
           </Stack>
         )}
       </Paper>

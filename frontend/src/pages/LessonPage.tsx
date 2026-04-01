@@ -107,7 +107,7 @@ export default function LessonPage() {
       <Typography variant="h4" sx={{ mb: 1 }}>
         {lesson.title}
       </Typography>
-      {!(lesson.id >= 1 && lesson.id <= 13) && (
+      {!(lesson.id >= 1 && lesson.id <= 15) && (
         <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
           {lesson.goal}
         </Typography>

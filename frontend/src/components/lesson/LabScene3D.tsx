@@ -53,6 +53,8 @@ import {
   type Lesson12TnScenario,
 } from '../../formulas/electricSafety';
 import { lesson13FireLabMetrics, lesson13VaporVolumeM3 } from '../../formulas/fireSafety';
+import FirstAidElectricLabScene from './FirstAidElectricLabScene';
+import AccidentInvestigationLabScene from './AccidentInvestigationLabScene.tsx';
 import FastForwardIcon from '@mui/icons-material/FastForward';
 import SlowMotionVideoIcon from '@mui/icons-material/SlowMotionVideo';
 import type { ComponentProps } from 'react';
@@ -86,7 +88,7 @@ function Text(props: ComponentProps<typeof DreiText>) {
 type LampType = 'incandescent' | 'fluorescent' | 'led';
 
 interface LabSceneProps {
-  lessonId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
+  lessonId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15;
   lightState: {
     lampType: LampType;
     intensityCd: number;
@@ -205,6 +207,22 @@ interface LabSceneProps {
     PH: number;
     M: number;
     sparkOn: boolean;
+  };
+  /** Занятие 14: этапы первой помощи при поражении током (без таблиц варианта) */
+  firstAidElectricState?: {
+    stage: 'disconnect' | 'airway' | 'breaths' | 'cpr';
+  };
+  /** Занятие 15: расследование НС — схема без таблиц */
+  accidentInvestigationState?: {
+    stage:
+      | 'firstAid'
+      | 'preventHazard'
+      | 'preserveScene'
+      | 'notify'
+      | 'commission'
+      | 'investigation'
+      | 'report';
+    severity: 'light' | 'heavyOrFatal';
   };
 }
 
@@ -3177,6 +3195,30 @@ export default function LabScene3D(props: LabSceneProps) {
         headline: `${s.lvjName}: C ≈ ${m.C_pct.toFixed(2)} % (${nk}) | ΔP ≈ ${m.deltaP_kPa.toFixed(2)} кПа | кат. А по ΔP: ${catA}`,
       };
     }
+    if (props.lessonId === 14) {
+      const s = props.firstAidElectricState;
+      const titles: Record<'disconnect' | 'airway' | 'breaths' | 'cpr', string> = {
+        disconnect: 'Этап 1: освобождение от тока сухим изолирующим предметом (не металл, не мокрое)',
+        airway: 'Этап 2: проходимость путей — запрокидывание головы, подбородок',
+        breaths: 'Этап 3: искусственное дыхание «рот в рот» (схема)',
+        cpr: 'Этап 4: непрямой массаж; один помощник — 2 вдоха → 15 нажатий',
+      };
+      return { headline: s ? titles[s.stage] : 'Занятие 14: выберите этап помощи в панели под сценой.' };
+    }
+    if (props.lessonId === 15) {
+      const s = props.accidentInvestigationState;
+      const deadline = s?.severity === 'light' ? 'срок расследования: 3 дня' : s?.severity === 'heavyOrFatal' ? 'срок расследования: 15 дней' : '';
+      const title: Record<NonNullable<LabSceneProps['accidentInvestigationState']>['stage'], string> = {
+        firstAid: 'Этап 1: первая помощь и доставка в мед. организацию',
+        preventHazard: 'Этап 2: предотвратить развитие аварии и воздействие факторов на других лиц',
+        preserveScene: 'Этап 3: сохранить/зафиксировать обстановку (схемы/фото/видео)',
+        notify: 'Этап 4: уведомить органы и родственников (при тяжёлом/смертельном)',
+        commission: 'Этап 5: сформировать комиссию (нечётный состав, ≥ 3)',
+        investigation: 'Этап 6: опросы, документы, экспертизы — сбор материалов расследования',
+        report: 'Этап 7: выводы, квалификация случая, меры и оформление актов',
+      };
+      return { headline: s ? `${title[s.stage]} · ${deadline}` : 'Занятие 15: выберите этап расследования в панели под сценой.' };
+    }
     return { headline: 'Занятие не установлено.' };
   }, [props, tvModel, tvSelectedIndex]);
 
@@ -3313,11 +3355,20 @@ export default function LabScene3D(props: LabSceneProps) {
             'Сцена: трёхфазная сеть с занулённым корпусом, заземление нейтрали R_0 и (при сценарии) повторное R_n. Выберите режим — КЗ на корпус, обрыв нуля или фаза на землю; оценки I_к.з., U на корпусе и I_h согласованы с формулами 12.2–12.13 (упрощённая модель). Числа Z_n, Z_H, R_n, R_зм — из вашего варианта (табл. 12.2).'}
           {props.lessonId === 13 &&
             'Сцена: план пола под max Sₐ (табл. 13.1), высота зала от Vсв (табл. 13.2). Лужа и ширина облака в плане — от Sₐ; цвет/прозрачность и чуть высота шара — от C и НКПР. C, ΔP, Vп — по формулам (13.1)–(13.6).'}
+          {props.lessonId === 14 &&
+            'Сцена показывает четыре этапа доврачебной помощи: отключение пострадавшего от тока сухим диэлектриком, проходимость путей, искусственное дыхание и непрямой массаж с соотношением для одного помощника. Этап выбирается селектором в блоке «Управление лабораторной сценой». Вращайте вид мышью.'}
+          {props.lessonId === 15 &&
+            'Сцена визуализирует порядок действий при несчастном случае и структуру расследования: первая помощь, предотвращение опасности, фиксация обстановки, уведомления, комиссия, сбор материалов и оформление выводов. Выберите шаг и тяжесть случая — срок расследования (3/15 дней) подсветится в схеме.'}
         </Alert>
       )}
       <Box
         sx={{
-          height: props.lessonId === 13 ? { xs: 400, md: 540 } : { xs: 320, md: 420 },
+          height:
+            props.lessonId === 13
+              ? { xs: 400, md: 540 }
+              : props.lessonId === 14
+                ? { xs: 400, md: 500 }
+                : { xs: 320, md: 420 },
           borderRadius: 1,
           overflow: 'hidden',
         }}
@@ -3333,10 +3384,12 @@ export default function LabScene3D(props: LabSceneProps) {
                   ? [7.5, 5.2, 7.5]
                   : props.lessonId === 13
                     ? [5.9, 4.7, 7.4]
-                    : props.lessonId === 8
+                    : props.lessonId === 14
+                      ? [6.2, 4.4, 7.2]
+                      : props.lessonId === 8
                       ? [6.8, 5, 8.2]
                       : [8, 5, 8],
-            fov: props.lessonId === 13 ? 52 : 46,
+            fov: props.lessonId === 13 ? 52 : props.lessonId === 14 ? 50 : 46,
           }}
         >
           <ambientLight intensity={0.2} />
@@ -3393,6 +3446,12 @@ export default function LabScene3D(props: LabSceneProps) {
           {props.lessonId === 13 && props.fireSafetyState && (
             <FireSafetyLabScene state={props.fireSafetyState} timeScale={timeScale} />
           )}
+          {props.lessonId === 14 && props.firstAidElectricState && (
+            <FirstAidElectricLabScene stage={props.firstAidElectricState.stage} timeScale={timeScale} />
+          )}
+          {props.lessonId === 15 && props.accidentInvestigationState && (
+            <AccidentInvestigationLabScene state={props.accidentInvestigationState} timeScale={timeScale} />
+          )}
           <OrbitControls
             enablePan={false}
             enableDamping
@@ -3403,7 +3462,19 @@ export default function LabScene3D(props: LabSceneProps) {
                   maxDistance: 38,
                   target: [0, 2.25, 0] as [number, number, number],
                 }
-              : {})}
+              : props.lessonId === 14
+                ? {
+                    minDistance: 4.2,
+                    maxDistance: 22,
+                    target: [0, 0.45, 0] as [number, number, number],
+                  }
+                : props.lessonId === 15
+                  ? {
+                      minDistance: 5.4,
+                      maxDistance: 28,
+                      target: [0, 1.3, 0] as [number, number, number],
+                    }
+                : {})}
           />
           <hemisphereLight args={['#b1e1ff', '#b97a20', 0.25]} />
         </SafeCanvas>

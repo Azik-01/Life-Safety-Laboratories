@@ -75,6 +75,8 @@ import lab10 from '../content/labs/lab-10.json';
 import lab11 from '../content/labs/lab-11.json';
 import lab12 from '../content/labs/lab-12.json';
 import lab13 from '../content/labs/lab-13.json';
+import lab14 from '../content/labs/lab-14.json';
+import lab15 from '../content/labs/lab-15.json';
 
 const layers: Record<number, KnowledgeLayer> = {
   1: lab1 as unknown as KnowledgeLayer,
@@ -90,6 +92,8 @@ const layers: Record<number, KnowledgeLayer> = {
   11: lab11 as unknown as KnowledgeLayer,
   12: lab12 as unknown as KnowledgeLayer,
   13: lab13 as unknown as KnowledgeLayer,
+  14: lab14 as unknown as KnowledgeLayer,
+  15: lab15 as unknown as KnowledgeLayer,
 };
 
 /* ---- Public API ---- */
@@ -99,11 +103,11 @@ export function getKnowledgeLayer(lessonId: LessonId): KnowledgeLayer | undefine
 }
 
 /**
- * Занятия 6–13: поле `goal` из JSON дублируется первым синтетическим блоком «Цель работы» в теории (в JSON отдельного блока нет).
+ * Занятия 6–15: поле `goal` из JSON дублируется первым синтетическим блоком «Цель работы» в теории (в JSON отдельного блока нет).
  * Занятия 1–5: цель задана первым элементом массива `theory` в lab-N.json; под заголовком страницы не показывается (см. LessonPage).
  */
 export function shouldInlineGoalInTheory(lessonId: LessonId): boolean {
-  return lessonId >= 6 && lessonId <= 13;
+  return lessonId >= 6 && lessonId <= 15;
 }
 
 export function theoryBlocksWithGoal(layer: KnowledgeLayer, lessonId: LessonId): KnowledgeTheoryBlock[] {

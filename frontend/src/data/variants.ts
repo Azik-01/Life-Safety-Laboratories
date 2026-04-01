@@ -395,6 +395,15 @@ function lesson10Values(base: number): Record<string, number> {
   };
 }
 
+/* ─── Lab 14: Theory-first; variant tables from manual not used in app yet ─── */
+function lesson14Values(_base: number): Record<string, number | string> {
+  return {};
+}
+
+function lesson15Values(_base: number): Record<string, number | string> {
+  return {};
+}
+
 function lesson11Values(base: number): Record<string, number> {
   return {
     UphiV: 210 + base * 8,
@@ -658,6 +667,14 @@ export const lessonVariants: Record<LessonId, LabVariant[]> = {
   ),
   12: lesson12Variants,
   13: lesson13Variants,
+  14: makeVariants(
+    'Занятие №14: таблицы варианта в приложении не заданы; материал — теория и иллюстрации по методичке.',
+    lesson14Values,
+  ),
+  15: makeVariants(
+    'Занятие №15: таблицы варианта в приложении не заданы; материал — теория и иллюстрации по методичке.',
+    lesson15Values,
+  ),
 };
 
 export function pickVariantByTicketDigits(lessonId: LessonId, ticketInput: string): LabVariant {

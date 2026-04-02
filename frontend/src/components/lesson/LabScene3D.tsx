@@ -3392,8 +3392,20 @@ export default function LabScene3D(props: LabSceneProps) {
             fov: props.lessonId === 13 ? 52 : props.lessonId === 14 ? 50 : 46,
           }}
         >
-          <ambientLight intensity={0.2} />
-          <directionalLight position={[5, 10, 3]} intensity={0.7} castShadow shadow-mapSize-width={512} shadow-mapSize-height={512} />
+          <ambientLight intensity={props.lessonId === 15 ? 0.34 : 0.2} />
+          <directionalLight
+            position={[5, 10, 3]}
+            intensity={props.lessonId === 15 ? 0.95 : 0.7}
+            castShadow
+            shadow-mapSize-width={512}
+            shadow-mapSize-height={512}
+          />
+          {props.lessonId === 15 && (
+            <pointLight position={[-4, 6, 8]} color="#fff8f0" intensity={0.55} distance={22} decay={2} />
+          )}
+          {props.lessonId === 15 && (
+            <pointLight position={[6, 5, 4]} color="#e3f2fd" intensity={0.4} distance={18} decay={2} />
+          )}
           {props.lessonId === 1 && <LightInvestigationScene state={props.lightState} timeScale={timeScale} />}
           {props.lessonId === 2 && <LightCalculationScene state={props.lightState} timeScale={timeScale} />}
           {props.lessonId === 3 && <NoiseInvestigationScene state={props.noiseState} timeScale={timeScale} />}
@@ -3472,11 +3484,11 @@ export default function LabScene3D(props: LabSceneProps) {
                   ? {
                       minDistance: 5.4,
                       maxDistance: 28,
-                      target: [0, 1.3, 0] as [number, number, number],
+                      target: [0, 1.76, 0] as [number, number, number],
                     }
                 : {})}
           />
-          <hemisphereLight args={['#b1e1ff', '#b97a20', 0.25]} />
+          <hemisphereLight args={['#b1e1ff', '#b97a20', props.lessonId === 15 ? 0.42 : 0.25]} />
         </SafeCanvas>
       </Box>
     </Paper>

@@ -24,7 +24,7 @@ function Label({
   position,
   children,
   color = '#ffffff',
-  size = 0.11,
+  size = 0.15,
 }: {
   position: [number, number, number];
   children: string;
@@ -35,14 +35,14 @@ function Label({
     <Billboard position={position} follow>
       <DreiText
         fontWeight={700}
-        outlineWidth={size * 0.16}
-        outlineColor="#141414"
+        outlineWidth={size * 0.24}
+        outlineColor="#263238"
         anchorX="center"
         anchorY="middle"
         position={[0, 0, 0]}
         fontSize={size}
         color={color}
-        maxWidth={6}
+        maxWidth={8}
       >
         {children}
       </DreiText>
@@ -53,7 +53,7 @@ function Label({
 function Arrow({
   from,
   to,
-  color = '#90a4ae',
+  color = '#78909c',
 }: {
   from: [number, number, number];
   to: [number, number, number];
@@ -74,11 +74,11 @@ function Arrow({
     <group>
       <mesh position={position} quaternion={quaternion}>
         <cylinderGeometry args={[0.035, 0.035, height, 10]} />
-        <meshStandardMaterial color={color} roughness={0.55} />
+        <meshStandardMaterial color={color} roughness={0.42} metalness={0.12} />
       </mesh>
       <mesh position={to} quaternion={quaternion}>
         <coneGeometry args={[0.08, 0.18, 10]} />
-        <meshStandardMaterial color={color} roughness={0.5} />
+        <meshStandardMaterial color={color} roughness={0.38} metalness={0.15} />
       </mesh>
     </group>
   );
@@ -100,16 +100,17 @@ function StepNode({
       <mesh castShadow>
         <boxGeometry args={[1.9, 0.55, 0.55]} />
         <meshStandardMaterial
-          color={active ? '#ffee58' : '#e0e0e0'}
-          emissive={active ? '#ffc107' : '#000000'}
-          emissiveIntensity={active ? 0.22 : 0}
-          roughness={0.65}
+          color={active ? '#ffeb3b' : '#eceff1'}
+          emissive={active ? '#ff8f00' : '#b0bec5'}
+          emissiveIntensity={active ? 0.42 : 0.06}
+          roughness={active ? 0.45 : 0.52}
+          metalness={0.06}
         />
       </mesh>
-      <Label position={[0, 0.45, 0]} color={active ? '#ffffff' : '#f5f5f5'} size={0.11}>
+      <Label position={[0, 0.45, 0]} color="#ffffff" size={0.15}>
         {title}
       </Label>
-      <Label position={[-0.96, -0.35, 0]} color="#ffffff" size={0.09}>
+      <Label position={[-0.96, -0.35, 0]} color="#ffffff" size={0.12}>
         {id}
       </Label>
     </group>
@@ -131,7 +132,7 @@ export default function AccidentInvestigationLabScene({ state, timeScale }: Acci
         { stage: 'notify' as const, id: '4', title: 'Уведомления', p: [-3.2, 0.4, 0] as [number, number, number] },
         { stage: 'commission' as const, id: '5', title: 'Комиссия', p: [0, 0.4, 0] as [number, number, number] },
         { stage: 'investigation' as const, id: '6', title: 'Материалы расследования', p: [3.2, 0.4, 0] as [number, number, number] },
-        { stage: 'report' as const, id: '7', title: 'Итоги и акты', p: [0, -0.55, 0] as [number, number, number] },
+        { stage: 'report' as const, id: '7', title: 'Итоги и акты', p: [0, -0.82, 0] as [number, number, number] },
       ] as const,
     [],
   );
@@ -142,13 +143,14 @@ export default function AccidentInvestigationLabScene({ state, timeScale }: Acci
   const deadlineText = state.severity === 'light' ? 'Лёгкий случай: 3 дня' : 'Тяжёлый/смертельный: 15 дней';
 
   const glow = 0.12 + 0.1 * (Math.sin(pulse.current * 2.2) * 0.5 + 0.5);
-  const yLift = 0.9;
+  /** Содержимое схемы выше пола; сам пол (плоскость) остаётся на y = 0 */
+  const yLift = 1.38;
 
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
         <planeGeometry args={[14, 10]} />
-        <meshStandardMaterial color="#eceff1" roughness={0.98} />
+        <meshStandardMaterial color="#fafbfc" roughness={0.92} metalness={0.02} />
       </mesh>
 
       <group position={[0, yLift, 0]}>
@@ -163,25 +165,26 @@ export default function AccidentInvestigationLabScene({ state, timeScale }: Acci
         <Arrow from={[3.2, 1.52, 0]} to={[-3.2, 0.68, 0]} />
         <Arrow from={[-2.2, 0.4, 0]} to={[-0.95, 0.4, 0]} />
         <Arrow from={[0.95, 0.4, 0]} to={[2.2, 0.4, 0]} />
-        {/* 6 → 7 (к финальному оформлению) */}
-        <Arrow from={[3.2, 0.12, 0]} to={[0, -0.32, 0]} />
+        {/* 6 → 7 (к финальному оформлению; конец у верхней грани блока шага 7) */}
+        <Arrow from={[3.2, 0.12, 0]} to={[0, -0.545, 0]} />
 
         {/* deadline card */}
         <group position={[5.55, 0.9, 0]}>
           {/* Текст вынесен над блоком, чтобы не "влезал" внутрь */}
-          <Label position={[0, 1.0, 0]} color="#ffffff" size={0.11}>
+          <Label position={[0, 1.0, 0]} color="#ffffff" size={0.15}>
             {deadlineText}
           </Label>
-          <Label position={[0, 0.72, 0]} color="#ffffff" size={0.1}>
+          <Label position={[0, 0.72, 0]} color="#fff8e1" size={0.13}>
             {`Срок: ${deadlineDays} дней`}
           </Label>
           <mesh castShadow>
             <boxGeometry args={[2.2, 0.85, 0.42]} />
             <meshStandardMaterial
               color={deadlineColor}
-              roughness={0.8}
+              roughness={0.55}
+              metalness={0.04}
               emissive={deadlineColor}
-              emissiveIntensity={glow * 0.25}
+              emissiveIntensity={0.12 + glow * 0.35}
             />
           </mesh>
         </group>

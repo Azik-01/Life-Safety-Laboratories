@@ -10,7 +10,7 @@ import { attenuationFactorF, xParameter } from '../../formulas/hfField';
 import { pduForFrequencyVpm, RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, normalizedPatternFactor } from '../../formulas/uhfField';
 import { bodyCurrentMA, skinImpedance, totalBodyImpedance, groundPotential, stepVoltage, lesson11TouchEstimate, classifyCurrentDanger } from '../../formulas/electricSafety';
 import { lesson12TnLabEstimate, lesson12SingleElectrodeResistanceOhm, lesson12ElectrodeCount } from '../../formulas/electricSafety';
-import { TheoryStylizedPerson, stylizedPersonHandTipLocal } from './StylizedPerson3D';
+import { TheoryStylizedPerson, stylizedPersonPalmCenterLocal } from './StylizedPerson3D';
 
 /* ─── Scene title map ─── */
 export const sceneTitle: Record<TheorySimulatorType, string> = {
@@ -1995,20 +1995,14 @@ function RadiationDoseScene({ frequencyMHz }: { frequencyMHz: number }) {
 
 /* ─────────────── Electric Current Body Scene (Lab 9) ─────────────── */
 
-/** Цилиндр вдоль отрезка from→to (ось Y цилиндра совпадает с направлением). */
-function WireCylinder3D({
-  from,
-  to,
-  radius,
-  color,
+/** Цилиндр вдоль отрезка from→to (ось Y цилиндра Three.js → направление). */
+function L9CylinderBetween(
+  from: [number, number, number],
+  to: [number, number, number],
+  radius: number,
+  color: string,
   emissiveIntensity = 0,
-}: {
-  from: [number, number, number];
-  to: [number, number, number];
-  radius: number;
-  color: string;
-  emissiveIntensity?: number;
-}) {
+) {
   const a = new THREE.Vector3(...from);
   const b = new THREE.Vector3(...to);
   const d = b.clone().sub(a);
@@ -2016,7 +2010,7 @@ function WireCylinder3D({
   if (len < 1e-4) return null;
   const mid = a.clone().add(b).multiplyScalar(0.5);
   const quat = new THREE.Quaternion();
-  quat.setFromUnitVectors(new THREE.Vector3(1, 1, 0), d.clone().normalize());
+  quat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize());
   return (
     <mesh position={[mid.x, mid.y, mid.z]} quaternion={quat} castShadow>
       <cylinderGeometry args={[radius, radius, len, 12]} />
@@ -2025,9 +2019,116 @@ function WireCylinder3D({
         emissive={color}
         emissiveIntensity={emissiveIntensity}
         roughness={0.38}
-        metalness={0.28}
+        metalness={0.35}
       />
     </mesh>
+  );
+}
+
+/** Стилизованный распределительный щит (ЩР/ВРУ): вертикальный корпус, козырёк, дверца, без силуэта «шлагбаума». */
+function Lab9EnergizedEquipment({
+  probeTip,
+  liveGlow,
+}: {
+  probeTip: [number, number, number];
+  liveGlow: number;
+}) {
+  const cx = 1.32;
+  const cz = -0.08;
+  const cabinetW = 0.4;
+  const cabinetH = 1.12;
+  const cabinetD = 0.32;
+  const footH = 0.1;
+  const footSpread = cabinetW * 0.34;
+  const footSize: [number, number, number] = [0.12, footH, 0.2];
+  const yCabMid = footH + cabinetH * 0.5;
+  const yCabBottom = footH;
+  const doorFaceZ = cz + cabinetD * 0.5;
+  const live = '#c67b4e';
+  const body = '#78909c';
+  const bodyTrim = '#546e7a';
+  const door = '#eceff1';
+  const doorInset = '#cfd8dc';
+
+  /** Кромка слева на двери — читается как петля */
+  const hingeX = cx - cabinetW * 0.5 + 0.018;
+  /** Точка на корпусе: шина выходит сбоку ближе к «токовым» клеммам */
+  const busStart: [number, number, number] = [
+    cx - cabinetW * 0.5 - 0.02,
+    yCabBottom + cabinetH * 0.58,
+    cz + cabinetD * 0.42,
+  ];
+
+  return (
+    <group>
+      <mesh position={[cx - footSpread, footH * 0.5, cz]} castShadow receiveShadow>
+        <boxGeometry args={footSize} />
+        <meshStandardMaterial color={bodyTrim} roughness={0.62} metalness={0.28} />
+      </mesh>
+      <mesh position={[cx + footSpread, footH * 0.5, cz]} castShadow receiveShadow>
+        <boxGeometry args={footSize} />
+        <meshStandardMaterial color={bodyTrim} roughness={0.62} metalness={0.28} />
+      </mesh>
+
+      <mesh position={[cx, yCabMid, cz]} castShadow receiveShadow>
+        <boxGeometry args={[cabinetW, cabinetH, cabinetD]} />
+        <meshStandardMaterial color={body} roughness={0.52} metalness={0.26} />
+      </mesh>
+
+      <mesh position={[cx, yCabBottom + cabinetH + 0.035, cz - 0.02]} castShadow receiveShadow>
+        <boxGeometry args={[cabinetW + 0.08, 0.06, cabinetD + 0.14]} />
+        <meshStandardMaterial color={bodyTrim} roughness={0.48} metalness={0.32} />
+      </mesh>
+
+      <mesh position={[cx + 0.008, yCabMid, doorFaceZ + 0.008]} castShadow>
+        <boxGeometry args={[cabinetW - 0.06, cabinetH - 0.1, 0.022]} />
+        <meshStandardMaterial color={door} roughness={0.4} metalness={0.08} />
+      </mesh>
+      <mesh position={[hingeX, yCabMid, doorFaceZ + 0.014]} castShadow>
+        <boxGeometry args={[0.024, cabinetH - 0.16, 0.014]} />
+        <meshStandardMaterial color="#37474f" roughness={0.55} metalness={0.35} />
+      </mesh>
+      <mesh position={[cx + cabinetW * 0.32, yCabBottom + cabinetH * 0.42, doorFaceZ + 0.022]} castShadow>
+        <cylinderGeometry args={[0.028, 0.028, 0.024, 12]} />
+        <meshStandardMaterial color="#455a64" roughness={0.35} metalness={0.45} />
+      </mesh>
+
+      <mesh position={[cx - cabinetW * 0.08, yCabBottom + cabinetH * 0.72, doorFaceZ + 0.02]} rotation={[0, 0, Math.PI / 6]}>
+        <planeGeometry args={[0.11, 0.11]} />
+        <meshStandardMaterial
+          color="#fdd835"
+          emissive="#f9a825"
+          emissiveIntensity={0.06}
+          roughness={0.55}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh position={[cx - cabinetW * 0.08, yCabBottom + cabinetH * 0.72, doorFaceZ + 0.021]} rotation={[0, 0, -Math.PI / 6]}>
+        <planeGeometry args={[0.014, 0.095]} />
+        <meshStandardMaterial color="#212121" roughness={0.7} side={THREE.DoubleSide} />
+      </mesh>
+
+      <mesh position={[cx + cabinetW * 0.06, yCabBottom + cabinetH * 0.22, doorFaceZ + 0.018]}>
+        <boxGeometry args={[cabinetW * 0.55, 0.09, 0.016]} />
+        <meshStandardMaterial color={doorInset} roughness={0.45} metalness={0.1} />
+      </mesh>
+
+      <mesh position={[busStart[0] - 0.045, busStart[1] - 0.055, busStart[2]]} castShadow>
+        <boxGeometry args={[0.12, 0.095, 0.11]} />
+        <meshStandardMaterial color="#efebe9" roughness={0.55} metalness={0.06} />
+      </mesh>
+      {L9CylinderBetween(busStart, probeTip, 0.034, live, liveGlow * 1.05)}
+      <mesh position={probeTip} castShadow>
+        <sphereGeometry args={[0.042, 12, 12]} />
+        <meshStandardMaterial
+          color={live}
+          emissive={live}
+          emissiveIntensity={0.12 + liveGlow * 0.85}
+          roughness={0.32}
+          metalness={0.55}
+        />
+      </mesh>
+    </group>
   );
 }
 
@@ -2038,24 +2139,15 @@ function ElectricCurrentBodyScene({ current }: { current: number }) {
   const meterFill = mA < 1 ? '#c8e6c9' : mA < 10 ? '#fff9c4' : mA < 100 ? '#ffe0b2' : '#ffcdd2';
   const statusFill = mA < 1 ? '#e8f5e9' : mA < 10 ? '#fffde7' : mA < 100 ? '#fff3e0' : '#ffebee';
   const footH = 0.11;
-  const tipR = stylizedPersonHandTipLocal('right', footH);
-  /** Контакт провода с кистью (чуть к центру и вперёд — виден зазор) */
-  const contact: [number, number, number] = [tipR[0] + 0.44, tipR[1] + 0.02, 0.06];
-  /** Начало отрезка провода (from для WireCylinder3D) */
-  const postTop: [number, number, number] = [1.52, 1.68, 0];
-  /**
-   * Вспышка у ладони: только от точки кисти + смещение, без привязки к from/to проводов —
-   * при сдвиге проводов сцена не ломается; подправьте PALM_FLASH_OFFSET при необходимости.
-   */
-  const PALM_FLASH_OFFSET: [number, number, number] = [0.35, 0.37, 0.02];
+  const palmR = stylizedPersonPalmCenterLocal('right', footH);
+  /** Точка на ладони: и жёлтая вспышка, и конец токоведущего вывода (одни координаты) */
   const palmFlashPos: [number, number, number] = [
-    tipR[0] + PALM_FLASH_OFFSET[0],
-    tipR[1] + PALM_FLASH_OFFSET[1],
-    tipR[2] + PALM_FLASH_OFFSET[2],
+    palmR[0] + 0.32,
+    palmR[1] + 0.33,
+    palmR[2] - 0.04,
   ];
-  const wireGlow = Math.min(0.55, 0.06 + mA / 120);
-  const jacketColor = '#37474f';
-  const copperColor = '#b87333';
+  const contact: [number, number, number] = palmFlashPos;
+  const liveGlow = Math.min(0.55, 0.06 + mA / 120);
 
   return (
     <>
@@ -2064,12 +2156,10 @@ function ElectricCurrentBodyScene({ current }: { current: number }) {
         <meshStandardMaterial color="#a89888" roughness={0.88} />
       </mesh>
 
-      {/* Силуэт: провод подводит фазу к правой руке — ток по телу (торс) */}
-      <TheoryStylizedPerson footHalfSep={footH} torsoPath={{ color: pathColor, opacity: pathOpacity }} />
+      <Lab9EnergizedEquipment probeTip={contact} liveGlow={liveGlow} />
 
-      {/* Жила: медь; оболочка кабеля — тёмная, чуть светится при большом I */}
-      <WireCylinder3D from={postTop} to={contact} radius={0.055} color={jacketColor} emissiveIntensity={wireGlow * 0.4} />
-      <WireCylinder3D from={postTop} to={contact} radius={0.022} color={copperColor} emissiveIntensity={wireGlow * 0.9} />
+      {/* Силуэт: касание оголённой части под напряжением — ток по телу (торс) */}
+      <TheoryStylizedPerson footHalfSep={footH} torsoPath={{ color: pathColor, opacity: pathOpacity }} />
 
       {mA > 2 && (
         <mesh position={palmFlashPos}>
@@ -2084,8 +2174,8 @@ function ElectricCurrentBodyScene({ current }: { current: number }) {
         </mesh>
       )}
 
-      <Label position={[1.38, 1.62, 0]} color="#eceff1" size={0.078} outlineColor="#263238" depthOffset={-1}>
-        Провод под напряжением → рука
+      <Label position={[1.28, 1.72, 0.06]} color="#eceff1" size={0.068} outlineColor="#263238" depthOffset={-1}>
+        Оборудование под напряжением, касание токоведущей части
       </Label>
       <Label position={[0, 1.88, 0]} color={meterFill} size={0.16} outlineColor="#263238" depthOffset={-2}>{`I = ${mA.toFixed(1)} мА`}</Label>
       <Label position={[0, 0.2, 0.58]} color={statusFill} size={0.115} outlineColor="#37474f" depthOffset={-2}>
@@ -2709,7 +2799,8 @@ function ElectricResistanceScene({
   const explainColor = '#0d47a1';
   const colZn = '#00897b';
   const colRv = '#2e7d32';
-  const yChain = 1.42;
+  /** Высота цепи — уровень кистей (не плеч/ «основания» рук вверху схемы) */
+  const yChain = 0.98;
   const zPlane = 0.02;
   /** Ширина блоков Zн и Rв реагирует на ползунки (нормировка по типичным диапазонам) */
   const znSpan = 60;

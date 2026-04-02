@@ -41,6 +41,32 @@ export function stylizedPersonHandTipLocal(
 }
 
 /**
+ * Точка на ладони (направление «плечо → кисть», без ручного смещения к щиту):
+ * чуть ближе к телу от условного кончика капсулы и слегка вперёд (+Z) — зона контакта с предметом.
+ */
+export function stylizedPersonPalmCenterLocal(
+  which: 'left' | 'right',
+  footHalfSep = 0.11,
+  alongArm = 0.072,
+  forwardZ = 0.055,
+): [number, number, number] {
+  const refHalf = 0.11;
+  const h = footHalfSep;
+  const armX = 0.22 * (h / refHalf);
+  const shoulder: [number, number, number] = which === 'left' ? [-armX, ARM_SHOULDER_Y, 0] : [armX, ARM_SHOULDER_Y, 0];
+  const tip = stylizedPersonHandTipLocal(which, footHalfSep);
+  const dx = tip[0] - shoulder[0];
+  const dy = tip[1] - shoulder[1];
+  const dz = tip[2] - shoulder[2];
+  const len = Math.hypot(dx, dy, dz);
+  if (len < 1e-6) return [tip[0], tip[1], tip[2] + forwardZ];
+  const ux = dx / len;
+  const uy = dy / len;
+  const uz = dz / len;
+  return [tip[0] - ux * alongArm, tip[1] - uy * alongArm, tip[2] - uz * alongArm + forwardZ];
+}
+
+/**
  * Хват длинного рычага двумя руками: между кистями по X/Y и смещение вперёд (+Z).
  * Внимание: среднее по X часто ≈ 0 (симметрия рук) — для палки «из руки», а не из центра тела, лучше {@link stylizedPersonHandTipLocal}.
  */

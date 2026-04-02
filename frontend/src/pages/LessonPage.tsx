@@ -119,7 +119,7 @@ export default function LessonPage() {
         sx={{ mb: 2 }}
       >
         <Tab value="theory" label="Теория" />
-        <Tab value="lab" label="Лабораторная" />
+        <Tab value="lab" label="Практика" />
         <Tab value="test" label="Тест" />
       </Tabs>
 

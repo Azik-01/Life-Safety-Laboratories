@@ -3306,7 +3306,7 @@ export default function LabScene3D(props: LabSceneProps) {
     <Paper variant="outlined" sx={{ p: 1.5 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
         <Typography variant="subtitle2">
-          Лабораторная 3D-сцена
+          Практическая 3D-сцена
         </Typography>
         <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" justifyContent="flex-end">
           <Chip size="small" label="Что происходит?" color={showExplain ? 'primary' : 'default'} onClick={() => setShowExplain((prev) => !prev)} />

@@ -35,6 +35,11 @@ const sceneTitle: Record<string, string> = {
   'l11-it-touch': 'ИТ (изолированная нейтраль): касание фазы',
   'l11-tn-normal-touch': 'TN (заземлённая нейтраль): касание фазы',
   'l11-tn-emergency-touch': 'TN (авария): КЗ L1→земля и касание',
+  'l12-tn-fault-modes': 'TN (теория): режимы КЗ и PEN',
+  'l12-earthing-electrodes': 'Одиночный заземлитель и число электродов',
+  'l13-fire-triangle': 'Треугольник горения: горючее, окислитель, зажигание',
+  'l13-vapor-nkpr': 'Концентрация C и НКПР (нижний концентрационный предел)',
+  'l13-delta-p-category': 'ΔP взрыва и порог 5 кПа (категория помещения А)',
 };
 import {
   brightness,
@@ -125,6 +130,9 @@ function getDefaults(type: TheorySimulatorType) {
       return { a: 12, b: 25, c: 0, d: 0 };
     case 'electric-current-body':
       return { a: 220, b: 5000, c: 0, d: 0 };
+    case 'electric-resistance':
+      // a=Rн (Ом), b=C (нФ), c=Rв (Ом), d=f (Гц) — как в ElectricResistanceScene / MiniSimulator
+      return { a: 5000, b: 20, c: 500, d: 50 };
     case 'step-voltage':
       /* a=Iz (А), b=rho (Ом·м), c=x (м), d=a(м×0.1) -> a=d/10 */
       return { a: 10, b: 200, c: 5, d: 8 };
@@ -146,6 +154,15 @@ function getDefaults(type: TheorySimulatorType) {
     case 'l12-earthing-electrodes':
       // a=ρ (Ом·м), b=l (м), c=d (мм), d=t (м)
       return { a: 100, b: 3, c: 50, d: 2 };
+    case 'l13-fire-triangle':
+      // a,b,c ∈ [0,1] — «наличие» компонентов (учебная модель)
+      return { a: 0.85, b: 0.85, c: 0.85, d: 0 };
+    case 'l13-vapor-nkpr':
+      // a=C (%), b=НКПР (%)
+      return { a: 3.5, b: 2, c: 0, d: 0 };
+    case 'l13-delta-p-category':
+      // a=ΔP (кПа)
+      return { a: 4, b: 0, c: 0, d: 0 };
     default:
       return { a: 500, b: 1.2, c: 2.5, d: 120 };
   }
@@ -855,6 +872,61 @@ export default function MiniSimulator({ type }: SimulatorProps) {
             <ValueLine key="v1" label="Rод" value={Number.isFinite(R1) ? `${R1.toFixed(2)} Ом` : '—'} />,
             <ValueLine key="v2" label="ηз" value={`${eta}`} />,
             <ValueLine key="v3" label="n" value={Number.isFinite(n) ? `${n.toFixed(2)} → ${Math.ceil(n)} шт.` : '—'} />,
+          ],
+        };
+      }
+      case 'l13-fire-triangle': {
+        const fuel = Math.max(0, Math.min(1, a));
+        const ox = Math.max(0, Math.min(1, b));
+        const ign = Math.max(0, Math.min(1, c));
+        const prod = fuel * ox * ign;
+        return {
+          controls: (
+            <Stack spacing={1.2}>
+              <Typography variant="caption">Горючее (0…1): {fuel.toFixed(2)}</Typography>
+              <Slider value={fuel} min={0} max={1} step={0.05} onChange={(_, v) => setA(v as number)} />
+              <Typography variant="caption">Окислитель (0…1): {ox.toFixed(2)}</Typography>
+              <Slider value={ox} min={0} max={1} step={0.05} onChange={(_, v) => setB(v as number)} />
+              <Typography variant="caption">Источник зажигания (0…1): {ign.toFixed(2)}</Typography>
+              <Slider value={ign} min={0} max={1} step={0.05} onChange={(_, v) => setC(v as number)} />
+            </Stack>
+          ),
+          values: [
+            <ValueLine key="v1" label="f·o·i (условно)" value={prod.toFixed(3)} />,
+            <ValueLine key="v2" label="Пламя на схеме" value={prod > 0.08 ? 'да' : 'нет'} />,
+          ],
+        };
+      }
+      case 'l13-vapor-nkpr': {
+        const C = Math.max(0, a);
+        const nkpr = Math.max(0.05, b);
+        const ok = C >= nkpr;
+        return {
+          controls: (
+            <Stack spacing={1.2}>
+              <Typography variant="caption">C (%): {C.toFixed(2)}</Typography>
+              <Slider value={a} min={0} max={15} step={0.1} onChange={(_, v) => setA(v as number)} />
+              <Typography variant="caption">НКПР (%): {nkpr.toFixed(2)}</Typography>
+              <Slider value={b} min={0.2} max={10} step={0.05} onChange={(_, v) => setB(v as number)} />
+            </Stack>
+          ),
+          values: [
+            <ValueLine key="v1" label="Сравнение" value={ok ? 'C ≥ НКПР' : 'C < НКПР'} />,
+          ],
+        };
+      }
+      case 'l13-delta-p-category': {
+        const dp = Math.max(0, a);
+        const catA = dp > 5;
+        return {
+          controls: (
+            <Stack spacing={1.2}>
+              <Typography variant="caption">ΔP (кПа): {dp.toFixed(2)}</Typography>
+              <Slider value={a} min={0} max={25} step={0.25} onChange={(_, v) => setA(v as number)} />
+            </Stack>
+          ),
+          values: [
+            <ValueLine key="v1" label="Порог 5 кПа" value={catA ? 'ΔP > 5 → кат. А' : 'ΔP ≤ 5'} />,
           ],
         };
       }

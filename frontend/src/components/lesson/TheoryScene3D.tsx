@@ -10,7 +10,7 @@ import { attenuationFactorF, xParameter } from '../../formulas/hfField';
 import { pduForFrequencyVpm, RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, normalizedPatternFactor } from '../../formulas/uhfField';
 import { bodyCurrentMA, skinImpedance, totalBodyImpedance, groundPotential, stepVoltage, lesson11TouchEstimate, classifyCurrentDanger } from '../../formulas/electricSafety';
 import { lesson12TnLabEstimate, lesson12SingleElectrodeResistanceOhm, lesson12ElectrodeCount } from '../../formulas/electricSafety';
-import { TheoryStylizedPerson } from './StylizedPerson3D';
+import { TheoryStylizedPerson, stylizedPersonHandTipLocal } from './StylizedPerson3D';
 
 /* ─── Scene title map ─── */
 export const sceneTitle: Record<TheorySimulatorType, string> = {
@@ -46,8 +46,11 @@ export const sceneTitle: Record<TheorySimulatorType, string> = {
   'l11-it-touch': 'ИТ (изолированная нейтраль): касание фазы (нормальный режим)',
   'l11-tn-normal-touch': 'TN (заземлённая нейтраль): касание фазы (нормальный режим)',
   'l11-tn-emergency-touch': 'TN (авария): КЗ L1→земля и касание фазы',
-  'l12-tn-fault-modes': 'Занятие 12: КЗ на корпус, повторное заземление, обрыв PEN',
+  'l12-tn-fault-modes': 'TN (теория): плоская схема-плакат — режимы КЗ и PEN',
   'l12-earthing-electrodes': 'Занятие 12: Одиночный заземлитель и число электродов',
+  'l13-fire-triangle': 'Занятие 13: треугольник горения (горючее · окислитель · источник зажигания)',
+  'l13-vapor-nkpr': 'Занятие 13: концентрация C и нижний концентрационный предел (НКПР)',
+  'l13-delta-p-category': 'Занятие 13: ΔP взрыва и порог 5 кПа (категория помещения А)',
 };
 
 /* ─── Bold label helper ─── */
@@ -1992,20 +1995,98 @@ function RadiationDoseScene({ frequencyMHz }: { frequencyMHz: number }) {
 
 /* ─────────────── Electric Current Body Scene (Lab 9) ─────────────── */
 
+/** Цилиндр вдоль отрезка from→to (ось Y цилиндра совпадает с направлением). */
+function WireCylinder3D({
+  from,
+  to,
+  radius,
+  color,
+  emissiveIntensity = 0,
+}: {
+  from: [number, number, number];
+  to: [number, number, number];
+  radius: number;
+  color: string;
+  emissiveIntensity?: number;
+}) {
+  const a = new THREE.Vector3(...from);
+  const b = new THREE.Vector3(...to);
+  const d = b.clone().sub(a);
+  const len = d.length();
+  if (len < 1e-4) return null;
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  const quat = new THREE.Quaternion();
+  quat.setFromUnitVectors(new THREE.Vector3(1, 1, 0), d.clone().normalize());
+  return (
+    <mesh position={[mid.x, mid.y, mid.z]} quaternion={quat} castShadow>
+      <cylinderGeometry args={[radius, radius, len, 12]} />
+      <meshStandardMaterial
+        color={color}
+        emissive={color}
+        emissiveIntensity={emissiveIntensity}
+        roughness={0.38}
+        metalness={0.28}
+      />
+    </mesh>
+  );
+}
+
 function ElectricCurrentBodyScene({ current }: { current: number }) {
   const mA = Math.max(0, current);
   const pathOpacity = Math.min(0.62, 0.1 + mA / 65);
   const pathColor = mA < 1 ? '#43a047' : mA < 10 ? '#fdd835' : mA < 100 ? '#ff9800' : '#ef5350';
   const meterFill = mA < 1 ? '#c8e6c9' : mA < 10 ? '#fff9c4' : mA < 100 ? '#ffe0b2' : '#ffcdd2';
   const statusFill = mA < 1 ? '#e8f5e9' : mA < 10 ? '#fffde7' : mA < 100 ? '#fff3e0' : '#ffebee';
+  const footH = 0.11;
+  const tipR = stylizedPersonHandTipLocal('right', footH);
+  /** Контакт провода с кистью (чуть к центру и вперёд — виден зазор) */
+  const contact: [number, number, number] = [tipR[0] + 0.44, tipR[1] + 0.02, 0.06];
+  /** Начало отрезка провода (from для WireCylinder3D) */
+  const postTop: [number, number, number] = [1.52, 1.68, 0];
+  /**
+   * Вспышка у ладони: только от точки кисти + смещение, без привязки к from/to проводов —
+   * при сдвиге проводов сцена не ломается; подправьте PALM_FLASH_OFFSET при необходимости.
+   */
+  const PALM_FLASH_OFFSET: [number, number, number] = [0.35, 0.37, 0.02];
+  const palmFlashPos: [number, number, number] = [
+    tipR[0] + PALM_FLASH_OFFSET[0],
+    tipR[1] + PALM_FLASH_OFFSET[1],
+    tipR[2] + PALM_FLASH_OFFSET[2],
+  ];
+  const wireGlow = Math.min(0.55, 0.06 + mA / 120);
+  const jacketColor = '#37474f';
+  const copperColor = '#b87333';
+
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
         <planeGeometry args={[6, 4]} />
         <meshStandardMaterial color="#a89888" roughness={0.88} />
       </mesh>
-      {/* Силуэт на полу: ноги → торс → шея → голова; кожа и одежда согласованы */}
-      <TheoryStylizedPerson footHalfSep={0.11} torsoPath={{ color: pathColor, opacity: pathOpacity }} />
+
+      {/* Силуэт: провод подводит фазу к правой руке — ток по телу (торс) */}
+      <TheoryStylizedPerson footHalfSep={footH} torsoPath={{ color: pathColor, opacity: pathOpacity }} />
+
+      {/* Жила: медь; оболочка кабеля — тёмная, чуть светится при большом I */}
+      <WireCylinder3D from={postTop} to={contact} radius={0.055} color={jacketColor} emissiveIntensity={wireGlow * 0.4} />
+      <WireCylinder3D from={postTop} to={contact} radius={0.022} color={copperColor} emissiveIntensity={wireGlow * 0.9} />
+
+      {mA > 2 && (
+        <mesh position={palmFlashPos}>
+          <sphereGeometry args={[0.045 + Math.min(0.04, mA / 2500), 10, 10]} />
+          <meshStandardMaterial
+            color="#ffeb3b"
+            emissive="#ff9800"
+            emissiveIntensity={0.35 + Math.min(0.5, mA / 200)}
+            transparent
+            opacity={0.88}
+          />
+        </mesh>
+      )}
+
+      <Label position={[1.38, 1.62, 0]} color="#eceff1" size={0.078} outlineColor="#263238" depthOffset={-1}>
+        Провод под напряжением → рука
+      </Label>
       <Label position={[0, 1.88, 0]} color={meterFill} size={0.16} outlineColor="#263238" depthOffset={-2}>{`I = ${mA.toFixed(1)} мА`}</Label>
       <Label position={[0, 0.2, 0.58]} color={statusFill} size={0.115} outlineColor="#37474f" depthOffset={-2}>
         {mA < 1 ? 'Безопасно' : mA < 10 ? 'Ощутимый ток' : mA < 100 ? 'Неотпускающий!' : 'Фибрилляция!'}
@@ -2091,6 +2172,68 @@ function L11Junction({ x, y, z = 0, active }: { x: number; y: number; z?: number
         metalness={0.12}
       />
     </mesh>
+  );
+}
+
+/** world − P = R_y(rotY) · local → local = R_y(-rotY) · (world − P) */
+function l11WorldDeltaToPersonLocal(
+  wx: number,
+  wy: number,
+  wz: number,
+  px: number,
+  py: number,
+  pz: number,
+  rotY: number,
+): [number, number, number] {
+  const dx = wx - px;
+  const dy = wy - py;
+  const dz = wz - pz;
+  const c = Math.cos(rotY);
+  const s = Math.sin(rotY);
+  return [dx * c - dz * s, dy, dx * s + dz * c];
+}
+
+/**
+ * Человек в цепи «касание фазы»: рука к шине, подсветка торса от расчётного I (как в занятии 9).
+ */
+function L11TouchVictim({
+  imA,
+  position,
+  rotY,
+  aimWorld,
+  scale = 0.46,
+}: {
+  imA: number;
+  position: [number, number, number];
+  rotY: number;
+  aimWorld: [number, number, number];
+  scale?: number;
+}) {
+  const mA = Math.max(0, imA);
+  const pathOpacity = Math.min(0.62, 0.12 + mA / 75);
+  const pathColor = mA < 1 ? '#66bb6a' : mA < 10 ? '#fdd835' : mA < 100 ? '#ff9800' : '#ef5350';
+  const [lx, ly, lz] = useMemo(() => {
+    const [wx, wy, wz] = aimWorld;
+    const [px, py, pz] = position;
+    const [dx, dy, dz] = l11WorldDeltaToPersonLocal(wx, wy, wz, px, py, pz, rotY);
+    const invS = 1 / Math.max(0.08, scale);
+    /** world − P = R·(S·t) в локали фигуры → t = R⁻¹(world−P) / S */
+    return [dx * invS, dy * invS, dz * invS] as [number, number, number];
+  }, [aimWorld, position, rotY, scale]);
+  const [px, py, pz] = position;
+  return (
+    <>
+      <group position={position} rotation={[0, rotY, 0]} scale={scale}>
+        <TheoryStylizedPerson
+          footHalfSep={0.1}
+          torsoPath={{ color: pathColor, opacity: pathOpacity }}
+          leftArmAimAt={[lx, ly, lz]}
+        />
+      </group>
+      <Label position={[px, py + scale * 1.62, pz + 0.08]} color="#37474f" size={0.068} outlineColor="#eceff1" depthOffset={-1}>
+        человек в цепи
+      </Label>
+    </>
   );
 }
 
@@ -2254,6 +2397,14 @@ function L11ItTouchSchematic({
       <Label position={[dropX, gndY + 0.18, 0]} color="#3e2723" size={0.095} outlineColor="#ffffff" depthOffset={-2}>
         {'Земля'}
       </Label>
+
+      <L11TouchVictim
+        imA={ImA}
+        position={[2.57, 0.55, 0.05]}
+        rotY={-0.74}
+        aimWorld={[busX + 0.5, yAct, 0.02]}
+        scale={0.46}
+      />
     </>
   );
 }
@@ -2362,6 +2513,14 @@ function L11TnNormalTouchSchematic({
       <Label position={[dropX, gndY + 0.18, 0]} color="#3e2723" size={0.095} outlineColor="#ffffff" depthOffset={-2}>
         {'Земля'}
       </Label>
+
+      <L11TouchVictim
+        imA={ImA}
+        position={[2.57, 0.55, 0.05]}
+        rotY={-0.74}
+        aimWorld={[busX + 0.5, yAct, 0.02]}
+        scale={0.46}
+      />
     </>
   );
 }
@@ -2474,11 +2633,56 @@ function L11TnEmergencyTouchSchematic({
       <Label position={[1.55, gndY + 0.18, 0]} color="#3e2723" size={0.095} outlineColor="#ffffff" depthOffset={-2}>
         {'Земля'}
       </Label>
+
+      <L11TouchVictim
+        imA={ImA}
+        position={[2.72, 0.08, 0.18]}
+        rotY={-0.74}
+        aimWorld={[rhCx - 0.15, yTouch, 0.02]}
+        scale={0.46}
+      />
     </>
   );
 }
 
 /* ─────────────── Electric Resistance Scene (Lab 9) ─────────────── */
+
+/**
+ * Горизонтальный отрезок «провода» между x0 и x1 на высоте y.
+ * `wireHeat` 0…1 — визуализация нагрева/тока (emissive), от ползунков через Z.
+ */
+function Lab9WireH({
+  x0,
+  x1,
+  y,
+  z = 0.04,
+  wireHeat = 0,
+}: {
+  x0: number;
+  x1: number;
+  y: number;
+  z?: number;
+  wireHeat?: number;
+}) {
+  const lo = Math.min(x0, x1);
+  const hi = Math.max(x0, x1);
+  const len = hi - lo;
+  if (len < 1e-4) return null;
+  const h = Math.max(0.04, 0.042 + wireHeat * 0.028);
+  const heat = Math.max(0, Math.min(1, wireHeat));
+  return (
+    <mesh position={[(lo + hi) / 2, y, z]} castShadow>
+      <boxGeometry args={[len, h, h]} />
+      <meshStandardMaterial
+        color={heat > 0.12 ? '#4e342e' : '#263238'}
+        emissive="#ff6d00"
+        emissiveIntensity={heat * 0.85}
+        roughness={0.45}
+        metalness={0.18 + heat * 0.25}
+      />
+    </mesh>
+  );
+}
 
 function ElectricResistanceScene({
   skinResistanceOhm,
@@ -2496,110 +2700,185 @@ function ElectricResistanceScene({
   const Rv = Math.max(1, internalResistanceOhm);
   const f = Math.max(1, frequencyHz);
 
-  // Формулы как в MiniSimulator (Lab 9):
-  // Zн = Rн / sqrt(1 + (2π f Cн Rн)^2)
-  // Z = 2·Zн + Rв
   const Zn = skinImpedance(Rn, f, CnF * 1e-9);
   const Zt = totalBodyImpedance(Zn, Rv);
-  const term = 2 * Math.PI * f * (CnF * 1e-9) * Rn; // 2π f C Rn
-  const capGlow = Math.min(1, term / 10);
-
-  const plateW = 0.65;
-  const resistorW = Math.min(2, Math.max(0.35, Rn / 9000));
-  const internalW = Math.min(2, Math.max(0.35, Rv / 2500));
+  /** Условный ток при U=220 В — только для «нагрева» проводников на схеме */
+  const imA = bodyCurrentMA(220, Math.max(1, Zt));
+  const wireHeat = Math.min(1, imA / 130);
 
   const explainColor = '#0d47a1';
+  const colZn = '#00897b';
+  const colRv = '#2e7d32';
+  const yChain = 1.42;
+  const zPlane = 0.02;
+  /** Ширина блоков Zн и Rв реагирует на ползунки (нормировка по типичным диапазонам) */
+  const znSpan = 60;
+  const znNorm = Math.max(0, Math.min(1, (Zn - znSpan) / (14000 - znSpan)));
+  const halfZn = 0.2 + znNorm * 0.42;
+  const rvNorm = Math.max(0, Math.min(1, (Rv - 100) / (1500 - 100)));
+  const halfRv = 0.2 + rvNorm * 0.42;
+  const shareSkin = Math.max(0, Math.min(1, (2 * Zn) / Math.max(1e-6, Zt)));
+  const shareInt = Math.max(0, Math.min(1, Rv / Math.max(1e-6, Zt)));
+  const emZn = 0.1 + 0.55 * shareSkin;
+  const emRv = 0.08 + 0.5 * shareInt;
+  const rcOmega = 2 * Math.PI * f * (CnF * 1e-9) * Rn;
+  const capActivity = Math.min(1, rcOmega / (1 + rcOmega));
+  const plateGap = 0.06 + 0.1 * (1 - Math.min(1, CnF / 80));
+  const probeBarW = 0.18 + 0.52 * Math.min(1, Rn / 18000);
+  const handPulse = 1 + 0.1 * wireHeat;
+
+  /** Центры элементов цепи по X (одна линия — путь тока рука…рука) */
+  const xHandL = -3.05;
+  const xZn1 = -1.75;
+  const xRv = 0;
+  const xZn2 = 1.75;
+  const xHandR = 3.05;
+  /** Нижние поясняющие подписи — чуть ближе к камере (+Z), иначе затираются плашкой/фоном */
+  const zBottomText = zPlane + 0.16;
+  /** Блок заголовков выше, чтобы не наезжать на подпись «Rв» у зелёного блока (Billboard конфликтует по глубине) */
+  const yTopShift = 0.28;
 
   return (
     <>
-      {/* Base ground */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow>
         <planeGeometry args={[10, 6]} />
-        <meshStandardMaterial color="#c4b8a8" roughness={1} />
+        <meshStandardMaterial color="#d7ccc8" roughness={1} />
       </mesh>
 
-      {/* ── (1) RC для кожи: Rн || Cн -> эквивалент Zн ── */}
-      <group>
-        {/* Rн */}
-        <mesh position={[-2.2, 2.0, 0]} castShadow>
-          <boxGeometry args={[resistorW, 0.45, 0.35]} />
-          <meshStandardMaterial color="#cc8844" emissive="#7a4d14" emissiveIntensity={0.25} />
-        </mesh>
-        <Label position={[-2.2, 2.55, 0]} color="#884400" size={0.14}>
-          {'Rн (кожа)'}
-        </Label>
+      {/* Фон подписи: что это за картинка */}
+      <mesh position={[0, 1.05, -0.02]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[8.8, 2.35]} />
+        <meshStandardMaterial color="#eceff1" roughness={0.95} />
+      </mesh>
 
-        {/* Cн (две пластины — визуально “конденсатор кожи”) */}
-        <mesh position={[-2.2, 1.2, -0.08]} castShadow>
-          <boxGeometry args={[plateW, 0.02, 0.32]} />
-          <meshStandardMaterial color="#4488cc" emissive="#29b6f6" emissiveIntensity={0.2 + capGlow * 1.1} />
-        </mesh>
-        <mesh position={[-2.2, 1.0, -0.08]} castShadow>
-          <boxGeometry args={[plateW, 0.02, 0.32]} />
-          <meshStandardMaterial color="#4488cc" emissive="#29b6f6" emissiveIntensity={0.2 + capGlow * 1.1} />
-        </mesh>
-        <Label position={[-2.2, 0.72, 0]} color="#2266aa" size={0.12}>
-          {`Cн = ${CnF.toFixed(0)} нФ`}
-        </Label>
-
-        {/* Эквивалент Zн (результат RC по модулю импеданса) */}
-        <mesh position={[-1.0, 1.6, 0]} castShadow>
-          <boxGeometry args={[Math.min(1.8, Math.max(0.35, Zn / 12000)), 0.35, 0.35]} />
-          <meshStandardMaterial color="#1de9b6" emissive="#00e676" emissiveIntensity={0.35 + (1 - capGlow) * 0.25} />
-        </mesh>
-        <Label position={[-1.0, 2.0, 0]} color={explainColor} size={0.14}>
-          {`Zн ≈ ${Zn.toFixed(0)} Ом`}
-        </Label>
-      </group>
-
-      {/* ── (2) “Две кожи” в серии + внутреннее сопротивление ── */}
-      <group>
-        {/* Zн #1 */}
-        <mesh position={[-0.7, 1.6, 0]} castShadow>
-          <boxGeometry args={[Math.min(1.8, Math.max(0.35, Zn / 12000)), 0.35, 0.35]} />
-          <meshStandardMaterial color="#1de9b6" emissive="#00e676" emissiveIntensity={0.25} />
-        </mesh>
-
-        {/* Zн #2 */}
-        <mesh position={[0.2, 1.6, 0]} castShadow>
-          <boxGeometry args={[Math.min(1.8, Math.max(0.35, Zn / 12000)), 0.35, 0.35]} />
-          <meshStandardMaterial color="#1de9b6" emissive="#00e676" emissiveIntensity={0.25} />
-        </mesh>
-
-        {/* Rв */}
-        <mesh position={[1.1, 1.6, 0]} castShadow>
-          <boxGeometry args={[internalW, 0.38, 0.35]} />
-          <meshStandardMaterial color="#44aa44" emissive="#00c853" emissiveIntensity={0.18} />
-        </mesh>
-        <Label position={[1.1, 2.0, 0]} color="#226622" size={0.13}>
-          {`Rв ≈ ${Rv.toFixed(0)} Ом`}
-        </Label>
-
-        {/* Connecting wires (just for visual “series path”) */}
-        {(
-          [
-            [-1.35, 1.75, 0],
-            [-0.35, 1.75, 0],
-            [0.65, 1.75, 0],
-            [1.55, 1.75, 0],
-          ] as Array<[number, number, number]>
-        ).map((pos, i) => (
-          <mesh key={i} position={pos} castShadow>
-            <boxGeometry args={[0.25, 0.03, 0.03]} />
-            <meshBasicMaterial color="#333" />
-          </mesh>
-        ))}
-      </group>
-
-      {/* ── (3) Итог и зависимость ── */}
-      <Label position={[0, 2.95, 0]} color={explainColor} size={0.16}>
+      <Label position={[0, 2.58 + yTopShift, zPlane]} color={explainColor} size={0.13} outlineColor="#ffffff" depthOffset={-1}>
+        Путь тока при замыкании «рука — рука»
+      </Label>
+      <Label position={[0, 2.28 + yTopShift, zPlane]} color="#37474f" size={0.095} outlineColor="#eceff1" depthOffset={-1}>
+        Ток идёт через слой кожи одной руки → внутренности → слой кожи другой руки
+      </Label>
+      <Label position={[0, 2.02 + yTopShift, zPlane]} color={explainColor} size={0.11} outlineColor="#ffffff" depthOffset={-1}>
         {`Z = 2·Zн + Rв ≈ ${Zt.toFixed(0)} Ом`}
       </Label>
-      <Label position={[0, 2.55, 0]} color="#546e7a" size={0.11} outlineColor="#263238" depthOffset={-2}>
-        {`Zн = Rн / √(1 + (2π f Cн Rн)²)`}
+      <Label position={[0, 1.78 + yTopShift, zPlane]} color="#6d4c41" size={0.065} outlineColor="#fff" depthOffset={-1}>
+        {`при U=220 В: I ≈ ${imA.toFixed(0)} мА — яркость проводов растёт с током`}
       </Label>
-      <Label position={[0, 2.25, 0]} color="#455a64" size={0.11} outlineColor="#263238" depthOffset={-2}>
-        {`f = ${f.toFixed(0)} Гц (частота)`}
+
+      {/* Контакты / «руки» */}
+      <mesh position={[xHandL, yChain, zPlane]} scale={[handPulse, handPulse, handPulse]} castShadow>
+        <sphereGeometry args={[0.11, 14, 14]} />
+        <meshStandardMaterial
+          color="#a1887f"
+          roughness={0.65}
+          emissive="#ffcc80"
+          emissiveIntensity={wireHeat * 0.35}
+        />
+      </mesh>
+      <Label position={[xHandL, yChain + 0.42, zPlane]} color="#4e342e" size={0.075} outlineColor="#fff">
+        контакт А
+      </Label>
+
+      <mesh position={[xHandR, yChain, zPlane]} scale={[handPulse, handPulse, handPulse]} castShadow>
+        <sphereGeometry args={[0.11, 14, 14]} />
+        <meshStandardMaterial
+          color="#a1887f"
+          roughness={0.65}
+          emissive="#ffcc80"
+          emissiveIntensity={wireHeat * 0.35}
+        />
+      </mesh>
+      <Label position={[xHandR, yChain + 0.42, zPlane]} color="#4e342e" size={0.075} outlineColor="#fff">
+        контакт Б
+      </Label>
+
+      {/* Проводники — толщина и оранжевое свечение от условного I */}
+      <Lab9WireH x0={xHandL + 0.14} x1={xZn1 - halfZn} y={yChain} z={zPlane} wireHeat={wireHeat} />
+      <Lab9WireH x0={xZn1 + halfZn} x1={xRv - halfRv} y={yChain} z={zPlane} wireHeat={wireHeat} />
+      <Lab9WireH x0={xRv + halfRv} x1={xZn2 - halfZn} y={yChain} z={zPlane} wireHeat={wireHeat} />
+      <Lab9WireH x0={xZn2 + halfZn} x1={xHandR - 0.14} y={yChain} z={zPlane} wireHeat={wireHeat} />
+
+      {/* Два одинаковых Zн — слой кожи на каждой руке (ширина ∼ величина Zн) */}
+      <mesh position={[xZn1, yChain, zPlane]} castShadow>
+        <boxGeometry args={[halfZn * 2, 0.44 + znNorm * 0.06, 0.22]} />
+        <meshStandardMaterial color={colZn} emissive={colZn} emissiveIntensity={emZn} roughness={0.45} />
+      </mesh>
+      <Label position={[xZn1, yChain + 0.38, zPlane]} color="#004d40" size={0.088} outlineColor="#e0f2f1">
+        Zн
+      </Label>
+      <Label position={[xZn1, yChain - 0.32, zPlane]} color="#00695c" size={0.064} outlineColor="#fff">
+        кожа
+      </Label>
+
+      <mesh position={[xZn2, yChain, zPlane]} castShadow>
+        <boxGeometry args={[halfZn * 2, 0.44 + znNorm * 0.06, 0.22]} />
+        <meshStandardMaterial color={colZn} emissive={colZn} emissiveIntensity={emZn} roughness={0.45} />
+      </mesh>
+      <Label position={[xZn2, yChain + 0.38, zPlane]} color="#004d40" size={0.088} outlineColor="#e0f2f1">
+        Zн
+      </Label>
+      <Label position={[xZn2, yChain - 0.32, zPlane]} color="#00695c" size={0.064} outlineColor="#fff">
+        кожа
+      </Label>
+
+      {/* Внутреннее сопротивление тела (ширина ∼ Rв) */}
+      <mesh position={[xRv, yChain, zPlane]} castShadow>
+        <boxGeometry args={[halfRv * 2, 0.46 + rvNorm * 0.08, 0.24]} />
+        <meshStandardMaterial color={colRv} emissive={colRv} emissiveIntensity={emRv} roughness={0.5} />
+      </mesh>
+      <Label position={[xRv, yChain + 0.4, zPlane]} color="#1b5e20" size={0.088} outlineColor="#e8f5e9">
+        Rв
+      </Label>
+      <Label position={[xRv, yChain - 0.34, zPlane]} color="#33691e" size={0.064} outlineColor="#fff">
+        внутри тела
+      </Label>
+
+      {/* Направление тока */}
+      <Label position={[-2.4, yChain - 0.62, zPlane]} color="#c62828" size={0.07} outlineColor="#fff">
+        → ток I
+      </Label>
+
+      {/* Пояснение: откуда берётся Zн + мини-визуал Rн и Cн (реагирует на ползунки) */}
+      <mesh position={[0, 0.38, zPlane - 0.06]}>
+        <planeGeometry args={[7.8, 0.95]} />
+        <meshStandardMaterial color="#fffde7" roughness={0.9} />
+      </mesh>
+      {/* Модель слоя кожи: длина полоски Rн ∼ Rн, зазор пластин ∼ Cн, свечение между пластинами ∼ f·C·Rн */}
+      <mesh position={[-1.95, 0.5, zPlane + 0.04]} castShadow>
+        <boxGeometry args={[probeBarW, 0.1, 0.07]} />
+        <meshStandardMaterial color="#e65100" emissive="#bf360c" emissiveIntensity={0.15 + 0.45 * Math.min(1, Rn / 12000)} />
+      </mesh>
+      <Label position={[-1.95, 0.22, zPlane + 0.05]} color="#bf360c" size={0.055} outlineColor="#fff">
+        Rн
+      </Label>
+      <mesh position={[1.45, 0.54 + plateGap * 0.5, zPlane + 0.04]}>
+        <boxGeometry args={[0.42, 0.02, 0.14]} />
+        <meshStandardMaterial color="#1565c0" emissive="#42a5f5" emissiveIntensity={0.12 + capActivity * 0.65} />
+      </mesh>
+      <mesh position={[1.45, 0.54 - plateGap * 0.5, zPlane + 0.04]}>
+        <boxGeometry args={[0.42, 0.02, 0.14]} />
+        <meshStandardMaterial color="#1565c0" emissive="#42a5f5" emissiveIntensity={0.12 + capActivity * 0.65} />
+      </mesh>
+      <mesh position={[1.45, 0.54, zPlane + 0.03]}>
+        <boxGeometry args={[0.25, Math.max(0.04, plateGap - 0.02), 0.1]} />
+        <meshStandardMaterial
+          color="#81d4fa"
+          transparent
+          opacity={0.25 + capActivity * 0.55}
+          emissive="#00b0ff"
+          emissiveIntensity={0.1 + capActivity * 0.9}
+        />
+      </mesh>
+      <Label position={[1.45, 0.22, zPlane + 0.05]} color="#0d47a1" size={0.055} outlineColor="#fff">
+        Cн
+      </Label>
+      <Label position={[0, 0.72, zBottomText]} color="#5d4037" size={0.082} outlineColor="#fff" depthOffset={0.01}>
+        Один слой кожи (на схеме — блок Zн): параллельно Rн и Cн
+      </Label>
+      <Label position={[0, 0.48, zBottomText]} color="#6d4c41" size={0.068} outlineColor="#fff" depthOffset={0.01}>
+        {`Rн = ${Rn.toFixed(0)} Ом   ·   Cн = ${CnF.toFixed(0)} нФ   ·   f = ${f.toFixed(0)} Гц`}
+      </Label>
+      <Label position={[0, 0.22, zBottomText]} color="#455a64" size={0.064} outlineColor="#eceff1" depthOffset={0.01}>
+        {`Zн = Rн / √(1 + (2πfCнRн)²)  →  Zн ≈ ${Zn.toFixed(0)} Ом (одинаков для обеих рук)`}
       </Label>
     </>
   );
@@ -2971,6 +3250,52 @@ function EquipotentialZonesScene({ current, resistivity }: { current: number; re
 
 /* ─────────────── Lesson 12: TN modes (theory) ─────────────── */
 
+/** Отрезок на плоскости схемы (плакат), без объёмной «лабораторной» графики */
+function L12SchemPlaneLine({
+  x1,
+  y1,
+  x2,
+  y2,
+  w,
+  color,
+  z = 0.05,
+}: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  w: number;
+  color: string;
+  z?: number;
+}) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.max(1e-6, Math.hypot(dx, dy));
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
+  const ang = Math.atan2(dy, dx);
+  return (
+    <mesh position={[cx, cy, z]} rotation={[0, 0, ang]}>
+      <planeGeometry args={[len, w]} />
+      <meshBasicMaterial color={color} />
+    </mesh>
+  );
+}
+
+function L12GroundSym({ x, y, z = 0.05 }: { x: number; y: number; z?: number }) {
+  const widths = [0.52, 0.36, 0.2];
+  return (
+    <group position={[x, y, z]}>
+      {widths.map((wi, i) => (
+        <mesh key={i} position={[0, -i * 0.1, 0]}>
+          <planeGeometry args={[wi, 0.035]} />
+          <meshBasicMaterial color="#a1887f" />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 function L12TnModesScene({
   UphiV,
   ZnOhm,
@@ -3014,116 +3339,174 @@ function L12TnModesScene({
           ? '#f44336'
           : '#d50000';
 
-  const yPEN = 2.25;
-  const xN = -2.4;
-  const xEquip = 2.0;
-
   const showBreak = scenario.includes('break');
   const showRepeat = scenario.includes('repeat') || scenario === 'sc_enclosure_repeat';
   const showFault = scenario !== 'normal' && scenario !== 'phase_to_soil';
   const showPhaseSoil = scenario === 'phase_to_soil';
+  const rzmOhm = 100;
+
+  /** Плоская схема в локальных координатах «плаката» (X вправо, Y вверх), без 3D-корпусов как в лабораторной */
+  const penY = 0.62;
+  const xN = -3.48;
+  const penEndX = 2.86;
+  const xEq = 3.38;
+  const eqL = 2.78;
+  const eqR = 3.98;
+  const eqB = 0.28;
+  const eqT = 0.96;
+  const breakGap = 0.34;
+  const xBreakLeft = -0.06;
+  const xBreakRight = xBreakLeft + breakGap;
+  const penSegments = !showBreak
+    ? [{ x0: xN, x1: penEndX }]
+    : [
+        { x0: xN, x1: xBreakLeft },
+        { x0: xBreakRight, x1: penEndX },
+      ];
+  const uDanger = result.UenclosureV > 25;
+  const eqStroke = uDanger ? '#ffab91' : '#90a4ae';
 
   return (
     <>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[12, 8]} />
-        <meshStandardMaterial color="#d7ccc8" roughness={0.92} />
+      <mesh position={[0, 1.62, -0.65]}>
+        <planeGeometry args={[22, 14]} />
+        <meshBasicMaterial color="#070b10" />
       </mesh>
 
-      {/* N point */}
-      <mesh position={[xN, yPEN, 0]}>
-        <sphereGeometry args={[0.09, 14, 14]} />
-        <meshStandardMaterial color="#9e9e9e" emissive="#424242" emissiveIntensity={0.15} />
-      </mesh>
-      <Label position={[xN, yPEN + 0.35, 0]} color="#eeeeee" size={0.1}>
-        N
-      </Label>
-
-      {/* PEN line (with optional break) */}
-      {!showBreak ? (
-        <mesh position={[(xN + xEquip) / 2, yPEN, 0]}>
-          <boxGeometry args={[xEquip - xN, 0.05, 0.05]} />
-          <meshStandardMaterial color="#fdd835" metalness={0.35} />
+      <group position={[0, 1.62, 0]}>
+        <mesh position={[0, 0, -0.06]}>
+          <planeGeometry args={[13.2, 7.4]} />
+          <meshBasicMaterial color="#0b1220" />
         </mesh>
-      ) : (
-        <>
-          <mesh position={[(xN + -0.2) / 2, yPEN, 0]}>
-            <boxGeometry args={[(-0.2 - xN), 0.05, 0.05]} />
-            <meshStandardMaterial color="#fdd835" metalness={0.35} />
-          </mesh>
-          <mesh position={[(0.25 + xEquip) / 2, yPEN, 0]}>
-            <boxGeometry args={[xEquip - 0.25, 0.05, 0.05]} />
-            <meshStandardMaterial color="#fdd835" metalness={0.35} />
-          </mesh>
-          <Label position={[0.02, yPEN + 0.28, 0]} color="#ff7043" size={0.08}>
-            обрыв PEN
-          </Label>
-        </>
-      )}
+        <mesh position={[0, 0, -0.049]}>
+          <planeGeometry args={[12.9, 7.1]} />
+          <meshBasicMaterial color="#111b2e" />
+        </mesh>
 
-      {/* Enclosure */}
-      <mesh position={[xEquip, 0.55, 0]} castShadow>
-        <boxGeometry args={[1.05, 1.05, 0.75]} />
-        <meshStandardMaterial
-          color="#78909c"
-          metalness={0.45}
-          roughness={0.35}
-          emissive={result.UenclosureV > 25 ? '#ff7043' : '#000000'}
-          emissiveIntensity={result.UenclosureV > 25 ? 0.2 : 0}
-        />
-      </mesh>
-      <Label position={[xEquip, 1.15, 0.55]} color="#eceff1" size={0.09}>
-        Корпус
-      </Label>
+        <Text fontSize={0.085} color="#eceff1" position={[-5.35, 2.05, 0.08]} anchorX="left" anchorY="middle">
+          сеть
+        </Text>
+        <L12SchemPlaneLine x1={-4.5} y1={2.18} x2={-3.52} y2={1.02} w={0.055} color="#c62828" />
+        <L12SchemPlaneLine x1={-4.05} y1={2.35} x2={-3.48} y2={1.02} w={0.055} color="#1565c0" />
+        <L12SchemPlaneLine x1={-3.55} y1={2.35} x2={-3.45} y2={1.02} w={0.055} color="#2e7d32" />
+        <Text fontSize={0.058} color="#c62828" position={[-4.55, 2.45, 0.08]} anchorX="left" anchorY="middle">
+          L1
+        </Text>
+        <Text fontSize={0.058} color="#1565c0" position={[-4.02, 2.62, 0.08]} anchorX="left" anchorY="middle">
+          L2
+        </Text>
+        <Text fontSize={0.058} color="#2e7d32" position={[-3.58, 2.62, 0.08]} anchorX="left" anchorY="middle">
+          L3
+        </Text>
 
-      {/* Fault mark */}
-      {showFault && (
-        <>
-          <mesh position={[xN + 0.1, yPEN, 1.2]}>
-            <sphereGeometry args={[0.08, 10, 10]} />
-            <meshStandardMaterial color="#ff5722" emissive="#ff1744" emissiveIntensity={0.35} />
+        <mesh position={[xN, penY, 0.06]}>
+          <circleGeometry args={[0.2, 32]} />
+          <meshBasicMaterial color="#eceff1" />
+        </mesh>
+        <Text fontSize={0.078} color="#263238" position={[xN, penY, 0.07]} anchorX="center" anchorY="middle">
+          N
+        </Text>
+        <L12SchemPlaneLine x1={xN} y1={1.02} x2={xN} y2={penY} w={0.048} color="#b0bec5" />
+
+        <L12SchemPlaneLine x1={xN} y1={penY - 0.2} x2={xN} y2={-0.12} w={0.045} color="#bcaaa4" />
+        <L12GroundSym x={xN} y={-0.55} />
+        <Text fontSize={0.055} color="#ffecb3" position={[xN + 0.85, -0.15, 0.08]} anchorX="left" anchorY="middle">
+          R₀ 4 Ом
+        </Text>
+
+        {penSegments.map((seg, i) => (
+          <L12SchemPlaneLine
+            key={`pen-${i}`}
+            x1={seg.x0}
+            y1={penY}
+            x2={seg.x1}
+            y2={penY}
+            w={0.07}
+            color="#ffeb3b"
+          />
+        ))}
+        {showBreak && (
+          <>
+            <Text
+              fontSize={0.07}
+              color="#ff7043"
+              position={[(xBreakLeft + xBreakRight) / 2, penY + 0.38, 0.08]}
+              anchorX="center"
+              anchorY="middle"
+            >
+              ╳ обрыв PEN
+            </Text>
+          </>
+        )}
+
+        <L12SchemPlaneLine x1={eqL} y1={eqB} x2={eqR} y2={eqB} w={0.04} color={eqStroke} />
+        <L12SchemPlaneLine x1={eqR} y1={eqB} x2={eqR} y2={eqT} w={0.04} color={eqStroke} />
+        <L12SchemPlaneLine x1={eqR} y1={eqT} x2={eqL} y2={eqT} w={0.04} color={eqStroke} />
+        <L12SchemPlaneLine x1={eqL} y1={eqT} x2={eqL} y2={eqB} w={0.04} color={eqStroke} />
+        <Text fontSize={0.06} color="#b0bec5" position={[xEq, penY, 0.08]} anchorX="center" anchorY="middle">
+          PE · корпус
+        </Text>
+        {uDanger ? (
+          <mesh position={[xEq, (eqB + eqT) / 2, 0.055]}>
+            <planeGeometry args={[eqR - eqL - 0.06, eqT - eqB - 0.06]} />
+            <meshBasicMaterial color="#ff5722" transparent opacity={0.12} />
           </mesh>
-          <mesh position={[(xN + 0.1 + xEquip) / 2, (yPEN + 1.05) / 2, 0.6]} rotation={[0, 0.3, 0.15]}>
-            <cylinderGeometry args={[0.03, 0.03, 4.1, 10]} />
-            <meshStandardMaterial color="#bf360c" emissive="#ff3d00" emissiveIntensity={0.2} />
-          </mesh>
-          <Label position={[xN + 0.3, yPEN + 0.3, 1.2]} color="#ffccbc" size={0.08}>
-            L1 → корпус
-          </Label>
-        </>
-      )}
+        ) : null}
 
-      {showPhaseSoil && (
-        <Label position={[xN + 0.2, 0.55, 1.2]} color="#ffccbc" size={0.08}>
-          L1 → земля (Rзм)
-        </Label>
-      )}
+        {showRepeat && (
+          <>
+            <L12SchemPlaneLine x1={0.38} y1={penY} x2={0.38} y2={-0.05} w={0.04} color="#ffe082" />
+            <L12GroundSym x={0.38} y={-0.55} />
+            <Text fontSize={0.055} color="#ffe082" position={[1.15, -0.1, 0.08]} anchorX="left" anchorY="middle">
+              Rₙ 10 Ом
+            </Text>
+          </>
+        )}
 
-      {/* Repeat ground */}
-      {showRepeat && (
-        <>
-          <mesh position={[0.6, yPEN / 2, 0]} castShadow>
-            <cylinderGeometry args={[0.02, 0.02, yPEN, 10]} />
-            <meshStandardMaterial color="#fdd835" metalness={0.35} />
-          </mesh>
-          <Label position={[1.0, 0.25, 0]} color="#ffe082" size={0.08}>
-            Rn
-          </Label>
-        </>
-      )}
+        {showFault && (
+          <>
+            <L12SchemPlaneLine x1={-3.05} y1={1.82} x2={0.65} y2={1.95} w={0.045} color="#e53935" />
+            <L12SchemPlaneLine x1={0.65} y1={1.95} x2={xEq} y2={0.88} w={0.045} color="#e53935" />
+            <mesh position={[-3.08, 1.82, 0.07]}>
+              <circleGeometry args={[0.07, 12]} />
+              <meshBasicMaterial color="#ff5252" />
+            </mesh>
+            <Text fontSize={0.055} color="#ffcdd2" position={[-1.35, 2.2, 0.08]} anchorX="center" anchorY="middle">
+              КЗ
+            </Text>
+          </>
+        )}
 
-      <Label position={[0, 3.05, 0]} color="#f5f5f5" size={0.11} outlineColor="#111">
-        {scenarios[idx].label}
-      </Label>
-      <Label position={[-4.3, 2.65, 0]} color="#e3f2fd" size={0.095} outlineColor="#263238">
-        {`Uφ=${UphiV.toFixed(0)} В; Zn=${ZnOhm.toFixed(2)} Ом; ZH=${ZHOhm.toFixed(2)} Ом`}
-      </Label>
-      <Label position={[-4.3, 2.30, 0]} color="#b3e5fc" size={0.095} outlineColor="#263238">
-        {`Iк.з.≈${result.IkzA.toFixed(1)} А; Uкорп≈${result.UenclosureV.toFixed(1)} В`}
-      </Label>
-      <Label position={[-4.3, 1.95, 0]} color={dangerColor} size={0.12} outlineColor="#111">
-        {`Iч≈${result.IbodyMA.toFixed(2)} мА`}
-      </Label>
+        {showPhaseSoil && (
+          <>
+            <L12SchemPlaneLine x1={-3.35} y1={1.85} x2={1.85} y2={-0.42} w={0.04} color="#8d6e63" />
+            <L12GroundSym x={1.95} y={-0.55} />
+            <Text fontSize={0.052} color="#ffccbc" position={[2.6, -0.05, 0.08]} anchorX="left" anchorY="middle">
+              {`L1→земля Rзм=${rzmOhm}Ω`}
+            </Text>
+          </>
+        )}
+
+        <Text fontSize={0.26} color="#fff9c4" position={[0, 3.38, 0.08]} anchorX="center" anchorY="middle" maxWidth={14}>
+          {scenarios[idx].label}
+        </Text>
+        <Text
+          fontSize={0.218}
+          color="#b3e5fc"
+          position={[0, -2.2, 0.08]}
+          anchorX="center"
+          anchorY="middle"
+          maxWidth={14}
+        >
+          {`Uφ=${UphiV.toFixed(0)} В  Zn=${ZnOhm.toFixed(2)} Ω  ZH=${ZHOhm.toFixed(2)} Ω`}
+        </Text>
+        <Text fontSize={0.215} color="#e1f5fe" position={[0, -2.85, 0.08]} anchorX="center" anchorY="middle" maxWidth={14}>
+          {`Iк.з.≈${result.IkzA.toFixed(1)} А   Uкорп≈${result.UenclosureV.toFixed(1)} В`}
+        </Text>
+        <Text fontSize={0.238} color={dangerColor} position={[0, -3.44, 0.08]} anchorX="center" anchorY="middle" maxWidth={14}>
+          {`Iч≈${result.IbodyMA.toFixed(2)} мА`}
+        </Text>
+      </group>
     </>
   );
 }
@@ -3186,6 +3569,184 @@ function L12EarthingElectrodesScene({
       </Label>
       <Label position={[-4.5, 1.95, 0]} color="#b9f6ca" size={0.10} outlineColor="#1b5e20">
         {`ηз=${etaZ}; Rз=4 Ом → n≈${Number.isFinite(n) ? n.toFixed(2) : '—'} → ${nCeil} шт.`}
+      </Label>
+    </>
+  );
+}
+
+/* ─────────────── Lesson 13: fire safety (theory posters) ─────────────── */
+
+function L13FireTriangleScene({
+  fuel,
+  oxidizer,
+  ignition,
+}: {
+  fuel: number;
+  oxidizer: number;
+  ignition: number;
+}) {
+  const f = Math.max(0, Math.min(1, fuel));
+  const o = Math.max(0, Math.min(1, oxidizer));
+  const ig = Math.max(0, Math.min(1, ignition));
+  const product = f * o * ig;
+  const flameOn = product > 0.08;
+
+  const vTop: [number, number, number] = [0, 2.45, 0.07];
+  const vL: [number, number, number] = [-1.95, 0.45, 0.07];
+  const vR: [number, number, number] = [1.95, 0.45, 0.07];
+  const edgeBlend = (t: number, hi: string) => {
+    const dim = new THREE.Color('#9e9e9e');
+    const full = new THREE.Color(hi);
+    return '#' + dim.lerp(full, t).getHexString();
+  };
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+        <planeGeometry args={[12, 8]} />
+        <meshStandardMaterial color="#cfd8dc" roughness={1} />
+      </mesh>
+      <mesh position={[0, 1.45, 0.02]}>
+        <planeGeometry args={[7.2, 5.2]} />
+        <meshStandardMaterial color="#eceff1" roughness={0.95} />
+      </mesh>
+
+      <L12SchemPlaneLine x1={vL[0]} y1={vL[1]} x2={vTop[0]} y2={vTop[1]} w={0.14} color={edgeBlend(f, '#e53935')} z={0.08} />
+      <L12SchemPlaneLine x1={vR[0]} y1={vR[1]} x2={vTop[0]} y2={vTop[1]} w={0.14} color={edgeBlend(o, '#1e88e5')} z={0.08} />
+      <L12SchemPlaneLine x1={vL[0]} y1={vL[1]} x2={vR[0]} y2={vR[1]} w={0.14} color={edgeBlend(ig, '#fbc02d')} z={0.08} />
+
+      {flameOn && (
+        <group position={[0, 1.45, 0.12]}>
+          <mesh>
+            <sphereGeometry args={[0.35 + 0.15 * product, 16, 16]} />
+            <meshStandardMaterial
+              color="#ff6f00"
+              emissive="#ff3d00"
+              emissiveIntensity={0.35 + 0.45 * product}
+              transparent
+              opacity={0.85}
+            />
+          </mesh>
+        </group>
+      )}
+
+      <Label position={[-2.35, 0.05, 0.1]} color="#37474f" size={0.09} outlineColor="#eceff1">
+        горючее
+      </Label>
+      <Label position={[2.35, 0.05, 0.1]} color="#37474f" size={0.09} outlineColor="#eceff1">
+        окислитель
+      </Label>
+      <Label position={[0, 2.82, 0.1]} color="#37474f" size={0.09} outlineColor="#eceff1">
+        источник зажигания
+      </Label>
+      <Label position={[0, 3.35, 0.1]} color="#263238" size={0.095} outlineColor="#eceff1">
+        Треугольник горения: нужны все три компонента
+      </Label>
+      <Label position={[0, -0.35, 0.1]} color={flameOn ? '#bf360c' : '#546e7a'} size={0.085} outlineColor="#fff">
+        {flameOn
+          ? `Горение (условно): f·o·i ≈ ${product.toFixed(2)}`
+          : 'Нет одного из условий — устойчивого горения нет (учебная модель)'}
+      </Label>
+    </>
+  );
+}
+
+function L13VaporNkprScene({ cPercent, cnkrPercent }: { cPercent: number; cnkrPercent: number }) {
+  const C = Math.max(0, cPercent);
+  const nkpr = Math.max(0.05, cnkrPercent);
+  const scaleMax = 15;
+  const barW = 7.5;
+  const x0 = -barW / 2;
+  const fillFrac = Math.min(1, C / scaleMax);
+  const nkprFrac = Math.min(1, nkpr / scaleMax);
+  const canSpread = C >= nkpr;
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+        <planeGeometry args={[12, 8]} />
+        <meshStandardMaterial color="#cfd8dc" roughness={1} />
+      </mesh>
+      <mesh position={[0, 1.5, 0.02]}>
+        <planeGeometry args={[8.2, 3.4]} />
+        <meshStandardMaterial color="#eceff1" roughness={0.95} />
+      </mesh>
+
+      {/* шкала 0…15 % */}
+      <mesh position={[0, 1.5, 0.06]}>
+        <planeGeometry args={[barW + 0.12, 0.42]} />
+        <meshBasicMaterial color="#b0bec5" />
+      </mesh>
+      <mesh position={[x0 + (fillFrac * barW) / 2, 1.5, 0.07]}>
+        <planeGeometry args={[Math.max(0.02, fillFrac * barW), 0.32]} />
+        <meshBasicMaterial color={canSpread ? '#ef6c00' : '#78909c'} />
+      </mesh>
+      {/* вертикаль НКПР */}
+      <mesh position={[x0 + nkprFrac * barW, 1.5, 0.075]}>
+        <planeGeometry args={[0.06, 0.52]} />
+        <meshBasicMaterial color="#1565c0" />
+      </mesh>
+
+      <Label position={[0, 2.45, 0.1]} color="#263238" size={0.09} outlineColor="#eceff1">
+        {`C и нижний концентрационный предел (НКПР), % (шкала до ${scaleMax})`}
+      </Label>
+      <Label position={[-3.6, 0.85, 0.1]} color="#37474f" size={0.075} outlineColor="#eceff1">
+        {`C = ${C.toFixed(2)} %`}
+      </Label>
+      <Label position={[2.2, 0.85, 0.1]} color="#0d47a1" size={0.075} outlineColor="#eceff1">
+        {`НКПР ≈ ${nkpr.toFixed(2)} %`}
+      </Label>
+      <Label position={[0, 0.35, 0.1]} color={canSpread ? '#e65100' : '#455a64'} size={0.085} outlineColor="#fff">
+        {canSpread ? 'C ≥ НКПР — смесь может воспламеняться / распространять пламя (по методичке)' : 'C < НКПР — ниже порога распространения пламени'}
+      </Label>
+    </>
+  );
+}
+
+function L13DeltaPCategoryScene({ deltaPkPa }: { deltaPkPa: number }) {
+  const p = Math.max(0, deltaPkPa);
+  const scaleMax = 12;
+  const barW = 7.5;
+  const x0 = -barW / 2;
+  const fillFrac = Math.min(1, p / scaleMax);
+  const thrFrac = 5 / scaleMax;
+  const catA = p > 5;
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+        <planeGeometry args={[12, 8]} />
+        <meshStandardMaterial color="#cfd8dc" roughness={1} />
+      </mesh>
+      <mesh position={[0, 1.55, 0.02]}>
+        <planeGeometry args={[8.2, 3.6]} />
+        <meshStandardMaterial color="#eceff1" roughness={0.95} />
+      </mesh>
+
+      <mesh position={[0, 1.55, 0.06]}>
+        <planeGeometry args={[barW + 0.12, 0.46]} />
+        <meshBasicMaterial color="#b0bec5" />
+      </mesh>
+      <mesh position={[x0 + (fillFrac * barW) / 2, 1.55, 0.07]}>
+        <planeGeometry args={[Math.max(0.02, fillFrac * barW), 0.34]} />
+        <meshBasicMaterial color={catA ? '#c62828' : '#43a047'} />
+      </mesh>
+      <mesh position={[x0 + thrFrac * barW, 1.55, 0.075]}>
+        <planeGeometry args={[0.055, 0.62]} />
+        <meshBasicMaterial color="#212121" />
+      </mesh>
+
+      <Label position={[0, 2.55, 0.1]} color="#263238" size={0.088} outlineColor="#eceff1">
+        Избыточное давление взрыва ΔP (кПа), порог 5 кПа для кат. А
+      </Label>
+      <Label position={[x0 + thrFrac * barW, 0.75, 0.1]} color="#212121" size={0.065} outlineColor="#eceff1">
+        5 кПа
+      </Label>
+      <Label position={[-3.5, 0.85, 0.1]} color="#37474f" size={0.08} outlineColor="#eceff1">
+        {`ΔP = ${p.toFixed(2)} кПа`}
+      </Label>
+      <Label position={[0, 0.25, 0.1]} color={catA ? '#b71c1c' : '#2e7d32'} size={0.085} outlineColor="#fff">
+        {catA ? 'ΔP > 5 кПа — помещение относится к категории А (взрывопожароопасное)' : 'ΔP ≤ 5 кПа — по этому критерию не кат. А'}
       </Label>
     </>
   );
@@ -3318,9 +3879,14 @@ function SceneContent({ type, params }: TheoryScene3DProps) {
       return <ElectricCurrentBodyScene current={ImA} />;
     }
     case 'electric-resistance':
-      // По запросу: убрали визуализацию «Эквивалентная схема сопротивления тела».
-      // Оставляем пустую сцену без схемы, чтобы не ломать типизацию simulator.
-      return <Room />;
+      return (
+        <ElectricResistanceScene
+          skinResistanceOhm={Math.max(100, params.a ?? 5000)}
+          capacitanceNF={Math.max(1, params.b ?? 20)}
+          internalResistanceOhm={Math.max(100, params.c ?? 500)}
+          frequencyHz={Math.max(1, params.d ?? 50)}
+        />
+      );
     case 'electric-frequency-effect':
       return <ElectricFrequencyEffectScene frequency={Math.max(1, params.a ?? 50)} />;
     case 'ground-current-spread':
@@ -3355,6 +3921,20 @@ function SceneContent({ type, params }: TheoryScene3DProps) {
           tM={Math.max(0.3, params.d ?? 2)}
         />
       );
+    case 'l13-fire-triangle':
+      return (
+        <L13FireTriangleScene
+          fuel={Math.max(0, Math.min(1, params.a ?? 0.85))}
+          oxidizer={Math.max(0, Math.min(1, params.b ?? 0.85))}
+          ignition={Math.max(0, Math.min(1, params.c ?? 0.85))}
+        />
+      );
+    case 'l13-vapor-nkpr':
+      return (
+        <L13VaporNkprScene cPercent={Math.max(0, params.a ?? 3.5)} cnkrPercent={Math.max(0.05, params.b ?? 2)} />
+      );
+    case 'l13-delta-p-category':
+      return <L13DeltaPCategoryScene deltaPkPa={Math.max(0, params.a ?? 4)} />;
     case 'l11-it-touch': {
       return (
         <L11ItTouchSchematic
@@ -3392,6 +3972,10 @@ function SceneContent({ type, params }: TheoryScene3DProps) {
 
 export default function TheoryScene3D({ type, params }: TheoryScene3DProps) {
   const title = sceneTitle[type] || 'Интерактивная 3D-визуализация';
+  /** Плакат L12TN в группе y≈1.62 — камера и target выше оси XZ, иначе кадр «едет» на низ схемы */
+  const l12TnCamera = type === 'l12-tn-fault-modes';
+  /** Плакаты занятия 13 — та же идея: чуть выше центра кадра */
+  const l13PosterCamera = type.startsWith('l13-');
 
   return (
     <Paper variant="outlined" sx={{ mt: 1, mb: 1 }}>
@@ -3399,7 +3983,17 @@ export default function TheoryScene3D({ type, params }: TheoryScene3DProps) {
         {title}
       </Typography>
       <Box sx={{ height: { xs: 260, md: 340 }, borderRadius: 1, overflow: 'hidden' }}>
-        <SafeCanvas shadows camera={{ position: [6, 4, 6], fov: 50 }}>
+        <SafeCanvas
+          shadows
+          camera={{
+            position: l12TnCamera
+              ? ([5.8, 7.4, 5.8] as [number, number, number])
+              : l13PosterCamera
+                ? ([5.6, 6.9, 5.6] as [number, number, number])
+                : [6, 4, 6],
+            fov: 50,
+          }}
+        >
           <ambientLight intensity={0.55} />
           <directionalLight
             position={[5, 8, 3]}
@@ -3411,7 +4005,14 @@ export default function TheoryScene3D({ type, params }: TheoryScene3DProps) {
             shadow-camera-far={30}
           />
           <SceneContent type={type} params={params} />
-          <OrbitControls enablePan={false} />
+          <OrbitControls
+            enablePan={false}
+            {...(l12TnCamera
+              ? { target: [0, 1.75, 0] as [number, number, number] }
+              : l13PosterCamera
+                ? { target: [0, 1.35, 0] as [number, number, number] }
+                : {})}
+          />
           <hemisphereLight args={['#b1e1ff', '#b97a20', 0.25]} />
         </SafeCanvas>
       </Box>

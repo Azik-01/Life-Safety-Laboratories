@@ -34,7 +34,10 @@ export type TheorySimulatorType =
   | 'l11-tn-normal-touch'
   | 'l11-tn-emergency-touch'
   | 'l12-tn-fault-modes'
-  | 'l12-earthing-electrodes';
+  | 'l12-earthing-electrodes'
+  | 'l13-fire-triangle'
+  | 'l13-vapor-nkpr'
+  | 'l13-delta-p-category';
 
 export interface TheoryMiniQuestion {
   question: string;

@@ -73,7 +73,15 @@ export function TheoryStylizedPerson({
   pants = '#455a64',
   skin = '#deb897',
   leftArmAimAt,
+  rightArmAimAt,
   armsMode = 'default',
+  /** Множитель половины размаха плеч (по умолчанию 1). Меньше 1 — руки ближе к телу и друг к другу. */
+  shoulderSpreadScale = 1,
+  /**
+   * Смещение основания рук по +Z (к груди в локали фигуры). При наклоне спасателя помогает
+   * не рисовать «сустав» сзади линии плеч.
+   */
+  armShoulderZ = 0,
 }: {
   footHalfSep?: number;
   torsoPath?: { color: string; opacity: number };
@@ -82,15 +90,19 @@ export function TheoryStylizedPerson({
   skin?: string;
   /** Локальная точка, на которую «смотрит» кисть (поворот левой капсулы руки) */
   leftArmAimAt?: [number, number, number];
+  /** Локальная точка для правой руки (симметрично {@link leftArmAimAt}) */
+  rightArmAimAt?: [number, number, number];
   armsMode?: 'default' | 'aPose';
+  shoulderSpreadScale?: number;
+  armShoulderZ?: number;
 }) {
   const h = footHalfSep;
   const refHalf = 0.11;
-  const armX = 0.22 * (h / refHalf);
+  const armX = 0.22 * (h / refHalf) * shoulderSpreadScale;
 
   const leftArmQuat = useMemo(() => {
     if (leftArmAimAt) {
-      const shoulder = new THREE.Vector3(-armX, ARM_SHOULDER_Y, 0);
+      const shoulder = new THREE.Vector3(-armX, ARM_SHOULDER_Y, armShoulderZ);
       const target = new THREE.Vector3(...leftArmAimAt);
       const dir = target.clone().sub(shoulder);
       if (dir.lengthSq() < 1e-10) {
@@ -103,12 +115,24 @@ export function TheoryStylizedPerson({
     }
     if (armsMode === 'aPose') return quatArmAPose('left');
     return new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, ARM_ROT_L));
-  }, [leftArmAimAt, armX, armsMode]);
+  }, [leftArmAimAt, armX, armsMode, armShoulderZ]);
 
   const rightArmQuat = useMemo(() => {
+    if (rightArmAimAt) {
+      const shoulder = new THREE.Vector3(armX, ARM_SHOULDER_Y, armShoulderZ);
+      const target = new THREE.Vector3(...rightArmAimAt);
+      const dir = target.clone().sub(shoulder);
+      if (dir.lengthSq() < 1e-10) {
+        return new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, ARM_ROT_R));
+      }
+      dir.normalize();
+      const q = new THREE.Quaternion();
+      q.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+      return q;
+    }
     if (armsMode === 'aPose') return quatArmAPose('right');
     return new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, ARM_ROT_R));
-  }, [armsMode]);
+  }, [rightArmAimAt, armX, armsMode, armShoulderZ]);
 
   return (
     <group position={[0, 0, 0]}>
@@ -140,11 +164,11 @@ export function TheoryStylizedPerson({
         <sphereGeometry args={[0.17, 20, 20]} />
         <meshStandardMaterial color={skin} roughness={0.55} />
       </mesh>
-      <mesh position={[-armX, ARM_SHOULDER_Y, 0]} quaternion={leftArmQuat} castShadow>
+      <mesh position={[-armX, ARM_SHOULDER_Y, armShoulderZ]} quaternion={leftArmQuat} castShadow>
         <capsuleGeometry args={[0.05, ARM_CAPSULE_LEN, 6, 10]} />
         <meshStandardMaterial color={skin} roughness={0.65} />
       </mesh>
-      <mesh position={[armX, ARM_SHOULDER_Y, 0]} quaternion={rightArmQuat} castShadow>
+      <mesh position={[armX, ARM_SHOULDER_Y, armShoulderZ]} quaternion={rightArmQuat} castShadow>
         <capsuleGeometry args={[0.05, ARM_CAPSULE_LEN, 6, 10]} />
         <meshStandardMaterial color={skin} roughness={0.65} />
       </mesh>

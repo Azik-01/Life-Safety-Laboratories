@@ -1398,6 +1398,9 @@ export default function LabSection({ lesson }: LabSectionProps) {
     <Stack spacing={2}>
       <Paper id="lab-variant" variant="outlined" sx={{ p: 2 }}>
         <Typography variant="h6">Шаг 0. Вариант студента</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 0.5 }}>
+          Если включить «учебный режим» (чекбокс ниже), значения можно будет менять вручную, даже несмотря на выбранный вариант.
+        </Typography>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mt: 1 }}>
           <TextField
             size="small"

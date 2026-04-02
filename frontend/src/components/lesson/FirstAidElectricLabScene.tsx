@@ -109,6 +109,39 @@ export default function FirstAidElectricLabScene({ stage, timeScale }: FirstAidE
     };
   }, []);
 
+  /**
+   * Этап 4: обе кисти к центру грудины пострадавшего (нижняя треть / центр грудной клетки).
+   * Локаль цели — в системе координат {@link TheoryStylizedPerson} после цепочки групп спасателя.
+   */
+  const cprRescuerScene = useMemo(() => {
+    const root: [number, number, number] = [1.15, 0.04, 1.08];
+    const leanX = -0.5;
+    const sternumOnVictim = new THREE.Vector3(0, 1.06, 0.11);
+    const victimM = new THREE.Matrix4().compose(
+      new THREE.Vector3(0, 0.14, 0),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0)),
+      new THREE.Vector3(1, 1, 1),
+    );
+    const sternumWorld = sternumOnVictim.clone().applyMatrix4(victimM);
+    const T = new THREE.Matrix4().makeTranslation(...root);
+    const R1 = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0, -Math.PI / 2, 0));
+    const R2 = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
+    const R3 = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(leanX, 0, 0));
+    const rescuerWorld = new THREE.Matrix4().copy(T).multiply(R1).multiply(R2).multiply(R3);
+    const inv = new THREE.Matrix4().copy(rescuerWorld).invert();
+    const aim = sternumWorld.clone().applyMatrix4(inv);
+    /** Совпадает с ARM_SHOULDER_Y в TheoryStylizedPerson — сдвиг цели вдоль «руки к груди», касание грудины */
+    const shoulderMid = new THREE.Vector3(0, 1.14, 0);
+    const towardChest = aim.clone().sub(shoulderMid);
+    if (towardChest.lengthSq() > 1e-10) {
+      towardChest.normalize();
+      aim.addScaledVector(towardChest, 0.14);
+    }
+    const pullToMidlineX = 0.92;
+    const sternumAimLocal: [number, number, number] = [aim.x * pullToMidlineX, aim.y, aim.z];
+    return { root, leanX, sternumAimLocal };
+  }, []);
+
   useFrame((_, delta) => {
     arcT.current += delta * timeScale;
     const t = arcT.current;
@@ -211,18 +244,23 @@ export default function FirstAidElectricLabScene({ stage, timeScale }: FirstAidE
           <group position={[0, 0.14, 0]} rotation={[Math.PI / 2, 0, 0]}>
             <TheoryStylizedPerson shirt={SHIRT_VICTIM} armsMode="aPose" />
           </group>
-          <group position={[0, 0.3, -0.4]}>
-            <mesh position={[-0.1, 0, 0.08]} rotation={[0.18, 0, 0.14]} castShadow>
-              <boxGeometry args={[0.13, 0.09, 0.2]} />
-              <meshStandardMaterial color="#deb897" roughness={0.65} />
-            </mesh>
-            <mesh position={[0.1, 0, 0.08]} rotation={[0.18, 0, -0.14]} castShadow>
-              <boxGeometry args={[0.13, 0.09, 0.2]} />
-              <meshStandardMaterial color="#deb897" roughness={0.65} />
-            </mesh>
-          </group>
-          <group position={[0.92, 0, 0.28]} rotation={[0, -1.0, 0]}>
-            <TheoryStylizedPerson shirt={SHIRT_HELPER} />
+          <group position={cprRescuerScene.root}>
+            {/* 1) Разворачиваем тело перпендикулярно пострадавшему (и головой к голове пострадавшего) */}
+            <group rotation={[0, -Math.PI / 2, 0]}>
+              {/* 2) «Лежит» на земле */}
+              <group rotation={[Math.PI / 2, 0, 0]}>
+                {/* 3) Наклон вперёд — руки к центру грудины пострадавшего */}
+                <group rotation={[cprRescuerScene.leanX - 0.15, 0, 0]}>
+                  <TheoryStylizedPerson
+                    shirt={SHIRT_HELPER}
+                    shoulderSpreadScale={0.52}
+                    armShoulderZ={0.22}
+                    leftArmAimAt={cprRescuerScene.sternumAimLocal}
+                    rightArmAimAt={cprRescuerScene.sternumAimLocal}
+                  />
+                </group>
+              </group>
+            </group>
           </group>
           <Label position={[0, 2.35, 0]} color="#ffe082">
             Непрямой массаж: центр грудины; один помощник — 2 вдоха → 15 нажатий (~60–65/мин)

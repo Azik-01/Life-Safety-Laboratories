@@ -75,7 +75,7 @@ export default function HomePage() {
                       startIcon={<ScienceIcon />}
                       onClick={() => navigate(`/lesson/${lesson.id}/lab`)}
                     >
-                      Лабораторная
+                      Практика
                     </Button>
                     <Button
                       variant="outlined"

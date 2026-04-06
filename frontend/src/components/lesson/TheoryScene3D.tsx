@@ -3682,9 +3682,9 @@ function L13FireTriangleScene({
   const product = f * o * ig;
   const flameOn = product > 0.08;
 
-  const vTop: [number, number, number] = [0, 2.45, 0.07];
-  const vL: [number, number, number] = [-1.95, 0.45, 0.07];
-  const vR: [number, number, number] = [1.95, 0.45, 0.07];
+  const vTop: [number, number, number] = [0, 2.95, 0.07];
+  const vL: [number, number, number] = [-1.95, 0.95, 0.07];
+  const vR: [number, number, number] = [1.95, 0.95, 0.07];
   const edgeBlend = (t: number, hi: string) => {
     const dim = new THREE.Color('#9e9e9e');
     const full = new THREE.Color(hi);
@@ -3697,7 +3697,7 @@ function L13FireTriangleScene({
         <planeGeometry args={[12, 8]} />
         <meshStandardMaterial color="#cfd8dc" roughness={1} />
       </mesh>
-      <mesh position={[0, 1.45, 0.02]}>
+      <mesh position={[0, 1.95, 0.02]}>
         <planeGeometry args={[7.2, 5.2]} />
         <meshStandardMaterial color="#eceff1" roughness={0.95} />
       </mesh>
@@ -3707,7 +3707,7 @@ function L13FireTriangleScene({
       <L12SchemPlaneLine x1={vL[0]} y1={vL[1]} x2={vR[0]} y2={vR[1]} w={0.14} color={edgeBlend(ig, '#fbc02d')} z={0.08} />
 
       {flameOn && (
-        <group position={[0, 1.45, 0.12]}>
+        <group position={[0, 1.95, 0.12]}>
           <mesh>
             <sphereGeometry args={[0.35 + 0.15 * product, 16, 16]} />
             <meshStandardMaterial
@@ -3721,19 +3721,19 @@ function L13FireTriangleScene({
         </group>
       )}
 
-      <Label position={[-2.35, 0.05, 0.1]} color="#37474f" size={0.09} outlineColor="#eceff1">
+      <Label position={[-2.35, 0.55, 0.5]} color="#37474f" size={0.16} outlineColor="#eceff1">
         горючее
       </Label>
-      <Label position={[2.35, 0.05, 0.1]} color="#37474f" size={0.09} outlineColor="#eceff1">
+      <Label position={[2.35, 0.55, 0.5]} color="#37474f" size={0.16} outlineColor="#eceff1">
         окислитель
       </Label>
-      <Label position={[0, 2.82, 0.1]} color="#37474f" size={0.09} outlineColor="#eceff1">
+      <Label position={[0, 3.32, 0.5]} color="#37474f" size={0.16} outlineColor="#eceff1">
         источник зажигания
       </Label>
-      <Label position={[0, 3.35, 0.1]} color="#263238" size={0.095} outlineColor="#eceff1">
+      <Label position={[0, 3.85, 0.5]} color="#263238" size={0.165} outlineColor="#eceff1">
         Треугольник горения: нужны все три компонента
       </Label>
-      <Label position={[0, -0.35, 0.1]} color={flameOn ? '#bf360c' : '#546e7a'} size={0.085} outlineColor="#fff">
+      <Label position={[0, 0.35, 0.5]} color={flameOn ? '#bf360c' : '#546e7a'} size={0.155} outlineColor="#fff">
         {flameOn
           ? `Горение (условно): f·o·i ≈ ${product.toFixed(2)}`
           : 'Нет одного из условий — устойчивого горения нет (учебная модель)'}
@@ -3778,17 +3778,17 @@ function L13VaporNkprScene({ cPercent, cnkrPercent }: { cPercent: number; cnkrPe
         <meshBasicMaterial color="#1565c0" />
       </mesh>
 
-      <Label position={[0, 2.45, 0.1]} color="#263238" size={0.09} outlineColor="#eceff1">
+      <Label position={[0, 2.45, 0.2]} color="#263238" size={0.14} outlineColor="#eceff1">
         {`C и нижний концентрационный предел (НКПР), % (шкала до ${scaleMax})`}
       </Label>
-      <Label position={[-3.6, 0.85, 0.1]} color="#37474f" size={0.075} outlineColor="#eceff1">
+      <Label position={[-3.6, 0.85, 0.2]} color="#37474f" size={0.125} outlineColor="#eceff1">
         {`C = ${C.toFixed(2)} %`}
       </Label>
-      <Label position={[2.2, 0.85, 0.1]} color="#0d47a1" size={0.075} outlineColor="#eceff1">
+      <Label position={[2.2, 0.85, 0.2]} color="#0d47a1" size={0.125} outlineColor="#eceff1">
         {`НКПР ≈ ${nkpr.toFixed(2)} %`}
       </Label>
-      <Label position={[0, 0.35, 0.1]} color={canSpread ? '#e65100' : '#455a64'} size={0.085} outlineColor="#fff">
-        {canSpread ? 'C ≥ НКПР — смесь может воспламеняться / распространять пламя (по методичке)' : 'C < НКПР — ниже порога распространения пламени'}
+      <Label position={[0, 0.35, 0.2]} color={canSpread ? '#e65100' : '#455a64'} size={0.135} outlineColor="#fff">
+        {canSpread ? 'C ≥ НКПР — смесь может воспламеняться / распространять пламя' : 'C < НКПР — ниже порога распространения пламени'}
       </Label>
     </>
   );

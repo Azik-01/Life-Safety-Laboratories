@@ -1,5 +1,5 @@
 import { useRef, useMemo, useEffect } from 'react';
-import { Box, Paper, Stack, Typography } from '@mui/material';
+import { Box, Paper, Typography } from '@mui/material';
 import { Billboard, OrbitControls, Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -9,7 +9,12 @@ import { waveguideAttenuationPerM } from '../../formulas/shielding';
 import { attenuationFactorF, xParameter } from '../../formulas/hfField';
 import { pduForFrequencyVpm, RADIATION_DOSE_FREQ_SLIDER_MAX_MHZ, normalizedPatternFactor } from '../../formulas/uhfField';
 import { bodyCurrentMA, skinImpedance, totalBodyImpedance, groundPotential, stepVoltage, lesson11TouchEstimate, classifyCurrentDanger } from '../../formulas/electricSafety';
-import { lesson12TnLabEstimate, lesson12SingleElectrodeResistanceOhm, lesson12ElectrodeCount } from '../../formulas/electricSafety';
+import {
+  lesson12TnLabEstimate,
+  lesson12SingleElectrodeResistanceOhm,
+  lesson12ElectrodeCount,
+  type Lesson12TnScenario,
+} from '../../formulas/electricSafety';
 import { TheoryStylizedPerson, stylizedPersonPalmCenterLocal } from './StylizedPerson3D';
 
 /* ─── Scene title map ─── */
@@ -3409,9 +3414,9 @@ function L12TnModesScene({
     { id: 'normal', label: 'Норма (контроль)' },
   ] as const;
   const idx = Math.min(scenarios.length - 1, Math.max(0, Math.round(modeIndex)));
-  const scenario = scenarios[idx].id;
+  const scenario: Lesson12TnScenario = scenarios[idx].id;
   const result = lesson12TnLabEstimate({
-    scenario: scenario as any,
+    scenario,
     UphiV,
     ZnOhm,
     ZHOhm,

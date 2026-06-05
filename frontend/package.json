@@ -8,8 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "verify:deploy": "npm run lint && npm run test && npm run build && npm audit --omit=dev --audit-level=moderate",
+    "test": "vitest run --pool=threads",
+    "test:watch": "vitest --pool=threads",
     "parse:labs-txt": "node ./scripts/parse-lab-txt.mjs"
   },
   "dependencies": {

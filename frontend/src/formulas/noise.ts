@@ -114,7 +114,7 @@ export interface NoiseSourceInput {
 }
 
 /**
- * Ð Ð°ÑÑ‡ÐµÑ‚ ÑƒÑ€Ð¾Ð²Ð½Ñ ÐºÐ°Ð¶Ð´Ð¾Ð³Ð¾ Ð¸ÑÑ‚Ð¾Ñ‡Ð½Ð¸ÐºÐ° Ð² Ñ‚Ð¾Ñ‡ÐºÐµ Ð½Ð°Ð±Ð»ÑŽÐ´ÐµÐ½Ð¸Ñ.
+ * Расчет уровня каждого источника в точке наблюдения.
  */
 export function sourceLevelAtObserver(input: NoiseSourceInput): number {
   if (input.enabled === false) {

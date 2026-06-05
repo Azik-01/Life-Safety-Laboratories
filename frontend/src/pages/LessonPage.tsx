@@ -38,19 +38,7 @@ export default function LessonPage() {
   const knowledgeLayer = lesson ? getKnowledgeLayer(lesson.id as LessonId) : undefined;
 
   const goHome = () => {
-    // Primary SPA navigation
     navigate('/', { replace: true });
-
-    // Fallback: some WebViews (or misconfigured hosting) can update the URL
-    // without React Router reliably re-rendering. If we're at "/" but still
-    // not seeing the home screen, a one-time hard reload fixes it.
-    window.setTimeout(() => {
-      const isAtHomePath = window.location.pathname === '/';
-      const homeMounted = Boolean(document.querySelector('[data-testid="home-page"]'));
-      if (isAtHomePath && !homeMounted) {
-        window.location.reload();
-      }
-    }, 50);
   };
 
   const query = search.trim().toLowerCase();

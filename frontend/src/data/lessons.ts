@@ -1,4 +1,4 @@
-import type { LessonId, LessonTheme } from '../types/theme';
+import type { LessonTheme } from '../types/theme';
 import { lessonVariants } from './variants';
 
 /* ────────────────────────  Занятие 1  ──────────────────────── */

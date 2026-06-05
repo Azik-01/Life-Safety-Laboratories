@@ -62,9 +62,7 @@ import { classifyEmZone, powerFluxDensityWm2, wavelengthM } from '../../formulas
 import {
   attenuationCoefficient,
   attenuationRatioL,
-  shieldThicknessM,
   waveguideAttenuationPerM,
-  waveguideLengthM,
 } from '../../formulas/shielding';
 import { fieldStrengthShuleikin, attenuationFactorF, xParameter } from '../../formulas/hfField';
 import {
@@ -622,7 +620,6 @@ export default function MiniSimulator({ type }: SimulatorProps) {
         };
       }
       case 'uhf-antenna-pattern': {
-        const G = Math.max(1, a);
         const delta = (b * Math.PI) / 180;
         const Fd = normalizedPatternFactor(delta);
         return {

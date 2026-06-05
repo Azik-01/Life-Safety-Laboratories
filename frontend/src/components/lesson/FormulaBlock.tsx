@@ -1,4 +1,4 @@
-import { useMemo, useState, memo } from 'react';
+import { useMemo, useState, memo, type ReactNode } from 'react';
 import {
   Alert,
   Box,
@@ -23,36 +23,108 @@ import { resolveAssetPath } from '../../data/assetResolver';
 /**
  * Render formula expression with proper subscripts/superscripts.
  * Patterns handled:
- *  - explicit subscript markers: _{…}  e.g. E_{н} → E<sub>н</sub>
- *  - explicit superscript markers: ^{…}  e.g. r^{2} → r<sup>2</sup>
+ *  - explicit subscript markers: _{…}  e.g. E_{н} -> E<sub>н</sub>
+ *  - explicit superscript markers: ^{…}  e.g. r^{2} -> r<sup>2</sup>
  *  - Unicode subscript suffix attached to a letter: Eн, Фл, Sп, Hр, Kз, αкз etc.
- *    A capital letter or Greek followed by 1-2 lowercase Cyrillic → treat tail as subscript
+ *    A capital letter or Greek followed by 1-2 lowercase Cyrillic -> treat tail as subscript
  *  - Σe style (Greek + single latin lowercase)
  */
-function renderFormulaExpression(expr: string): string {
-  let html = expr;
-  // 1) Explicit LaTeX-like markers: _{…} and ^{…}
-  html = html.replace(/_\{([^}]+)\}/g, '<sub>$1</sub>');
-  html = html.replace(/\^\{([^}]+)\}/g, '<sup>$1</sup>');
-  // 2) Shorthand: _X (single char subscript without braces)
-  html = html.replace(/_([A-Za-zА-Яа-яёЁ0-9])/g, '<sub>$1</sub>');
-  // 3) ^X (single char superscript without braces) — only digits/letters
-  html = html.replace(/\^([A-Za-zА-Яа-яёЁ0-9])/g, '<sup>$1</sup>');
-  // 4) Auto subscript: Capital or Greek letter followed by 1-3 lowercase Cyrillic
-  //    e.g. Фсв → Ф<sub>св</sub>, Eн → E<sub>н</sub>, Hр → H<sub>р</sub>
-  html = html.replace(
-    /([A-ZА-ЯΦΣΩαβγδεηκμνωЁ])([а-яё]{1,3})(?=[^а-яё\w]|$)/g,
-    (match, head: string, tail: string) => {
-      // Skip real words (e.g. "Где", "лампы") — only process when head is uppercase/Greek
-      // and tail is short subscript-like
-      const skipWords = ['Где', 'Чем', 'Для', 'Вт/', 'все', 'тип', 'шаг', 'при', 'или', 'Это', 'Она', 'Они', 'Его', 'Все', 'Тип', 'Шаг', 'При', 'Или', 'Вт', 'Гц', 'Па', 'лм', 'лк', 'кд', 'ед', 'дБ', 'ср', 'Тл'];
-      if (skipWords.includes(match)) return match;
-      // Skip if tail is longer than 2 and doesn't look like a subscript
-      if (tail.length === 3 && !/^[а-яё]{1,3}$/.test(tail)) return match;
-      return `${head}<sub>${tail}</sub>`;
-    },
-  );
-  return html;
+interface FormulaPart {
+  text: string;
+  variant?: 'sub' | 'sup';
+}
+
+const skipAutoSubscriptWords = [
+  'Где',
+  'Чем',
+  'Для',
+  'Вт/',
+  'все',
+  'тип',
+  'шаг',
+  'при',
+  'или',
+  'Это',
+  'Она',
+  'Они',
+  'Его',
+  'Все',
+  'Тип',
+  'Шаг',
+  'При',
+  'Или',
+  'Вт',
+  'Гц',
+  'Па',
+  'лм',
+  'лк',
+  'кд',
+  'ед',
+  'дБ',
+  'ср',
+  'Тл',
+];
+
+function pushTextWithAutoSubscript(parts: FormulaPart[], text: string) {
+  const autoSubscriptPattern = /([A-ZА-ЯΦΣΩαβγδεηκμνωЁ])([а-яё]{1,3})(?=[^а-яё\w]|$)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = autoSubscriptPattern.exec(text)) !== null) {
+    const [raw, head, tail] = match;
+    if (match.index > lastIndex) {
+      parts.push({ text: text.slice(lastIndex, match.index) });
+    }
+
+    if (skipAutoSubscriptWords.includes(raw) || (tail.length === 3 && !/^[а-яё]{1,3}$/.test(tail))) {
+      parts.push({ text: raw });
+    } else {
+      parts.push({ text: head });
+      parts.push({ text: tail, variant: 'sub' });
+    }
+
+    lastIndex = match.index + raw.length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({ text: text.slice(lastIndex) });
+  }
+}
+
+function tokenizeFormulaExpression(expr: string): FormulaPart[] {
+  const parts: FormulaPart[] = [];
+  const markerPattern = /(_|\^)\{([^}]+)\}|(_|\^)([A-Za-zА-Яа-яёЁ0-9])/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = markerPattern.exec(expr)) !== null) {
+    if (match.index > lastIndex) {
+      pushTextWithAutoSubscript(parts, expr.slice(lastIndex, match.index));
+    }
+
+    const marker = match[1] ?? match[3];
+    const text = match[2] ?? match[4];
+    parts.push({ text, variant: marker === '_' ? 'sub' : 'sup' });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < expr.length) {
+    pushTextWithAutoSubscript(parts, expr.slice(lastIndex));
+  }
+
+  return parts;
+}
+
+function renderFormulaExpression(expr: string): ReactNode[] {
+  return tokenizeFormulaExpression(expr).map((part, index) => {
+    if (part.variant === 'sub') {
+      return <sub key={`${index}-sub`}>{part.text}</sub>;
+    }
+    if (part.variant === 'sup') {
+      return <sup key={`${index}-sup`}>{part.text}</sup>;
+    }
+    return part.text;
+  });
 }
 
 export interface FormulaVariable {
@@ -91,7 +163,7 @@ function FormulaBlock({
   const resolvedImagePath = useMemo(() => resolveAssetPath(imagePath), [imagePath]);
   const hasExtraContent = Boolean(example || explanation);
 
-  const formulaHtml = useMemo(() => renderFormulaExpression(expression), [expression]);
+  const formulaContent = useMemo(() => renderFormulaExpression(expression), [expression]);
 
   return (
     <Paper
@@ -124,8 +196,9 @@ function FormulaBlock({
           '& sub': { fontSize: '0.65em', verticalAlign: 'sub', lineHeight: 0 },
           '& sup': { fontSize: '0.65em', verticalAlign: 'super', lineHeight: 0 },
         }}
-        dangerouslySetInnerHTML={{ __html: formulaHtml }}
-      />
+      >
+        {formulaContent}
+      </Typography>
 
       {resolvedImagePath && (
         <Box
@@ -160,10 +233,9 @@ function FormulaBlock({
                     <Tooltip title={v.description} arrow placement="right">
                       <Chip
                         label={
-                          <span
-                            dangerouslySetInnerHTML={{ __html: renderFormulaExpression(v.symbol) }}
-                            style={{ fontFamily: 'serif', fontWeight: 600 }}
-                          />
+                          <span style={{ fontFamily: 'serif', fontWeight: 600 }}>
+                            {renderFormulaExpression(v.symbol)}
+                          </span>
                         }
                         size="small"
                         variant="outlined"
@@ -229,9 +301,7 @@ function FormulaBlock({
                 <Chip
                   key={key}
                   label={
-                    <span
-                      dangerouslySetInnerHTML={{ __html: renderFormulaExpression(`${key} = ${val}`) }}
-                    />
+                    <span>{renderFormulaExpression(`${key} = ${val}`)}</span>
                   }
                   size="small"
                   variant="outlined"

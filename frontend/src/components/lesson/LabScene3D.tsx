@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Alert, Box, Chip, IconButton, Paper, Slider, Stack, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Chip, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
 import { Billboard, Edges, OrbitControls, Text as DreiText } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh } from 'three';
@@ -1635,13 +1635,6 @@ function BodyElectricScene({ state, timeScale }: { state: LabSceneProps['bodyEle
   const showCurrentPathArm1 = true;
   const showCurrentPathArm2 = touchType === 'bipolar' || touchType === 'multipolar';
   const showCurrentPathLegs = touchType === 'multipolar';
-
-  /* Danger level comparison thresholds (per fig 9.4) */
-  const dangerLevels = [
-    { label: 'Ощутимый', minMA: 0.5, maxMA: 10, color: '#ff9800' },
-    { label: 'Неотпускающий', minMA: 10, maxMA: 100, color: '#f44336' },
-    { label: 'Фибрилляция', minMA: 100, maxMA: 500, color: '#d50000' },
-  ];
 
   // Simple time-dependent effect boundaries to visualize fig. 9.4 conceptually
   // (exact values are methodical-table dependent; this is a pedagogical approximation).

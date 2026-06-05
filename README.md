@@ -38,6 +38,19 @@ npm run dev
 
 Приложение запустится на http://localhost:5173
 
+## 🔐 Проверка перед статическим деплоем
+
+```bash
+cd frontend
+npm ci
+npm run verify:deploy
+```
+
+Для публикации на университетском сервере загружайте только содержимое `frontend/dist/`.
+Не копируйте на сервер весь репозиторий, `node_modules`, `src`, `scripts`, `labs doc`,
+`files`, `package-lock.json` и служебные файлы Git. Приложение использует hash-маршрутизацию,
+поэтому прямые ссылки имеют вид `/#/lesson/1/theory` и не требуют server-side rewrite.
+
 Подробная документация: [frontend/README.md](frontend/README.md)
 
 ## 🛠️ Технологии

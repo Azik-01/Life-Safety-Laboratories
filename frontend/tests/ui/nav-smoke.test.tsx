@@ -26,13 +26,18 @@ function renderApp() {
 }
 
 describe('nav smoke', () => {
-  it('opens theory section', async () => {
+  it('opens theory section and returns home without a page refresh', async () => {
     const user = userEvent.setup();
     renderApp();
 
     const theoryButtons = await screen.findAllByRole('button', { name: 'Теория' });
     await user.click(theoryButtons[0]);
 
-    expect(await screen.findByRole('button', { name: 'На главную' })).toBeInTheDocument();
+    const homeButton = await screen.findByRole('button', { name: 'На главную' });
+    expect(homeButton).toBeInTheDocument();
+
+    await user.click(homeButton);
+
+    expect(await screen.findByTestId('home-page')).toBeInTheDocument();
   }, 30000);
 });
